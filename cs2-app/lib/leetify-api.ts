@@ -58,7 +58,10 @@ export async function getProfile(
     signal: AbortSignal.timeout(15000),
     cache: 'no-store',
   })
-  if (!res.ok) throw new Error(`Leetify API ${res.status}: ${steam64}`)
+  if (!res.ok) {
+    console.warn(`Leetify: ${res.status} for steam ${steam64}`)
+    return null
+  }
   const data = (await res.json()) as RawLeetifyProfile
   if (data.error) return null
   return data

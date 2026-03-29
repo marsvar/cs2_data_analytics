@@ -148,7 +148,7 @@ export function buildPlayerAnalysis(
   const dpr = rounds > 0 ? player.damage / rounds : 0
   const kast = player.kast   // already a ratio (0–1) from BL API
   const hs = player.hs       // already a ratio (0–1) from BL API
-  const odTotal = player.opening_kills + (player.opening_attempts - player.opening_kills)
+  const odTotal = player.opening_attempts  // opening_attempts = won + lost
   const odRate = odTotal > 0 ? player.opening_kills / odTotal : 0
 
   const odCount = wRounds > 0 ? odTotal / Math.max(wRounds / 20, 1) : 0
