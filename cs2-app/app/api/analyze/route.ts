@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getMatchupStats } from '@/lib/bl-api'
+import { getMatchupStats, getMatchupTeamNames } from '@/lib/bl-api'
 import { fetchProfiles } from '@/lib/leetify-api'
 import { buildPlayerAnalysis } from '@/lib/aggregation'
 import { STEAM_BY_USER_ID } from '@/lib/players'
@@ -11,14 +11,13 @@ export async function GET(request: NextRequest) {
   const start = Date.now()
   const matchupIdParam = request.nextUrl.searchParams.get('matchup_id')
 
-  if (!matchupIdParam || isNaN(Number(matchupIdParam))) {
+  const matchupId = Number(matchupIdParam)
+  if (!matchupIdParam || !Number.isInteger(matchupId) || matchupId <= 0) {
     return NextResponse.json<AnalyzeError>(
-      { error: 'matchup_id query param is required and must be a number' },
+      { error: 'matchup_id must be a positive integer' },
       { status: 400 }
     )
   }
-
-  const matchupId = Number(matchupIdParam)
   const blToken = process.env.BL_TOKEN
   const leetifyToken = process.env.LEETIFY_TOKEN
 
@@ -40,14 +39,23 @@ export async function GET(request: NextRequest) {
     )
   }
 
+  // 1b. Best-effort: fetch team names (not available from /stats endpoint)
+  const teamNames = await getMatchupTeamNames(matchupId, blToken)
+
   // 2. Collect Steam IDs for Leetify
   const allPlayers = [...matchupStats.home_players, ...matchupStats.away_players]
   const steamIds = allPlayers
     .map((p) => STEAM_BY_USER_ID[p.paradise_user_id])
     .filter((s): s is string => Boolean(s))
 
-  // 3. Fetch Leetify profiles (rate-limited, sequential)
-  const leetifyProfiles = await fetchProfiles(steamIds, leetifyToken)
+  // 3. Fetch Leetify profiles (rate-limited, sequential) — failures are non-fatal
+  let leetifyProfiles: Awaited<ReturnType<typeof fetchProfiles>>
+  try {
+    leetifyProfiles = await fetchProfiles(steamIds, leetifyToken)
+  } catch {
+    console.warn('Leetify fetch failed entirely, proceeding with BL-only data')
+    leetifyProfiles = new Map()
+  }
 
   // 4. Build player analyses
   const analyze = (players: typeof matchupStats.home_players) =>
@@ -61,13 +69,13 @@ export async function GET(request: NextRequest) {
     matchup_id: matchupId,
     teams: {
       home: {
-        id: matchupStats.home_team.id,
-        name: matchupStats.home_team.name,
+        id: teamNames?.home.id ?? matchupStats.home_team.id,
+        name: teamNames?.home.name ?? matchupStats.home_team.name,
         players: analyze(matchupStats.home_players),
       },
       away: {
-        id: matchupStats.away_team.id,
-        name: matchupStats.away_team.name,
+        id: teamNames?.away.id ?? matchupStats.away_team.id,
+        name: teamNames?.away.name ?? matchupStats.away_team.name,
         players: analyze(matchupStats.away_players),
       },
     },

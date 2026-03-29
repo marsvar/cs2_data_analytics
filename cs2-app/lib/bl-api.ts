@@ -147,6 +147,35 @@ export async function getMatchupStats(
 }
 
 /**
+ * Try to fetch team names for a matchup from the matchup detail or listing.
+ * The /matchup/{id}/stats endpoint does not embed team names on player rows,
+ * so we attempt /matchup/{id} which may return a signups array with team info.
+ * Returns null if the endpoint doesn't exist or doesn't carry team data.
+ */
+export async function getMatchupTeamNames(
+  matchupId: number,
+  token: string,
+): Promise<{ home: { id: number; name: string }; away: { id: number; name: string } } | null> {
+  try {
+    const raw = await blGet<any>(`/matchup/${matchupId}`, token)
+    const signups: any[] = raw?.signups ?? raw?.data?.signups ?? []
+    if (signups.length >= 2) {
+      const home = signups[0]?.team ?? signups[0]?.signup?.team ?? {}
+      const away = signups[1]?.team ?? signups[1]?.signup?.team ?? {}
+      if (home.name || away.name) {
+        return {
+          home: { id: home.id ?? 0, name: home.name ?? '' },
+          away: { id: away.id ?? 0, name: away.name ?? '' },
+        }
+      }
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
+/**
  * Fetch all matchups in a division.
  * Returns the raw array of matchup objects (not typed deeply — used for
  * listing only).
