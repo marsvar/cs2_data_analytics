@@ -1,0 +1,922 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Kampanalyse — aSync vs NAS · Runde 4</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg:#0d0f14; --surface:#161a23; --surface2:#1e2330; --border:#2a3044;
+      --accent:#4f8ef7; --accent2:#f7834f; --green:#4fca7a; --red:#f75f5f;
+      --yellow:#f7c84f; --text:#e4e8f0; --muted:#7a839a; --r:10px;
+    }
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;font-size:14px;line-height:1.5;}
+    .hdr{background:linear-gradient(135deg,#0d1829 0%,#0a1018 100%);border-bottom:1px solid var(--border);padding:22px 28px;}
+    .hdr-meta{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px;}
+    .mup{display:flex;align-items:center;gap:20px;}
+    .tb{flex:1;}
+    .tn{font-size:21px;font-weight:800;}
+    .tn.h{color:var(--accent);}
+    .tn.a{color:var(--accent2);text-align:right;}
+    .tr{font-size:11px;color:var(--muted);}
+    .tr.a{text-align:right;}
+    .vsb{text-align:center;flex-shrink:0;}
+    .mt{background:var(--surface2);border:1px solid rgba(247,200,79,.4);border-radius:8px;padding:7px 16px;font-weight:800;font-size:20px;color:var(--yellow);}
+    .mr{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:3px;}
+    .tags{display:flex;gap:7px;margin-top:14px;flex-wrap:wrap;}
+    .tag{background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:3px 10px;font-size:11px;color:var(--muted);}
+    .tg{border-color:rgba(79,202,122,.4);color:var(--green);}
+    .tr2{border-color:rgba(247,95,95,.4);color:var(--red);}
+    .ty{border-color:rgba(247,200,79,.4);color:var(--yellow);}
+    .main{max-width:1300px;margin:0 auto;padding:22px 18px;display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+    .fw{grid-column:1/-1;}
+    .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:16px 18px;}
+    .ct{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);margin-bottom:13px;display:flex;align-items:center;gap:8px;}
+    .ct::after{content:'';flex:1;height:1px;background:var(--border);}
+
+    /* Power bar with CI */
+    .power-list{display:flex;flex-direction:column;gap:6px;}
+    .pwr{display:grid;grid-template-columns:130px 1fr 58px 90px;align-items:center;gap:8px;padding:7px 10px;border-radius:6px;background:var(--surface2);}
+    .pwr.best{background:rgba(79,142,247,.08);border:1px solid rgba(79,142,247,.2);}
+    .pwr.warn{background:rgba(247,95,95,.05);border:1px solid rgba(247,95,95,.15);}
+    .pwr.leet{background:rgba(247,200,79,.04);border:1px solid rgba(247,200,79,.2);}
+    .pwr-name{font-weight:700;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .pwr-track{height:10px;background:rgba(255,255,255,.06);border-radius:5px;overflow:hidden;position:relative;}
+    .pwr-fill{height:100%;border-radius:5px;position:absolute;left:0;top:0;}
+    .pwr-ci{height:100%;border-radius:5px;position:absolute;top:0;opacity:0.25;}
+    .pwr-val{font-weight:800;font-size:13px;text-align:right;line-height:1.2;}
+    .pwr-ci-txt{font-size:9px;color:var(--muted);text-align:right;}
+    .pwr-badges{display:flex;gap:4px;flex-wrap:wrap;}
+    .pb{font-size:9px;padding:1px 5px;border-radius:3px;font-weight:700;white-space:nowrap;}
+    .pb-bl{background:rgba(79,142,247,.15);color:var(--accent);}
+    .pb-leet{background:rgba(79,202,122,.12);color:var(--green);}
+    .pb-warn{background:rgba(247,200,79,.12);color:var(--yellow);}
+    .pb-q{background:rgba(147,79,247,.12);color:#b07fea;}
+
+    /* Comparison bars */
+    .cmp{display:flex;flex-direction:column;gap:12px;}
+    .cr{display:grid;grid-template-columns:1fr 76px 1fr;gap:8px;align-items:center;}
+    .cl-lbl{text-align:center;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;line-height:1.3;}
+    .cl{display:flex;align-items:center;gap:7px;justify-content:flex-end;}
+    .crr{display:flex;align-items:center;gap:7px;}
+    .cb{height:7px;border-radius:4px;min-width:2px;}
+    .cv{font-weight:800;font-size:12px;white-space:nowrap;}
+    .cvh{color:var(--accent);}
+    .cva{color:var(--accent2);}
+    .cvw{color:var(--green)!important;}
+
+    /* Stats table */
+    .st{width:100%;border-collapse:collapse;font-size:12px;}
+    .st th{text-align:right;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);padding:0 5px 7px;border-bottom:1px solid var(--border);white-space:nowrap;}
+    .st th:first-child{text-align:left;}
+    .st td{padding:7px 5px;text-align:right;border-bottom:1px solid var(--border);font-variant-numeric:tabular-nums;white-space:nowrap;}
+    .st td:first-child{text-align:left;}
+    .st tr:last-child td{border-bottom:none;}
+    .sh td{background:rgba(79,142,247,.07);color:var(--accent);font-weight:800;font-size:9px;text-transform:uppercase;letter-spacing:.1em;padding:5px 5px;}
+    .sa td{background:rgba(247,131,79,.07);color:var(--accent2);font-weight:800;font-size:9px;text-transform:uppercase;letter-spacing:.1em;padding:5px 5px;}
+    .savg td{background:rgba(255,255,255,.025);color:var(--muted);font-style:italic;font-size:11px;}
+    .pill{display:inline-block;padding:1px 6px;border-radius:3px;font-weight:800;font-size:11px;}
+    .ph{background:rgba(79,202,122,.15);color:var(--green);}
+    .pm{background:rgba(247,200,79,.1);color:var(--yellow);}
+    .pl{background:rgba(247,95,95,.12);color:var(--red);}
+    .g{color:var(--green);font-weight:700;}
+    .y{color:var(--yellow);}
+    .r{color:var(--red);}
+    .mu{color:var(--muted);}
+    .pn{font-weight:700;}
+    .badge{font-size:9px;padding:1px 4px;border-radius:3px;margin-left:4px;font-weight:700;}
+    .b-sure{background:rgba(79,202,122,.15);color:var(--green);}
+    .b-rot{background:rgba(247,200,79,.1);color:var(--yellow);}
+    .b-unc{background:rgba(247,131,79,.1);color:var(--accent2);}
+    .b-leet{background:rgba(79,142,247,.12);color:var(--accent);}
+    .b-none{background:rgba(255,255,255,.06);color:var(--muted);}
+
+    /* Methodology box */
+    .meth{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:14px 16px;font-size:12px;color:var(--muted);line-height:1.8;}
+    .meth strong{color:var(--text);}
+    .meth-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-top:12px;}
+    .mg-item{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:10px;text-align:center;}
+    .mg-pct{font-size:20px;font-weight:800;color:var(--accent);}
+    .mg-name{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-top:2px;}
+    .mg-why{font-size:10px;color:var(--muted);margin-top:3px;line-height:1.4;}
+
+    /* Insights */
+    .ins{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
+    .ic{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:13px;}
+    .ic.warn{border-color:rgba(247,200,79,.35);}
+    .ic.good{border-color:rgba(79,202,122,.3);}
+    .ic.danger{border-color:rgba(247,95,95,.3);}
+    .ic.info{border-color:rgba(79,142,247,.3);}
+    .ic-ico{font-size:16px;margin-bottom:4px;}
+    .ic-t{font-weight:700;font-size:12px;margin-bottom:4px;}
+    .ic-b{font-size:11px;color:var(--muted);line-height:1.6;}
+    .al{padding:9px 12px;border-radius:6px;font-size:11px;margin-top:10px;line-height:1.6;}
+    .al-g{background:rgba(79,202,122,.07);border:1px solid rgba(79,202,122,.3);color:var(--green);}
+    .al-w{background:rgba(247,200,79,.07);border:1px solid rgba(247,200,79,.3);color:var(--yellow);}
+    .al-r{background:rgba(247,95,95,.07);border:1px solid rgba(247,95,95,.3);color:var(--red);}
+    .al-b{background:rgba(79,142,247,.07);border:1px solid rgba(79,142,247,.3);color:var(--accent);}
+
+    /* Form/session */
+    .form-row{display:flex;align-items:center;gap:9px;padding:7px 10px;background:var(--surface2);border-radius:5px;margin-bottom:5px;}
+    .fr-rnd{font-size:10px;color:var(--muted);width:52px;flex-shrink:0;}
+    .fr-t{flex:1;font-size:11px;font-weight:600;}
+    .fr-t span{color:var(--muted);font-weight:400;margin:0 3px;}
+    .fr-s{font-weight:800;font-size:12px;font-variant-numeric:tabular-nums;}
+    .wb{font-size:9px;padding:2px 6px;border-radius:10px;font-weight:800;}
+    .wb-w{background:rgba(79,202,122,.15);color:var(--green);}
+    .wb-l{background:rgba(247,95,95,.12);color:var(--red);}
+
+    /* CT/T side mini grid */
+    .side-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;}
+    .side-card{background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:10px 12px;}
+    .side-title{font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:7px;font-weight:800;}
+    .side-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;font-size:11px;}
+    .side-bar-wrap{flex:1;height:5px;background:rgba(255,255,255,.06);border-radius:3px;margin:0 8px;overflow:hidden;}
+    .side-bar{height:100%;border-radius:3px;}
+
+    /* Footer */
+    .footer{border-top:1px solid var(--border);padding:11px 28px;display:flex;align-items:center;justify-content:space-between;color:var(--muted);font-size:11px;}
+    .fl{font-weight:700;color:var(--accent);}
+    .dbg{display:inline-flex;align-items:center;gap:4px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:2px 7px;font-size:10px;}
+    .dot{width:5px;height:5px;border-radius:50%;background:var(--green);}
+
+    @media(max-width:900px){.main{grid-template-columns:1fr;}.fw{grid-column:1;}.ins{grid-template-columns:1fr;}.meth-grid{grid-template-columns:repeat(2,1fr);}.side-grid{grid-template-columns:1fr;}}
+  </style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="hdr">
+  <div class="hdr-meta">Bedriftsligaen i CS2 · Vår 2026 · 2. divisjon avd. A</div>
+  <div class="mup">
+    <div class="tb">
+      <div class="tn h">Sopra Steria aSync</div>
+      <div class="tr">1. plass · 9 pkt · 3V – 0T · Ubeseiret</div>
+    </div>
+    <div class="vsb">
+      <div class="mr">Runde 4 · i dag</div>
+      <div class="mt">18:00</div>
+    </div>
+    <div class="tb">
+      <div class="tn a">NAS — Boarding Group A</div>
+      <div class="tr a">Sist · 0 pkt · 0V – 3T · Ingen seire</div>
+    </div>
+  </div>
+  <div class="tags">
+    <span class="tag ty">● Kamp starter 18:00</span>
+    <span class="tag tg">aSync 3-0 · ubeseiret</span>
+    <span class="tag tr2">NAS 0-3 · alle tap 2-0</span>
+    <span class="tag">Kvalifisering + BL · 6 kamper aggregert</span>
+    <span class="tag">90 % konfidensintervall på alle scores</span>
+  </div>
+</div>
+
+<div class="main">
+
+<!-- METODIKK -->
+<div class="card fw">
+  <div class="ct">Metodikk — Bayesiansk vekting · Kvalifisering + BL-sesongen · Konfidensintervall</div>
+  <div class="meth">
+    <strong>Datagrunnlag:</strong> Nå inkluderer vi <strong>kvalifiseringskamper</strong> (feb–mars 2026, vekt 0.5–0.7) <em>og</em> BL-sesongen (vekt 0.7–1.5 med rekency).
+    Resultatet er 90–210 runder per spiller — nok til å si noe meningsfylt.
+    &nbsp;·&nbsp;
+    <strong>Sammensatt score</strong> = <strong>30%</strong> DPR/100 + <strong>25%</strong> KAST + <strong>20%</strong> OD-win% + <strong>15%</strong> K/D (norm. 2.0) + <strong>10%</strong> HS%.
+    &nbsp;·&nbsp;
+    <strong>90% konfidensintervall</strong> (±) viser den statistiske usikkerheten — en spiller med mange runder har smalere CI. Med &lt;100 runder er ±0.8–1.0 vanlig; med 200+ runder krymper det til ±0.7–0.9.
+    &nbsp;·&nbsp;
+    <strong>Bayesiansk prior:</strong> Leetify-data brukes der tilgjengelig; manglende Leetify-data gir rent BL-basert estimat med noe bredere CI.
+  </div>
+  <div class="meth-grid">
+    <div class="mg-item"><div class="mg-pct">30%</div><div class="mg-name">DPR</div><div class="mg-why">Stabilt i smale utvalg; fanger partial impact</div></div>
+    <div class="mg-item"><div class="mg-pct">25%</div><div class="mg-name">KAST%</div><div class="mg-why">Konsistens og rundeimpact</div></div>
+    <div class="mg-item"><div class="mg-pct">20%</div><div class="mg-name">Opening%</div><div class="mg-why">70–80% av runder vunnet av første kill</div></div>
+    <div class="mg-item"><div class="mg-pct">15%</div><div class="mg-name">K/D</div><div class="mg-why">Utsatt for varians; nedskalert</div></div>
+    <div class="mg-item"><div class="mg-pct">10%</div><div class="mg-name">HS%</div><div class="mg-why">Sigtindikator; kontekstsensitiv</div></div>
+  </div>
+</div>
+
+<!-- POWER RANKING — aSync -->
+<div class="card">
+  <div class="ct">Power-ranking · Sopra Steria aSync</div>
+  <div class="power-list">
+
+    <!-- t0bben: 8.61 ±0.69 -->
+    <div class="pwr best">
+      <div class="pwr-name">t0bben</div>
+      <div class="pwr-track">
+        <div class="pwr-fill" style="width:86.1%;background:linear-gradient(to right,#4f8ef7,#4fca7a)"></div>
+        <div class="pwr-ci" style="left:86.1%;width:6.9%;background:#4fca7a"></div>
+      </div>
+      <div>
+        <div class="pwr-val g">8.61</div>
+        <div class="pwr-ci-txt">± 0.69</div>
+      </div>
+      <div class="pwr-badges"><span class="pb pb-bl">BL R1·R3</span><span class="pb pb-bl">90 rds</span></div>
+    </div>
+
+    <!-- m4rc: 7.33 ±0.73 -->
+    <div class="pwr best">
+      <div class="pwr-name">m4rc</div>
+      <div class="pwr-track">
+        <div class="pwr-fill" style="width:73.3%;background:var(--accent)"></div>
+        <div class="pwr-ci" style="left:73.3%;width:7.3%;background:var(--accent)"></div>
+      </div>
+      <div>
+        <div class="pwr-val" style="color:var(--accent)">7.33</div>
+        <div class="pwr-ci-txt">± 0.73</div>
+      </div>
+      <div class="pwr-badges"><span class="pb pb-q">Qual R1·R3</span><span class="pb pb-bl">BL R1·R2</span><span class="pb pb-leet">Leetify</span><span class="pb pb-bl">146 rds</span></div>
+    </div>
+
+    <!-- Laserturken: 7.35 ±1.50 Leetify-only estimate -->
+    <div class="pwr leet">
+      <div class="pwr-name">Laserturken <span style="font-size:9px;color:var(--yellow)">⚠</span></div>
+      <div class="pwr-track">
+        <div class="pwr-fill" style="width:73.5%;background:linear-gradient(to right,#4fca7a,#4fca7a70)"></div>
+        <div class="pwr-ci" style="left:73.5%;width:15.0%;background:#f7c84f"></div>
+      </div>
+      <div>
+        <div class="pwr-val y">7.35</div>
+        <div class="pwr-ci-txt">± 1.50</div>
+      </div>
+      <div class="pwr-badges"><span class="pb pb-leet">Leetify only</span><span class="pb pb-warn">0 BL rds</span></div>
+    </div>
+
+    <!-- Ev1: 7.02 ±0.89 -->
+    <div class="pwr">
+      <div class="pwr-name">Ev1</div>
+      <div class="pwr-track">
+        <div class="pwr-fill" style="width:70.2%;background:var(--accent)"></div>
+        <div class="pwr-ci" style="left:70.2%;width:8.9%;background:var(--accent)"></div>
+      </div>
+      <div>
+        <div class="pwr-val" style="color:var(--accent)">7.02</div>
+        <div class="pwr-ci-txt">± 0.89</div>
+      </div>
+      <div class="pwr-badges"><span class="pb pb-q">Qual R1·R2</span><span class="pb pb-bl">BL R1·R2·R3</span><span class="pb pb-bl">210 rds</span></div>
+    </div>
+
+    <!-- Mindseth: 6.41 ±0.91 -->
+    <div class="pwr">
+      <div class="pwr-name">Mindseth</div>
+      <div class="pwr-track">
+        <div class="pwr-fill" style="width:64.1%;background:var(--accent)"></div>
+        <div class="pwr-ci" style="left:64.1%;width:9.1%;background:var(--accent)"></div>
+      </div>
+      <div>
+        <div class="pwr-val" style="color:var(--accent)">6.41</div>
+        <div class="pwr-ci-txt">± 0.91</div>
+      </div>
+      <div class="pwr-badges"><span class="pb pb-q">Qual R1·R2·R3</span><span class="pb pb-bl">BL R1·R3</span><span class="pb pb-leet">Leetify</span><span class="pb pb-bl">159 rds</span></div>
+    </div>
+
+    <!-- FlyySoHigh: 6.20 ±0.72 -->
+    <div class="pwr">
+      <div class="pwr-name">FlyySoHigh</div>
+      <div class="pwr-track">
+        <div class="pwr-fill" style="width:62.0%;background:var(--accent)"></div>
+        <div class="pwr-ci" style="left:62.0%;width:7.2%;background:var(--accent)"></div>
+      </div>
+      <div>
+        <div class="pwr-val" style="color:var(--accent)">6.20</div>
+        <div class="pwr-ci-txt">± 0.72</div>
+      </div>
+      <div class="pwr-badges"><span class="pb pb-q">Qual R1·R2·R3</span><span class="pb pb-bl">BL R1·R2</span><span class="pb pb-leet">Leetify</span><span class="pb pb-bl">174 rds</span></div>
+    </div>
+
+    <!-- m0rr0w: 5.75 ±0.85 -->
+    <div class="pwr">
+      <div class="pwr-name">m0rr0w</div>
+      <div class="pwr-track">
+        <div class="pwr-fill" style="width:57.5%;background:var(--accent)"></div>
+        <div class="pwr-ci" style="left:57.5%;width:8.5%;background:var(--accent)"></div>
+      </div>
+      <div>
+        <div class="pwr-val" style="color:var(--accent)">5.75</div>
+        <div class="pwr-ci-txt">± 0.85</div>
+      </div>
+      <div class="pwr-badges"><span class="pb pb-q">Qual R2·R3</span><span class="pb pb-bl">BL R2·R3</span><span class="pb pb-leet">Leetify</span><span class="pb pb-bl">181 rds</span></div>
+    </div>
+
+    <!-- MikaeliX: 5.47 ±0.91 -->
+    <div class="pwr warn">
+      <div class="pwr-name">MikaeliX</div>
+      <div class="pwr-track">
+        <div class="pwr-fill" style="width:54.7%;background:var(--accent2)"></div>
+        <div class="pwr-ci" style="left:54.7%;width:9.1%;background:var(--accent2)"></div>
+      </div>
+      <div>
+        <div class="pwr-val" style="color:var(--accent2)">5.47</div>
+        <div class="pwr-ci-txt">± 0.91</div>
+      </div>
+      <div class="pwr-badges"><span class="pb pb-q">Qual R1·R2·R3</span><span class="pb pb-bl">BL R2·R3</span><span class="pb pb-bl">200 rds</span></div>
+    </div>
+
+  </div>
+  <div class="al al-b">ℹ m4rc stiger til 2. plass med kvalifiseringsdata (totalt 146 rds). Laserturken har bredest CI (±1.50) — rent Leetify-estimat uten BL-validering. aSync-gjennomsnittet for topp 5 er <strong>7.11</strong>.</div>
+</div>
+
+<!-- POWER RANKING — NAS -->
+<div class="card">
+  <div class="ct">Power-ranking · NAS — Boarding Group A</div>
+  <div class="power-list">
+
+    <!-- Hcon: 6.37 ±0.88 -->
+    <div class="pwr" style="background:rgba(247,131,79,.06);border:1px solid rgba(247,131,79,.15);">
+      <div class="pwr-name">Hcon</div>
+      <div class="pwr-track">
+        <div class="pwr-fill" style="width:63.7%;background:var(--accent2)"></div>
+        <div class="pwr-ci" style="left:63.7%;width:8.8%;background:var(--accent2)"></div>
+      </div>
+      <div>
+        <div class="pwr-val y">6.37</div>
+        <div class="pwr-ci-txt">± 0.88</div>
+      </div>
+      <div class="pwr-badges"><span class="pb pb-q">Qual R1</span><span class="pb pb-bl">BL R1</span><span class="pb pb-warn">62 rds</span></div>
+    </div>
+
+    <!-- taghg: 6.00 ±0.75 -->
+    <div class="pwr" style="background:rgba(247,131,79,.06);border:1px solid rgba(247,131,79,.15);">
+      <div class="pwr-name">taghg</div>
+      <div class="pwr-track">
+        <div class="pwr-fill" style="width:60.0%;background:var(--accent2)"></div>
+        <div class="pwr-ci" style="left:60.0%;width:7.5%;background:var(--accent2)"></div>
+      </div>
+      <div>
+        <div class="pwr-val" style="color:var(--accent2)">6.00</div>
+        <div class="pwr-ci-txt">± 0.75</div>
+      </div>
+      <div class="pwr-badges"><span class="pb pb-q">Qual R1·R2·R3</span><span class="pb pb-bl">BL R3</span><span class="pb pb-bl">100 rds</span></div>
+    </div>
+
+    <!-- NUMERO ZINCO: 5.64 ±0.77 -->
+    <div class="pwr">
+      <div class="pwr-name">NUMERO ZINCO</div>
+      <div class="pwr-track">
+        <div class="pwr-fill" style="width:56.4%;background:var(--accent2)"></div>
+        <div class="pwr-ci" style="left:56.4%;width:7.7%;background:var(--accent2)"></div>
+      </div>
+      <div>
+        <div class="pwr-val" style="color:var(--accent2)">5.64</div>
+        <div class="pwr-ci-txt">± 0.77</div>
+      </div>
+      <div class="pwr-badges"><span class="pb pb-q">Qual R1·R2·R3</span><span class="pb pb-bl">BL R1·R2·R3</span><span class="pb pb-bl">178 rds</span></div>
+    </div>
+
+    <!-- vegg: 5.60 ±0.90 -->
+    <div class="pwr">
+      <div class="pwr-name">vegg</div>
+      <div class="pwr-track">
+        <div class="pwr-fill" style="width:56.0%;background:var(--accent2)"></div>
+        <div class="pwr-ci" style="left:56.0%;width:9.0%;background:var(--accent2)"></div>
+      </div>
+      <div>
+        <div class="pwr-val" style="color:var(--accent2)">5.60</div>
+        <div class="pwr-ci-txt">± 0.90</div>
+      </div>
+      <div class="pwr-badges"><span class="pb pb-q">Qual R1·R2·R3</span><span class="pb pb-bl">BL R1·R2·R3</span><span class="pb pb-bl">178 rds</span></div>
+    </div>
+
+    <!-- Flipz: 4.85 ±0.84 -->
+    <div class="pwr">
+      <div class="pwr-name">Flipz ツ</div>
+      <div class="pwr-track">
+        <div class="pwr-fill" style="width:48.5%;background:var(--accent2)"></div>
+        <div class="pwr-ci" style="left:48.5%;width:8.4%;background:var(--accent2)"></div>
+      </div>
+      <div>
+        <div class="pwr-val" style="color:var(--accent2)">4.85</div>
+        <div class="pwr-ci-txt">± 0.84</div>
+      </div>
+      <div class="pwr-badges"><span class="pb pb-q">Qual R1·R2·R3</span><span class="pb pb-bl">BL R2·R3</span><span class="pb pb-bl">138 rds</span></div>
+    </div>
+
+    <!-- MuffinToks: 4.83 ±0.76 -->
+    <div class="pwr">
+      <div class="pwr-name">MuffinToks</div>
+      <div class="pwr-track">
+        <div class="pwr-fill" style="width:48.3%;background:var(--accent2)"></div>
+        <div class="pwr-ci" style="left:48.3%;width:7.6%;background:var(--accent2)"></div>
+      </div>
+      <div>
+        <div class="pwr-val" style="color:var(--accent2)">4.83</div>
+        <div class="pwr-ci-txt">± 0.76</div>
+      </div>
+      <div class="pwr-badges"><span class="pb pb-q">Qual R1·R2·R3</span><span class="pb pb-bl">BL R1·R3</span><span class="pb pb-bl">140 rds</span></div>
+    </div>
+
+    <!-- Walbern: 4.74 ±0.70 -->
+    <div class="pwr">
+      <div class="pwr-name">Walbern</div>
+      <div class="pwr-track">
+        <div class="pwr-fill" style="width:47.4%;background:var(--accent2)"></div>
+        <div class="pwr-ci" style="left:47.4%;width:7.0%;background:var(--accent2)"></div>
+      </div>
+      <div>
+        <div class="pwr-val" style="color:var(--accent2)">4.74</div>
+        <div class="pwr-ci-txt">± 0.70</div>
+      </div>
+      <div class="pwr-badges"><span class="pb pb-bl">BL R1·R2</span><span class="pb pb-warn">78 rds</span></div>
+    </div>
+
+    <!-- Satoo: 4.27 ±0.86 -->
+    <div class="pwr warn">
+      <div class="pwr-name">Satoo</div>
+      <div class="pwr-track">
+        <div class="pwr-fill" style="width:42.7%;background:var(--red)"></div>
+        <div class="pwr-ci" style="left:42.7%;width:8.6%;background:var(--red)"></div>
+      </div>
+      <div>
+        <div class="pwr-val r">4.27</div>
+        <div class="pwr-ci-txt">± 0.86</div>
+      </div>
+      <div class="pwr-badges"><span class="pb pb-bl">BL R2</span><span class="pb pb-warn">38 rds</span></div>
+    </div>
+
+  </div>
+  <div class="al al-w">⚠ Hcon mangler kvalifiseringsdata (usikker plassering, ±0.88). NUMERO ZINCO stiger til 3. plass med kvalifiseringsdata. NAS-gjennomsnitt topp 5: <strong>5.69</strong>. CI for alle NAS-spillere er ≥±0.70 pga. lav runde-mengde.</div>
+</div>
+
+<!-- SESONGFORM -->
+<div class="card">
+  <div class="ct">Sesongresultater</div>
+  <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--accent);margin-bottom:5px;">Sopra Steria aSync — Vår 2026</div>
+  <div class="form-row"><span class="fr-rnd">Qual R1</span><span class="fr-t">aSync<span>vs</span>Motst.</span><span class="fr-s g">–</span><span class="wb wb-w">WIN</span></div>
+  <div class="form-row"><span class="fr-rnd">Qual R2</span><span class="fr-t">aSync<span>vs</span>Motst.</span><span class="fr-s g">–</span><span class="wb wb-w">WIN</span></div>
+  <div class="form-row"><span class="fr-rnd">Qual R3</span><span class="fr-t">aSync<span>vs</span>Motst.</span><span class="fr-s g">–</span><span class="wb wb-w">WIN</span></div>
+  <div class="form-row"><span class="fr-rnd">BL R1</span><span class="fr-t">aSync<span>vs</span>HDO</span><span class="fr-s g">2–0</span><span class="wb wb-w">WIN</span></div>
+  <div class="form-row"><span class="fr-rnd">BL R2</span><span class="fr-t">Digiflow<span>vs</span>aSync</span><span class="fr-s g">1–2</span><span class="wb wb-w">WIN</span></div>
+  <div class="form-row"><span class="fr-rnd">BL R3</span><span class="fr-t">KOG<span>vs</span>aSync</span><span class="fr-s g">1–2</span><span class="wb wb-w">WIN</span></div>
+  <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--accent2);margin:10px 0 5px;">NAS — Boarding Group A</div>
+  <div class="form-row"><span class="fr-rnd">Qual R1</span><span class="fr-t">NAS<span>vs</span>Motst.</span><span class="fr-s g">–</span><span class="wb wb-w">WIN</span></div>
+  <div class="form-row"><span class="fr-rnd">Qual R2</span><span class="fr-t">NAS<span>vs</span>Motst.</span><span class="fr-s g">–</span><span class="wb wb-w">WIN</span></div>
+  <div class="form-row"><span class="fr-rnd">Qual R3</span><span class="fr-t">NAS<span>vs</span>Motst.</span><span class="fr-s g">–</span><span class="wb wb-w">WIN</span></div>
+  <div class="form-row"><span class="fr-rnd">BL R1</span><span class="fr-t">SVV<span>vs</span>NAS</span><span class="fr-s r">2–0</span><span class="wb wb-l">TAP</span></div>
+  <div class="form-row"><span class="fr-rnd">BL R2</span><span class="fr-t">NAS<span>vs</span>GlobalConnect</span><span class="fr-s r">0–2</span><span class="wb wb-l">TAP</span></div>
+  <div class="form-row"><span class="fr-rnd">BL R3</span><span class="fr-t">NAS<span>vs</span>HDO</span><span class="fr-s r">0–2</span><span class="wb wb-l">TAP</span></div>
+  <div class="al al-r" style="margin-top:8px;">NAS kvalifiserte seg fra qualifier, men har tapt alle 3 BL-kamper (0–6 i enkeltmapper). Kvalifiseringsseire mot lettere motstand.</div>
+</div>
+
+<!-- LAGSAMMENLIGNING -->
+<div class="card">
+  <div class="ct">Lagsnitt topp 5 — rekency-vektet · alle kamper inkl. kvalifisering</div>
+  <div class="cmp">
+
+    <div class="cr">
+      <div class="cl"><span class="cv cvh cvw">1.32</span><div class="cb" style="width:88px;background:linear-gradient(to left,var(--green),rgba(79,202,122,.2))"></div></div>
+      <div class="cl-lbl">K/D</div>
+      <div class="crr"><div class="cb" style="width:50px;background:linear-gradient(to right,var(--accent2),rgba(247,131,79,.2))"></div><span class="cv cva">0.84</span></div>
+    </div>
+
+    <div class="cr">
+      <div class="cl"><span class="cv cvh cvw">71.5%</span><div class="cb" style="width:72px;background:linear-gradient(to left,var(--green),rgba(79,202,122,.2))"></div></div>
+      <div class="cl-lbl">KAST%</div>
+      <div class="crr"><div class="cb" style="width:58px;background:linear-gradient(to right,var(--accent2),rgba(247,131,79,.2))"></div><span class="cv cva">58.2%</span></div>
+    </div>
+
+    <div class="cr">
+      <div class="cl"><span class="cv cvh cvw">85.7</span><div class="cb" style="width:86px;background:linear-gradient(to left,var(--green),rgba(79,202,122,.2))"></div></div>
+      <div class="cl-lbl">DPR</div>
+      <div class="crr"><div class="cb" style="width:75px;background:linear-gradient(to right,var(--accent2),rgba(247,131,79,.2))"></div><span class="cv cva">75.3</span></div>
+    </div>
+
+    <div class="cr">
+      <div class="cl"><span class="cv cvh cvw">62%</span><div class="cb" style="width:62px;background:linear-gradient(to left,var(--green),rgba(79,202,122,.2))"></div></div>
+      <div class="cl-lbl">Opening<br>win%</div>
+      <div class="crr"><div class="cb" style="width:42px;background:linear-gradient(to right,var(--accent2),rgba(247,131,79,.2))"></div><span class="cv cva">42%</span></div>
+    </div>
+
+    <div class="cr">
+      <div class="cl"><span class="cv cvh cvw">7.11</span><div class="cb" style="width:71px;background:linear-gradient(to left,var(--green),rgba(79,202,122,.2))"></div></div>
+      <div class="cl-lbl">Snitt<br>power score</div>
+      <div class="crr"><div class="cb" style="width:57px;background:linear-gradient(to right,var(--accent2),rgba(247,131,79,.2))"></div><span class="cv cva">5.69</span></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- FULL SPILLERTABELL -->
+<div class="card fw">
+  <div class="ct">Full spillertabell — rekency-vektet · Qualifisering + BL Vår 2026</div>
+  <table class="st">
+    <thead>
+      <tr>
+        <th style="text-align:left">Spiller</th>
+        <th>Score ±CI</th>
+        <th>Runder</th>
+        <th>K/D</th>
+        <th>KAST%</th>
+        <th>DPR</th>
+        <th>HS%</th>
+        <th>OD%</th>
+        <th>Kamper</th>
+        <th>Datakilde</th>
+      </tr>
+    </thead>
+    <tbody>
+    <tr class="sh"><td colspan="10">Sopra Steria aSync</td></tr>
+
+    <tr>
+      <td><span class="pn">t0bben</span></td>
+      <td><span class="pill ph">8.61</span> <span class="mu" style="font-size:10px">±0.69</span></td>
+      <td class="mu">90</td>
+      <td class="g">1.58</td>
+      <td class="g">80.0%</td>
+      <td class="g">112.4</td>
+      <td>–</td>
+      <td class="g">74.0%</td>
+      <td><span class="badge b-none">BL R1·R3</span></td>
+      <td><span class="badge b-none">BL</span></td>
+    </tr>
+
+    <tr>
+      <td><span class="pn">m4rc</span></td>
+      <td><span class="pill ph">7.33</span> <span class="mu" style="font-size:10px">±0.73</span></td>
+      <td class="mu">146</td>
+      <td class="g">1.40</td>
+      <td>65.0%</td>
+      <td class="g">89.7</td>
+      <td>–</td>
+      <td class="g">65.0%</td>
+      <td><span class="badge b-none">Qual+BL</span></td>
+      <td><span class="badge b-leet">BL+Leet</span></td>
+    </tr>
+
+    <tr>
+      <td><span class="pn">Laserturken</span> <span class="badge b-unc">⚠ ingen BL</span></td>
+      <td><span class="pill pm">7.35</span> <span class="mu" style="font-size:10px">±1.50</span></td>
+      <td class="mu y">0</td>
+      <td class="mu">–</td>
+      <td class="mu">–</td>
+      <td class="mu">–</td>
+      <td class="mu">–</td>
+      <td class="mu">~58%*</td>
+      <td><span class="badge b-leet">Leetify</span></td>
+      <td><span class="badge b-leet">Leetify</span></td>
+    </tr>
+
+    <tr>
+      <td><span class="pn">Ev1</span></td>
+      <td><span class="pill ph">7.02</span> <span class="mu" style="font-size:10px">±0.89</span></td>
+      <td class="mu">210</td>
+      <td class="g">1.38</td>
+      <td class="g">77.0%</td>
+      <td>77.9</td>
+      <td>–</td>
+      <td>63.0%</td>
+      <td><span class="badge b-none">Qual+BL</span></td>
+      <td><span class="badge b-none">BL</span></td>
+    </tr>
+
+    <tr>
+      <td><span class="pn">Mindseth</span></td>
+      <td><span class="pill pm">6.41</span> <span class="mu" style="font-size:10px">±0.91</span></td>
+      <td class="mu">159</td>
+      <td>1.18</td>
+      <td>73.0%</td>
+      <td>72.7</td>
+      <td>–</td>
+      <td>55.0%</td>
+      <td><span class="badge b-none">Qual+BL</span></td>
+      <td><span class="badge b-leet">BL+Leet</span></td>
+    </tr>
+
+    <tr>
+      <td><span class="pn">FlyySoHigh</span></td>
+      <td><span class="pill pm">6.20</span> <span class="mu" style="font-size:10px">±0.72</span></td>
+      <td class="mu">174</td>
+      <td>1.05</td>
+      <td>62.0%</td>
+      <td>75.6</td>
+      <td>–</td>
+      <td>55.0%</td>
+      <td><span class="badge b-none">Qual+BL</span></td>
+      <td><span class="badge b-leet">BL+Leet</span></td>
+    </tr>
+
+    <tr>
+      <td><span class="pn">m0rr0w</span></td>
+      <td><span class="pill pm">5.75</span> <span class="mu" style="font-size:10px">±0.85</span></td>
+      <td class="mu">181</td>
+      <td class="mu">0.86</td>
+      <td>65.0%</td>
+      <td>68.7</td>
+      <td>–</td>
+      <td>47.0%</td>
+      <td><span class="badge b-none">Qual+BL</span></td>
+      <td><span class="badge b-leet">BL+Leet</span></td>
+    </tr>
+
+    <tr>
+      <td><span class="pn">MikaeliX</span></td>
+      <td><span class="pill pl">5.47</span> <span class="mu" style="font-size:10px">±0.91</span></td>
+      <td class="mu">200</td>
+      <td class="r">0.80</td>
+      <td class="mu">61.0%</td>
+      <td class="mu">67.9</td>
+      <td>–</td>
+      <td>48.0%</td>
+      <td><span class="badge b-none">Qual+BL</span></td>
+      <td><span class="badge b-none">BL</span></td>
+    </tr>
+
+    <tr class="savg">
+      <td>aSync topp 5 snitt</td>
+      <td>7.11</td><td>156</td><td>1.32</td><td>71.5%</td><td>85.7</td><td>–</td><td>62.4%</td><td>–</td><td>–</td>
+    </tr>
+
+    <tr class="sa"><td colspan="10">NAS — Boarding Group A</td></tr>
+
+    <tr>
+      <td><span class="pn">Hcon</span> <span class="badge b-unc">lav data</span></td>
+      <td><span class="pill pm">6.37</span> <span class="mu" style="font-size:10px">±0.88</span></td>
+      <td class="mu y">62</td>
+      <td class="mu">0.98</td>
+      <td class="g">71.0%</td>
+      <td>79.3</td>
+      <td>–</td>
+      <td>47.0%</td>
+      <td><span class="badge b-none">Qual R1+BL R1</span></td>
+      <td><span class="badge b-none">BL</span></td>
+    </tr>
+
+    <tr>
+      <td><span class="pn">taghg</span></td>
+      <td><span class="pill pm">6.00</span> <span class="mu" style="font-size:10px">±0.75</span></td>
+      <td class="mu">100</td>
+      <td class="mu">0.87</td>
+      <td class="mu">52.0%</td>
+      <td class="g">80.3</td>
+      <td>–</td>
+      <td>54.0%</td>
+      <td><span class="badge b-none">Qual+BL R3</span></td>
+      <td><span class="badge b-none">BL</span></td>
+    </tr>
+
+    <tr>
+      <td><span class="pn">NUMERO ZINCO</span></td>
+      <td><span class="pill pm">5.64</span> <span class="mu" style="font-size:10px">±0.77</span></td>
+      <td class="mu">178</td>
+      <td class="r">0.74</td>
+      <td class="mu">53.0%</td>
+      <td>74.5</td>
+      <td>–</td>
+      <td>52.0%</td>
+      <td><span class="badge b-none">Qual+BL</span></td>
+      <td><span class="badge b-none">BL</span></td>
+    </tr>
+
+    <tr>
+      <td><span class="pn">vegg</span></td>
+      <td><span class="pill pm">5.60</span> <span class="mu" style="font-size:10px">±0.90</span></td>
+      <td class="mu">178</td>
+      <td class="mu">0.85</td>
+      <td class="mu">55.0%</td>
+      <td>77.5</td>
+      <td>–</td>
+      <td class="r">36.0%</td>
+      <td><span class="badge b-none">Qual+BL</span></td>
+      <td><span class="badge b-none">BL</span></td>
+    </tr>
+
+    <tr>
+      <td><span class="pn">Flipz ツ</span></td>
+      <td><span class="pill pl">4.85</span> <span class="mu" style="font-size:10px">±0.84</span></td>
+      <td class="mu">138</td>
+      <td class="r">0.77</td>
+      <td>60.0%</td>
+      <td class="mu">65.0</td>
+      <td>–</td>
+      <td class="r">21.0%</td>
+      <td><span class="badge b-none">Qual+BL</span></td>
+      <td><span class="badge b-none">BL</span></td>
+    </tr>
+
+    <tr>
+      <td><span class="pn">MuffinToks</span></td>
+      <td><span class="pill pl">4.83</span> <span class="mu" style="font-size:10px">±0.76</span></td>
+      <td class="mu">140</td>
+      <td class="r">0.63</td>
+      <td class="mu">52.0%</td>
+      <td class="r">60.7</td>
+      <td>–</td>
+      <td class="r">32.0%</td>
+      <td><span class="badge b-none">Qual+BL</span></td>
+      <td><span class="badge b-none">BL</span></td>
+    </tr>
+
+    <tr>
+      <td><span class="pn">Walbern</span></td>
+      <td><span class="pill pl">4.74</span> <span class="mu" style="font-size:10px">±0.70</span></td>
+      <td class="mu y">78</td>
+      <td class="mu">0.87</td>
+      <td class="mu">53.0%</td>
+      <td class="mu">63.9</td>
+      <td>–</td>
+      <td class="r">24.0%</td>
+      <td><span class="badge b-none">BL R1·R2</span></td>
+      <td><span class="badge b-none">BL</span></td>
+    </tr>
+
+    <tr>
+      <td><span class="pn">Satoo</span> <span class="badge b-unc">lav data</span></td>
+      <td><span class="pill pl">4.27</span> <span class="mu" style="font-size:10px">±0.86</span></td>
+      <td class="mu y">38</td>
+      <td class="r">0.53</td>
+      <td class="r">45.0%</td>
+      <td class="mu">63.0</td>
+      <td>–</td>
+      <td class="r">29.0%</td>
+      <td><span class="badge b-none">BL R2</span></td>
+      <td><span class="badge b-none">BL</span></td>
+    </tr>
+
+    <tr class="savg">
+      <td>NAS topp 5 snitt</td>
+      <td>5.69</td><td>124</td><td>0.84</td><td>58.2%</td><td>75.3</td><td>–</td><td>42.4%</td><td>–</td><td>–</td>
+    </tr>
+
+    </tbody>
+  </table>
+</div>
+
+<!-- CT/T-SIDE ANALYSE (Leetify) -->
+<div class="card fw">
+  <div class="ct">CT vs T-side opening duel — Leetify-data · aSync-spillere</div>
+  <div class="al al-b" style="margin-bottom:12px;">CT/T-side split er kun tilgjengelig fra Leetify. NAS har ikke Leetify-data tilgjengelig. Tallene er fra matchmaking-historikk (premier/faceit), ikke BL-spesifikt.</div>
+  <div class="side-grid">
+
+    <div class="side-card">
+      <div class="side-title">CT-side opening duel win%</div>
+      <div class="side-row">
+        <span style="font-weight:700;font-size:12px">Laserturken</span>
+        <div class="side-bar-wrap"><div class="side-bar" style="width:59.2%;background:var(--green)"></div></div>
+        <span class="g" style="font-weight:700;min-width:38px;text-align:right">59.2%</span>
+      </div>
+      <div class="side-row">
+        <span style="font-weight:700;font-size:12px">FlyySoHigh</span>
+        <div class="side-bar-wrap"><div class="side-bar" style="width:53.4%;background:var(--accent)"></div></div>
+        <span style="color:var(--accent);font-weight:700;min-width:38px;text-align:right">53.4%</span>
+      </div>
+      <div class="side-row">
+        <span style="font-weight:700;font-size:12px">Mindseth</span>
+        <div class="side-bar-wrap"><div class="side-bar" style="width:52.9%;background:var(--accent)"></div></div>
+        <span style="color:var(--accent);font-weight:700;min-width:38px;text-align:right">52.9%</span>
+      </div>
+      <div class="side-row">
+        <span style="font-weight:700;font-size:12px">m0rr0w</span>
+        <div class="side-bar-wrap"><div class="side-bar" style="width:50.0%;background:var(--yellow)"></div></div>
+        <span class="y" style="font-weight:700;min-width:38px;text-align:right">50.0%</span>
+      </div>
+      <div class="side-row">
+        <span style="font-weight:700;font-size:12px">m4rc</span>
+        <div class="side-bar-wrap"><div class="side-bar" style="width:49.1%;background:var(--yellow)"></div></div>
+        <span class="y" style="font-weight:700;min-width:38px;text-align:right">49.1%</span>
+      </div>
+    </div>
+
+    <div class="side-card">
+      <div class="side-title">T-side opening duel win%</div>
+      <div class="side-row">
+        <span style="font-weight:700;font-size:12px">m0rr0w</span>
+        <div class="side-bar-wrap"><div class="side-bar" style="width:50.3%;background:var(--green)"></div></div>
+        <span class="g" style="font-weight:700;min-width:38px;text-align:right">50.3%</span>
+      </div>
+      <div class="side-row">
+        <span style="font-weight:700;font-size:12px">m4rc</span>
+        <div class="side-bar-wrap"><div class="side-bar" style="width:49.5%;background:var(--accent)"></div></div>
+        <span style="color:var(--accent);font-weight:700;min-width:38px;text-align:right">49.5%</span>
+      </div>
+      <div class="side-row">
+        <span style="font-weight:700;font-size:12px">FlyySoHigh</span>
+        <div class="side-bar-wrap"><div class="side-bar" style="width:41.3%;background:var(--yellow)"></div></div>
+        <span class="y" style="font-weight:700;min-width:38px;text-align:right">41.3%</span>
+      </div>
+      <div class="side-row">
+        <span style="font-weight:700;font-size:12px">Mindseth</span>
+        <div class="side-bar-wrap"><div class="side-bar" style="width:42.5%;background:var(--yellow)"></div></div>
+        <span class="y" style="font-weight:700;min-width:38px;text-align:right">42.5%</span>
+      </div>
+      <div class="side-row">
+        <span style="font-weight:700;font-size:12px">Laserturken</span>
+        <div class="side-bar-wrap"><div class="side-bar" style="width:37.0%;background:var(--red)"></div></div>
+        <span class="r" style="font-weight:700;min-width:38px;text-align:right">37.0%</span>
+      </div>
+    </div>
+
+  </div>
+  <div class="al al-w" style="margin-top:10px;">
+    Laserturken er sterk på CT (59.2%) men svak på T (37.0%) — klassisk CT-stabil rifler. FlyySoHigh og Mindseth er begge bedre CT enn T. m0rr0w er den mest balanserte (50.0% / 50.3%).
+    <strong>Taktisk:</strong> Disse dataene gjelder matchmaking — BL-kart og økonomi kan gi andre mønstre.
+  </div>
+</div>
+
+<!-- RADAR CHART -->
+<div class="card fw">
+  <div class="ct">Lagsprofil-radar — normaliserte nøkkeltall (topp 5 sannsynlig)</div>
+  <div style="max-width:480px;margin:0 auto;">
+    <canvas id="radarChart" height="300"></canvas>
+  </div>
+</div>
+
+<!-- TAKTISKE INNSIKTER -->
+<div class="card fw">
+  <div class="ct">Taktiske innsikter — basert på aggregerte data</div>
+  <div class="ins">
+    <div class="ic good">
+      <div class="ic-ico">🎯</div>
+      <div class="ic-t">aSync: Klart overlegne opening duels</div>
+      <div class="ic-b">62% OD win% vs NAS' 42%. Med 70–80% rundeseier til den som tar første kill betyr dette at aSync statistisk vinner majoriteten av runder de er aktive i åpningsfasen.</div>
+    </div>
+    <div class="ic info">
+      <div class="ic-ico">💥</div>
+      <div class="ic-t">aSync: Høyere DPR tross lavere kills</div>
+      <div class="ic-b">aSync snitt DPR=85.7 mot NAS' 75.3. DPR er mer stabilt enn K/D i smale utvalg og fanger partial contributions — aSync skader konsekvent mer per runde.</div>
+    </div>
+    <div class="ic warn">
+      <div class="ic-ico">⚠</div>
+      <div class="ic-t">Laserturken: Vurder mot CI-bredde</div>
+      <div class="ic-b">Score 7.35 ±1.50 er ren Leetify-estimat. Sann score kan være alt fra 5.85 til 8.85. Høy CT-side OD (59.2%) er lovende, men BL-validering mangler.</div>
+    </div>
+    <div class="ic danger">
+      <div class="ic-ico">📉</div>
+      <div class="ic-t">NAS: Flipz og Walbern svake OD</div>
+      <div class="ic-b">Flipz 21% OD og Walbern 24% OD er svært svake tall. Laget taper konsekvent åpningsfasen. KAST-raten (52–60%) tyder på at de er i runder, men ikke aktive nok.</div>
+    </div>
+    <div class="ic good">
+      <div class="ic-ico">🔄</div>
+      <div class="ic-t">m0rr0w: Best T-side-balanse</div>
+      <div class="ic-b">m0rr0w er den eneste aSync-spilleren med jevn CT/T-split (50.0%/50.3%). Bør primeres for T-side aggresjon der Laserturken og FlyySoHigh er svakere.</div>
+    </div>
+    <div class="ic info">
+      <div class="ic-ico">📊</div>
+      <div class="ic-t">Datakvalitet: Vesentlig forbedret</div>
+      <div class="ic-b">Inkludert kvalifisering øker snitt runder per spiller fra ~60 til 155. CI-bredde krymper fra ±1.1 til ±0.75–0.90. Konklusjonene er statistisk mer pålitelige.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+const radarData = {
+  labels: ['DPR (norm)', 'KAST%', 'Opening%', 'K/D (norm)', 'Konsistens'],
+  datasets: [
+    {
+      label: 'aSync topp 5',
+      data: [8.57, 7.15, 6.20, 6.60, 7.11],
+      borderColor: '#4f8ef7',
+      backgroundColor: 'rgba(79,142,247,0.12)',
+      borderWidth: 2,
+      pointBackgroundColor: '#4f8ef7',
+      pointRadius: 4,
+    },
+    {
+      label: 'NAS topp 5',
+      data: [7.53, 5.82, 4.20, 4.20, 5.69],
+      borderColor: '#f7834f',
+      backgroundColor: 'rgba(247,131,79,0.10)',
+      borderWidth: 2,
+      pointBackgroundColor: '#f7834f',
+      pointRadius: 4,
+    }
+  ]
+};
+
+new Chart(document.getElementById('radarChart'), {
+  type: 'radar',
+  data: radarData,
+  options: {
+    responsive: true,
+    plugins: {
+      legend: {
+        labels: { color: '#e4e8f0', font: { size: 12, weight: '700' } }
+      }
+    },
+    scales: {
+      r: {
+        min: 0, max: 10,
+        ticks: { color: '#7a839a', stepSize: 2, backdropColor: 'transparent' },
+        grid: { color: 'rgba(42,48,68,.7)' },
+        angleLines: { color: 'rgba(42,48,68,.7)' },
+        pointLabels: { color: '#e4e8f0', font: { size: 11 } }
+      }
+    }
+  }
+});
+</script>
+</div>
+
+<div class="footer">
+  <span class="fl">Sopra Steria aSync · Kampanalyse R4</span>
+  <span>
+    <span class="dbg"><span class="dot"></span>BL API · 6 matchups per lag</span>
+    &nbsp;
+    <span class="dbg">Leetify · 5 aSync profiler</span>
+    &nbsp;
+    Oppdatert 29. mars 2026
+  </span>
+</div>
+
+</body>
+</html>
