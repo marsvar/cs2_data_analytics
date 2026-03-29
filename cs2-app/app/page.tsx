@@ -153,7 +153,7 @@ export default function Home() {
 
   async function runAnalysis() {
     const id = input.trim()
-    if (!id) return
+    if (!id || loading) return
 
     setLoading(true)
     setError(null)
@@ -164,7 +164,7 @@ export default function Home() {
       const data = await res.json()
 
       if (!res.ok) {
-        setError(data?.error ?? `HTTP ${res.status}`)
+        setError(typeof data?.error === 'string' ? data.error : `HTTP ${res.status}`)
       } else {
         setResult(data as AnalyzeResponse)
       }
@@ -195,7 +195,9 @@ export default function Home() {
 
       {/* Search form */}
       <div className="flex gap-3 items-center">
+        <label htmlFor="matchup-input" className="sr-only">Matchup ID</label>
         <input
+          id="matchup-input"
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
