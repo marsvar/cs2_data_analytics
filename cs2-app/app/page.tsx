@@ -206,7 +206,7 @@ export default function Home() {
           disabled={loading}
           className={[
             'flex-1 bg-surface border border-border rounded-md',
-            'px-4 py-2.5 font-mono text-sm text-text',
+            'px-4 py-3 font-mono text-base text-text',
             'placeholder:text-muted',
             'focus:outline-none focus:border-accent',
             'disabled:opacity-50',
@@ -216,7 +216,7 @@ export default function Home() {
           onClick={runAnalysis}
           disabled={loading || input.trim() === ''}
           className={[
-            'px-5 py-2.5 rounded-md font-mono text-sm tracking-wide',
+            'px-5 py-3 rounded-md font-mono text-sm tracking-wide',
             'bg-accent text-white',
             'hover:bg-accent/80 transition-colors',
             'disabled:opacity-40 disabled:cursor-not-allowed',
