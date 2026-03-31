@@ -47,7 +47,9 @@ type RawPlayer = {
   opening_duels_won?: number
   opening_duels_lost?: number
   firstkills?: number
-  // team info may be nested
+  // side distinguishes home vs away in flat array responses (team/signup are null)
+  side?: string | number
+  // team info may be nested (present on some endpoint variants)
   team?: { id?: number; name?: string }
   signup?: { team?: { id?: number; name?: string } }
 }
@@ -110,69 +112,221 @@ export async function getMatchupStats(
   }
 
   // Flat array response (confirmed shape from Python script)
-  // Players carry team info via .team or .signup.team
+  // Players carry side ('home'/'away' or similar) — team/signup are null
   const players: RawPlayer[] = Array.isArray(raw)
     ? raw
     : (raw.data ?? [])
 
-  // Group by team
-  const teamMap = new Map<number, { name: string; players: BLPlayerStats[] }>()
+  // Group by side value. First distinct side seen = home, second = away.
+  // Falls back to team.id if side is absent (future-proofing).
+  const sideOrder: (string | number)[] = []
+  const sideMap = new Map<string | number, BLPlayerStats[]>()
+
   for (const p of players) {
-    const team = p.team ?? p.signup?.team
-    const teamId = team?.id ?? 0
-    const teamName = team?.name ?? ''
-    if (!teamMap.has(teamId)) {
-      teamMap.set(teamId, { name: teamName, players: [] })
+    const teamFromNested = p.team ?? p.signup?.team
+    const sideKey = p.side ?? teamFromNested?.id ?? 0
+
+    if (!sideMap.has(sideKey)) {
+      sideOrder.push(sideKey)
+      sideMap.set(sideKey, [])
     }
-    teamMap.get(teamId)!.players.push(mapPlayer(p))
+    sideMap.get(sideKey)!.push(mapPlayer(p))
   }
 
-  const teams = [...teamMap.entries()]
-  const [homeEntry, awayEntry] = [teams[0], teams[1]]
+  const homePlayers = sideMap.get(sideOrder[0]) ?? []
+  const awayPlayers = sideMap.get(sideOrder[1]) ?? []
+
+  // total_rounds: all players share rounds_played; use the mode of the home side
+  const totalRounds = homePlayers[0]?.rounds ?? awayPlayers[0]?.rounds ?? 0
 
   return {
     matchup_id: matchupId,
-    home_team: {
-      id: homeEntry?.[0] ?? 0,
-      name: homeEntry?.[1].name ?? '',
-    },
-    away_team: {
-      id: awayEntry?.[0] ?? 0,
-      name: awayEntry?.[1].name ?? '',
-    },
-    home_players: homeEntry?.[1].players ?? [],
-    away_players: awayEntry?.[1].players ?? [],
-    total_rounds: 0, // not available from flat stats endpoint
+    home_team: { id: 0, name: '' }, // populated by getMatchupMeta in route
+    away_team: { id: 0, name: '' },
+    home_players: homePlayers,
+    away_players: awayPlayers,
+    total_rounds: totalRounds,
+  }
+}
+
+export type MatchupMeta = {
+  divisionId: number | null
+  roundNumber: number | null
+  startTime: string | null
+  finishedAt: string | null
+  home: { id: number; name: string }
+  away: { id: number; name: string }
+  /** paradise_user_id → team id ('home' team id or 'away' team id) */
+  playerTeams: Map<number, number>
+}
+
+/**
+ * Fetch rich matchup metadata from /matchup/{id}:
+ * - division ID (for fetching historical data)
+ * - team names / IDs (from home_signup.team / away_signup.team)
+ * - player→team mapping (from matchup_users)
+ * - round number
+ */
+export async function getMatchupMeta(
+  matchupId: number,
+  token: string,
+): Promise<MatchupMeta | null> {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const raw = await blGet<any>(`/matchup/${matchupId}`, token)
+
+    const homeTeam = raw?.home_signup?.team ?? {}
+    const awayTeam = raw?.away_signup?.team ?? {}
+
+    const playerTeams = new Map<number, number>()
+    const matchupUsers: { user_id?: number; team_id?: number }[] =
+      raw?.matchup_users ?? []
+    for (const mu of matchupUsers) {
+      if (mu.user_id != null && mu.team_id != null) {
+        playerTeams.set(mu.user_id, mu.team_id)
+      }
+    }
+
+    return {
+      divisionId: raw?.matchupable_id ?? null,
+      roundNumber: raw?.round?.number ?? raw?.round_number ?? null,
+      startTime: raw?.start_time ?? null,
+      finishedAt: raw?.finished_at ?? null,
+      home: { id: homeTeam.id ?? 0, name: homeTeam.name ?? '' },
+      away: { id: awayTeam.id ?? 0, name: awayTeam.name ?? '' },
+      playerTeams,
+    }
+  } catch {
+    return null
   }
 }
 
 /**
- * Try to fetch team names for a matchup from the matchup detail or listing.
- * The /matchup/{id}/stats endpoint does not embed team names on player rows,
- * so we attempt /matchup/{id} which may return a signups array with team info.
- * Returns null if the endpoint doesn't exist or doesn't carry team data.
+ * Fetch the Steam64 ID for a BL user.
+ * The /user/{id} endpoint returns an `accounts` array; STEAM provider entries
+ * carry the Steam64 in `account_id`.
  */
-export async function getMatchupTeamNames(
-  matchupId: number,
+export async function getUserSteamId(
+  userId: number,
   token: string,
-): Promise<{ home: { id: number; name: string }; away: { id: number; name: string } } | null> {
+): Promise<string | null> {
   try {
-    const raw = await blGet<any>(`/matchup/${matchupId}`, token)
-    const signups: any[] = raw?.signups ?? raw?.data?.signups ?? []
-    if (signups.length >= 2) {
-      const home = signups[0]?.team ?? signups[0]?.signup?.team ?? {}
-      const away = signups[1]?.team ?? signups[1]?.signup?.team ?? {}
-      if (home.name || away.name) {
-        return {
-          home: { id: home.id ?? 0, name: home.name ?? '' },
-          away: { id: away.id ?? 0, name: away.name ?? '' },
-        }
-      }
-    }
-    return null
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const raw = await blGet<any>(`/user/${userId}`, token)
+    const accounts: { provider?: string; account_id?: string }[] =
+      raw?.accounts ?? []
+    const steam = accounts.find(
+      (a) => a.provider?.toUpperCase() === 'STEAM',
+    )
+    return steam?.account_id ?? null
   } catch {
     return null
   }
+}
+
+export type TeamPlayerRef = {
+  userId: number
+  userName: string
+  steam64?: string
+}
+
+/**
+ * Fetch current team roster with user IDs and linked Steam IDs.
+ * Useful as fallback for future matchups where matchup_users is empty.
+ */
+export async function getTeamPlayers(
+  teamId: number,
+  token: string,
+): Promise<TeamPlayerRef[]> {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const raw = await blGet<any>(`/team/${teamId}/players`, token)
+    const rows: any[] = Array.isArray(raw) ? raw : []
+    return rows
+      .map((row) => {
+        const user = row?.user ?? {}
+        const accounts: { provider?: string; account_id?: string }[] =
+          Array.isArray(user.accounts) ? user.accounts : []
+        const steam = accounts.find(
+          (a) => a.provider?.toUpperCase() === 'STEAM',
+        )?.account_id
+
+        return {
+          userId: user.id ?? 0,
+          userName: user.user_name ?? '',
+          steam64: steam ?? undefined,
+        } satisfies TeamPlayerRef
+      })
+      .filter((p) => p.userId > 0)
+  } catch {
+    return []
+  }
+}
+
+// ── Internal helpers ──────────────────────────────────────────────────────────
+
+/** Aggregate an array of per-match BLPlayerStats into one combined record. */
+function aggregateStats(stats: BLPlayerStats[]): BLPlayerStats {
+  const totalRounds = stats.reduce((s, p) => s + p.rounds, 0)
+  return {
+    paradise_user_id: stats[0].paradise_user_id,
+    name: stats[0].name,
+    kills: stats.reduce((s, p) => s + p.kills, 0),
+    deaths: stats.reduce((s, p) => s + p.deaths, 0),
+    assists: stats.reduce((s, p) => s + p.assists, 0),
+    damage: stats.reduce((s, p) => s + p.damage, 0),
+    rounds: totalRounds,
+    // hs and kast are per-match ratios → weighted average by rounds played
+    hs: totalRounds > 0
+      ? stats.reduce((s, p) => s + p.hs * p.rounds, 0) / totalRounds
+      : 0,
+    kast: totalRounds > 0
+      ? stats.reduce((s, p) => s + p.kast * p.rounds, 0) / totalRounds
+      : 0,
+    opening_kills: stats.reduce((s, p) => s + p.opening_kills, 0),
+    opening_attempts: stats.reduce((s, p) => s + p.opening_attempts, 0),
+  }
+}
+
+/**
+ * Fetch and aggregate player stats across ALL finished matchups in a division,
+ * excluding the target matchup (which is the one being analysed).
+ * Returns a map of paradise_user_id → aggregated BLPlayerStats.
+ *
+ * Parallel-fetches all matchup stats for speed (no rate limit on BL API).
+ */
+export async function getDivisionPlayerHistory(
+  divisionId: number,
+  excludeMatchupId: number,
+  token: string,
+): Promise<Map<number, BLPlayerStats>> {
+  const matchups = await getDivisionMatchups(divisionId, token)
+
+  const ids = matchups
+    .filter((m) => m.id !== excludeMatchupId && Boolean(m.finished_at))
+    .map((m) => m.id)
+
+  if (ids.length === 0) return new Map()
+
+  const results = await Promise.allSettled(
+    ids.map((id) => getMatchupStats(id, token)),
+  )
+
+  const perPlayer = new Map<number, BLPlayerStats[]>()
+  for (const r of results) {
+    if (r.status !== 'fulfilled') continue
+    const { home_players, away_players } = r.value
+    for (const p of [...home_players, ...away_players]) {
+      if (!perPlayer.has(p.paradise_user_id)) perPlayer.set(p.paradise_user_id, [])
+      perPlayer.get(p.paradise_user_id)!.push(p)
+    }
+  }
+
+  const aggregated = new Map<number, BLPlayerStats>()
+  for (const [id, stats] of perPlayer) {
+    aggregated.set(id, aggregateStats(stats))
+  }
+  return aggregated
 }
 
 /**
@@ -187,6 +341,29 @@ export async function getDivisionMatchups(
   type Raw = { data?: unknown[] } | unknown[]
   const data = await blGet<Raw>(
     `/matchup?division_id=${divisionId}&limit=100`,
+    token,
+  )
+  const arr = Array.isArray(data) ? data : ((data as { data?: unknown[] }).data ?? [])
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return arr as any[]
+}
+
+/**
+ * Fetch matchup listing for a team across competitions/seasons.
+ */
+export async function getTeamMatchups(
+  teamId: number,
+  token: string,
+): Promise<{
+  id: number
+  round_number?: number
+  start_time?: string
+  finished_at?: string
+  signups?: unknown[]
+}[]> {
+  type Raw = { data?: unknown[] } | unknown[]
+  const data = await blGet<Raw>(
+    `/matchup?team_id=${teamId}&limit=100`,
     token,
   )
   const arr = Array.isArray(data) ? data : ((data as { data?: unknown[] }).data ?? [])

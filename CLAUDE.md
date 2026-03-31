@@ -43,7 +43,7 @@ Auth: Authorization: Bearer {LEETIFY_TOKEN}
 
 | Endepunkt | Beskrivelse |
 |-----------|-------------|
-| `GET /api/profile/steam/{steam64_id}` | Full spillerprofil med ratings og stats |
+| `GET /v3/profile?steam64_id={steam64_id}` | Full spillerprofil med ratings og stats |
 
 **Rate limit:** ~5 req/min. Bruk `time.sleep(3)` mellom kall.
 

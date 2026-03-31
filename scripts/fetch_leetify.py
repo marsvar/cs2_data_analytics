@@ -25,7 +25,8 @@ LEETIFY_BASE = "https://api-public.cs-prod.leetify.com"
 
 
 def leetify_get_profile(steam64_id: str, token: str) -> dict:
-    url = f"{LEETIFY_BASE}/api/profile/steam/{steam64_id}"
+    # Leetify Public API v3 (2026): /v3/profile?steam64_id={id}
+    url = f"{LEETIFY_BASE}/v3/profile?steam64_id={steam64_id}"
     req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
     with urllib.request.urlopen(req, timeout=15) as resp:
         return json.loads(resp.read().decode())

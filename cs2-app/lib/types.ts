@@ -13,6 +13,7 @@ export type PlayerAnalysis = {
   paradise_user_id: number
   steam64?: string
   score: number         // composite 0–1
+  leetify_prior?: number // prior composite proxy 0–1 (if Leetify exists)
   ci: number            // 90% CI half-width
   rounds: number
   kd: number
@@ -39,7 +40,10 @@ export type AnalyzeResponse = {
   meta: {
     rounds_fetched: number
     leetify_count: number
+    leetify_attempts: number
     data_sources: string[]
+    match_start_time?: string | null
+    match_finished_time?: string | null
     fetched_at: string
     duration_ms: number
   }
@@ -48,6 +52,20 @@ export type AnalyzeResponse = {
 export type AnalyzeError = {
   error: string
   matchup_id?: number
+}
+
+export type DivisionMatchSummary = {
+  matchup_id: number
+  home_team: string
+  away_team: string
+  date: string | null
+  status: 'upcoming' | 'completed' | 'live' | 'unknown'
+}
+
+export type DivisionResponse = {
+  division_id: number
+  matches: DivisionMatchSummary[]
+  fetched_at: string
 }
 
 // BL API raw types

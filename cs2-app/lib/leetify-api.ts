@@ -4,12 +4,21 @@
  * Fetches player profiles from the Leetify public API.
  * Ported from scripts/fetch_leetify.py.
  *
+ * Endpoint (2026-03): GET /v3/profile?steam64_id={id}
  * Rate limit: ~5 req/min — enforce 3 s delay between batch requests.
  */
 
 import type { LeetifyData, LeetifyProfile } from './types'
 
 const LEETIFY_BASE = 'https://api-public.cs-prod.leetify.com'
+
+function normaliseRatio(v: number | null | undefined): number {
+  if (v == null || Number.isNaN(v)) return 0
+  // Leetify v3 returns OD success as percentages (e.g. 52.55).
+  // Normalize to 0–1 for the scoring model and UI.
+  const ratio = v > 1 ? v / 100 : v
+  return Math.max(0, Math.min(1, ratio))
+}
 
 // Full raw profile shape returned by Leetify
 type RawLeetifyProfile = {
@@ -47,24 +56,45 @@ type RawLeetifyProfile = {
 
 /**
  * Fetch a single Leetify profile by Steam64 ID.
- * Throws on HTTP error; returns null if the profile has an error field.
+ * Returns { data, notFound } — notFound=true on 404 (profile doesn't exist),
+ * data=null on any error/missing profile.
  */
 export async function getProfile(
   steam64: string,
   token: string,
-): Promise<RawLeetifyProfile | null> {
-  const res = await fetch(`${LEETIFY_BASE}/api/profile/steam/${steam64}`, {
+): Promise<{
+  data: RawLeetifyProfile | null
+  notFound: boolean
+  status: number
+  retryAfterSeconds?: number
+}> {
+  const query = new URLSearchParams({ steam64_id: steam64 }).toString()
+  const res = await fetch(`${LEETIFY_BASE}/v3/profile?${query}`, {
     headers: { Authorization: `Bearer ${token}` },
     signal: AbortSignal.timeout(15000),
     cache: 'no-store',
   })
+  if (res.status === 404) {
+    return { data: null, notFound: true, status: 404 }
+  }
   if (!res.ok) {
+    const retryAfter = Number(res.headers.get('retry-after'))
     console.warn(`Leetify: ${res.status} for steam ${steam64}`)
-    return null
+    return {
+      data: null,
+      notFound: false,
+      status: res.status,
+      retryAfterSeconds: Number.isFinite(retryAfter) && retryAfter > 0
+        ? retryAfter
+        : undefined,
+    }
   }
   const data = (await res.json()) as RawLeetifyProfile
-  if (data.error) return null
-  return data
+  return {
+    data: data.error ? null : data,
+    notFound: false,
+    status: 200,
+  }
 }
 
 /**
@@ -96,7 +126,7 @@ export function extractRelevant(raw: RawLeetifyProfile): LeetifyProfile {
  * Convert a raw Leetify profile into the LeetifyData summary used by
  * PlayerAnalysis. Mirrors the fields used in aggregation.ts.
  *
- * Leetify percentile ratings are 0–100; OD success rates are 0–1.
+ * Leetify percentile ratings are 0–100; OD rates are normalised to 0–1.
  */
 export function toLeetifyData(raw: RawLeetifyProfile): LeetifyData {
   const rating = raw.rating ?? {}
@@ -105,8 +135,8 @@ export function toLeetifyData(raw: RawLeetifyProfile): LeetifyData {
     aim: rating.aim ?? 0,
     positioning: rating.positioning ?? 0,
     utility: rating.utility ?? 0,
-    ct_od: stats.ct_opening_duel_success_percentage ?? 0,
-    t_od: stats.t_opening_duel_success_percentage ?? 0,
+    ct_od: normaliseRatio(stats.ct_opening_duel_success_percentage),
+    t_od: normaliseRatio(stats.t_opening_duel_success_percentage),
   }
 }
 
@@ -122,13 +152,31 @@ export async function fetchProfiles(
   onProgress?: (completed: number, total: number) => void,
 ): Promise<Map<string, LeetifyData>> {
   const results = new Map<string, LeetifyData>()
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
   for (let i = 0; i < steamIds.length; i++) {
     const steam64 = steamIds[i]
+    let notFound = false
+    let throttled = false
+    let attempts = 0
     try {
-      const raw = await getProfile(steam64, token)
-      if (raw) {
-        results.set(steam64, toLeetifyData(raw))
+      // Retry a few times on rate limit to avoid dropping late-batch players.
+      while (attempts < 3) {
+        const result = await getProfile(steam64, token)
+        notFound = result.notFound
+
+        if (result.data) {
+          results.set(steam64, toLeetifyData(result.data))
+          break
+        }
+        if (result.status === 429) {
+          throttled = true
+          attempts += 1
+          const waitSeconds = result.retryAfterSeconds ?? 10
+          await sleep(waitSeconds * 1000)
+          continue
+        }
+        break
       }
     } catch {
       // Skip failed profiles — caller gets a partial map
@@ -136,9 +184,10 @@ export async function fetchProfiles(
 
     onProgress?.(i + 1, steamIds.length)
 
-    // Respect Leetify rate limit (~5 req/min) — skip delay after last item
-    if (i < steamIds.length - 1) {
-      await new Promise((resolve) => setTimeout(resolve, 3000))
+    // Respect Leetify rate limit (~5 req/min) — skip delay after last item,
+    // and skip delay on 404 (profile doesn't exist — no quota consumed).
+    if (!notFound && i < steamIds.length - 1) {
+      await sleep(throttled ? 5000 : 3000)
     }
   }
 

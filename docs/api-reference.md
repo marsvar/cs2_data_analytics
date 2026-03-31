@@ -89,7 +89,7 @@ Rate:      ~5 req/min uten registrert app
 ### Endepunkt
 
 ```http
-GET /api/profile/steam/{steam64_id}
+GET /v3/profile?steam64_id={steam64_id}
 ```
 
 ### Spillerprofil — feltbeskrivelse

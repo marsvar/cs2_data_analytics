@@ -90,7 +90,7 @@ Nøkkeldata per spiller per matchup:
 Base URL:  https://api-public.cs-prod.leetify.com
 Auth:      Bearer <token>
 
-  GET /api/profile/steam/{steam64_id}    # Spillerprofil med ratings og stats
+  GET /v3/profile?steam64_id={steam64_id}    # Spillerprofil med ratings og stats
 ```
 
 Nøkkeldata:
