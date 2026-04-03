@@ -52,6 +52,29 @@ function formatResultScore(match: DivisionMatchSummary): string | null {
   return `${match.home_score}-${match.away_score}`
 }
 
+function getPreviousRoundMatches(matches: DivisionMatchSummary[]): {
+  roundNumber: number | null
+  matches: DivisionMatchSummary[]
+} {
+  const playedMatches = matches.filter((match) => match.phase === 'played')
+  const completedRounds = playedMatches
+    .map((match) => match.round_number)
+    .filter((roundNumber): roundNumber is number => roundNumber != null)
+
+  if (completedRounds.length > 0) {
+    const roundNumber = Math.max(...completedRounds)
+    return {
+      roundNumber,
+      matches: playedMatches.filter((match) => match.round_number === roundNumber),
+    }
+  }
+
+  return {
+    roundNumber: null,
+    matches: playedMatches.slice(0, 4),
+  }
+}
+
 function MatchTeamsInline({
   homeTeam,
   awayTeam,
@@ -134,9 +157,12 @@ function RecentMatchesPanel({
     if (selectedDivisionId != null) fetchMatches(selectedDivisionId)
   }, [selectedDivisionId, fetchMatches])
 
-  const recentMatches = matchesData?.matches?.slice(0, 12) ?? []
-  const notPlayedYet = recentMatches.filter((match) => match.phase === 'not_played_yet')
-  const played = recentMatches.filter((match) => match.phase === 'played')
+  const allMatches = matchesData?.matches ?? []
+  const notPlayedYet = allMatches
+    .filter((match) => match.phase === 'not_played_yet')
+    .slice(0, 12)
+  const previousRound = getPreviousRoundMatches(allMatches)
+  const previousRoundMatches = previousRound.matches
 
   return (
     <div className="rounded-xl border border-border/45 bg-surface/65 backdrop-blur-sm p-5 md:p-6">
@@ -173,13 +199,13 @@ function RecentMatchesPanel({
         </div>
       )}
 
-      {!loadingMatches && recentMatches.length === 0 && (
+      {!loadingMatches && allMatches.length === 0 && (
         <p className="font-mono text-[11px] text-muted">
           {selectedDivisionId ? 'Ingen kamper funnet for denne divisjonen.' : 'Velg en divisjon for å se kamper.'}
         </p>
       )}
 
-      {!loadingMatches && recentMatches.length > 0 && (
+      {!loadingMatches && allMatches.length > 0 && (
         <div className="space-y-4">
           <div>
             <p className="font-mono text-[10px] uppercase tracking-widest text-accent mb-2">Ikke spilt ennå</p>
@@ -215,12 +241,19 @@ function RecentMatchesPanel({
           </div>
 
           <div>
-            <p className="font-mono text-[10px] uppercase tracking-widest text-success mb-2">Ferdigspilt</p>
-            {played.length === 0 ? (
-              <p className="font-mono text-[11px] text-muted">Ingen ferdigspilte kamper i utvalget.</p>
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <p className="font-mono text-[10px] uppercase tracking-widest text-success">Forrige runde</p>
+              {previousRound.roundNumber != null && (
+                <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-muted/70">
+                  Runde {previousRound.roundNumber}
+                </p>
+              )}
+            </div>
+            {previousRoundMatches.length === 0 ? (
+              <p className="font-mono text-[11px] text-muted">Ingen kamper fra forrige runde i utvalget.</p>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {played.map((match) => {
+                {previousRoundMatches.map((match) => {
                   const score = formatResultScore(match)
                   return (
                     <button

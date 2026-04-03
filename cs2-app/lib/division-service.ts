@@ -16,6 +16,7 @@ export class DivisionServiceError extends Error {
 
 type DivisionMatchupRaw = {
   id?: number
+  round_number?: number | null
   start_time?: string | null
   finished_at?: string | null
   status?: string | null
@@ -142,6 +143,10 @@ export async function getDivisionOverview(divisionId: number): Promise<DivisionR
       const status = inferDivisionStatus(m, now)
       return {
         matchup_id: m.id as number,
+        round_number:
+          Number.isInteger(m.round_number) && (m.round_number ?? 0) > 0
+            ? (m.round_number as number)
+            : undefined,
         home_team: teamName(m, 0),
         away_team: teamName(m, 1),
         home_team_id: teamId(m, 0),
