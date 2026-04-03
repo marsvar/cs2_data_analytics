@@ -11,13 +11,15 @@ import {
 import type { AnalyzeResponse, PlayerAnalysis, Team } from '@/lib/types'
 import { deriveTeamStats } from '@/lib/derive-team-stats'
 import { formatReport } from '@/lib/format-report'
+import { deriveLandingAnalytics } from '@/lib/landing-analytics'
 import { localMapImageForName } from '@/lib/map-images'
 import { detectRole, ROLE_META } from '@/lib/detect-role'
+import { AnalysisSection } from '@/components/analysis-section'
+import { HeadToHeadBar } from '@/components/head-to-head-bar'
 import { PlayerAvatar, TeamLogo } from './identity-badge'
-import { MapPoolDebugPanel, MapPoolInsights } from './map-pool-insights'
+import { MapPoolDebugPanel } from './map-pool-insights'
 import { PlayerDetail } from './player-detail'
-import { PredictionCard } from './prediction-card'
-import { TeamComparisonBars } from './team-comparison-bars'
+import { UpcomingMatchModules } from './upcoming-match-modules'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import {
@@ -242,6 +244,15 @@ function toScaledDelta(value: number): string {
   return `${scaled >= 0 ? '+' : ''}${scaled.toFixed(2)}`
 }
 
+function relativeShareBand(homeValue: number, awayValue: number): { home: number; away: number } {
+  const safeHome = Math.max(homeValue, 0)
+  const safeAway = Math.max(awayValue, 0)
+  const total = safeHome + safeAway
+  if (total <= 0) return { home: 50, away: 50 }
+  const home = (safeHome / total) * 100
+  return { home, away: 100 - home }
+}
+
 function computePlayerEarlyInsights(players: PlayerAnalysis[]): PlayerEarlyInsight[] {
   const insights: PlayerEarlyInsight[] = []
   for (const player of players) {
@@ -323,6 +334,10 @@ function EarlyStrengthCard({
   players: PlayerEarlyInsight[]
 }) {
   const { strengths, weaknesses } = useMemo(() => strongestAndWeakest(players), [players])
+  const openingBand = (od: number) => {
+    const centered = Math.max(-1, Math.min(1, (od - 0.5) / 0.15))
+    return { positive: centered >= 0, width: Math.abs(centered) * 50 }
+  }
 
   return (
     <div className="rounded border border-border/35 bg-surface2/20 p-3">
@@ -335,11 +350,17 @@ function EarlyStrengthCard({
             <div className="space-y-1.5">
               {strengths.map((player) => {
                 const od = player.blended_od
+                const band = openingBand(od)
                 return (
                   <div key={`strength-${player.paradise_user_id}`} className="flex items-center gap-2">
                     <span className="font-mono text-[11px] text-text truncate flex-1">{player.name}</span>
-                    <div className="w-16 h-1.5 bg-surface rounded-full overflow-hidden shrink-0">
-                      <div className="h-full rounded-full bg-success/70" style={{ width: `${od * 100}%` }} />
+                    <div className="relative h-2 w-16 overflow-hidden rounded-full bg-surface shrink-0">
+                      <div className="absolute inset-y-0 left-1/2 w-px bg-border/80" />
+                      {band.positive ? (
+                        <div className="absolute inset-y-0 left-1/2 rounded-r-full bg-success/70" style={{ width: `${band.width}%` }} />
+                      ) : (
+                        <div className="absolute inset-y-0 right-1/2 rounded-l-full bg-danger/70" style={{ width: `${band.width}%` }} />
+                      )}
                     </div>
                     <span className="font-mono text-[10px] tabular-nums text-success w-9 text-right shrink-0">{toPercent(od)}</span>
                   </div>
@@ -357,11 +378,17 @@ function EarlyStrengthCard({
             <div className="space-y-1.5">
               {weaknesses.map((player) => {
                 const od = player.blended_od
+                const band = openingBand(od)
                 return (
                   <div key={`weakness-${player.paradise_user_id}`} className="flex items-center gap-2">
                     <span className="font-mono text-[11px] text-text truncate flex-1">{player.name}</span>
-                    <div className="w-16 h-1.5 bg-surface rounded-full overflow-hidden shrink-0">
-                      <div className="h-full rounded-full bg-danger/70" style={{ width: `${od * 100}%` }} />
+                    <div className="relative h-2 w-16 overflow-hidden rounded-full bg-surface shrink-0">
+                      <div className="absolute inset-y-0 left-1/2 w-px bg-border/80" />
+                      {band.positive ? (
+                        <div className="absolute inset-y-0 left-1/2 rounded-r-full bg-success/70" style={{ width: `${band.width}%` }} />
+                      ) : (
+                        <div className="absolute inset-y-0 right-1/2 rounded-l-full bg-danger/70" style={{ width: `${band.width}%` }} />
+                      )}
                     </div>
                     <span className="font-mono text-[10px] tabular-nums text-danger w-9 text-right shrink-0">{toPercent(od)}</span>
                   </div>
@@ -386,10 +413,7 @@ function FormGraph({
   accentClass: string
   data: PlayerFormInsight[]
 }) {
-  const maxAbs = useMemo(() => {
-    const base = data.reduce((acc, player) => Math.max(acc, Math.abs(player.delta)), 0)
-    return Math.max(base, 0.05)
-  }, [data])
+  const maxAbs = 0.12
 
   const teamAvg = useMemo(() => {
     if (data.length === 0) return 0
@@ -466,17 +490,11 @@ function EarlyRoundAndFormPanel({
       : 'BL'
 
   return (
-    <section className="mt-6 mb-6 bg-surface rounded-xl border border-border/45 p-4">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-3 mb-4">
-        <div>
-          <h3 className="font-display text-[10px] uppercase tracking-widest text-accent mb-1">
-            Åpningsdueller &amp; Form
-          </h3>
-          <p className="font-mono text-[9px] text-muted/60 leading-relaxed max-w-sm">
-            Åpningsduel-win% avgjør ~70% av alle runder. Formgrafen viser avvik fra Leetify karrieresnitt — positiv = bedre form enn normalt.
-          </p>
-        </div>
+    <AnalysisSection
+      title="Åpningsdueller & Form"
+      description="Denne seksjonen går ned på spillernivå. Den viser hvem som oftest vinner første kontakt, og hvem som spiller over eller under sin egen baseline akkurat nå."
+      className="mt-6 mb-6 border-border/45 bg-surface p-4"
+      headerRight={(
         <div className="flex items-center gap-2 shrink-0">
           {usingLiveLineup && (
             <span className="font-mono text-[9px] uppercase tracking-widest rounded border border-accent/40 bg-accent/10 text-accent px-2 py-1">
@@ -487,94 +505,58 @@ function EarlyRoundAndFormPanel({
             {sourceLabel}
           </span>
         </div>
-      </div>
+      )}
+    >
 
-      {/* Team OD comparison bar */}
       <div className="rounded-lg border border-border/30 bg-surface2/15 p-3 mb-4">
-        <p className="font-mono text-[9px] uppercase tracking-widest text-muted/50 mb-2">
-          Lagveid åpningsduel-rate
-        </p>
-        <div className="relative h-2.5 rounded-full bg-surface overflow-hidden mb-2">
-          <div
-            className="absolute inset-y-0 left-0 rounded-l-full bg-accent transition-all duration-700"
-            style={{ width: `${Math.max(0, Math.min(100, homeTeamOd * 100))}%` }}
-          />
-          <div className="absolute inset-y-0 left-1/2 w-px bg-border/60" />
-        </div>
-        <div className="flex items-center justify-between font-mono text-[11px]">
-          <span className="text-accent tabular-nums">{home.name || 'Hjem'}: {toPercent(homeTeamOd)}</span>
-          <span className={`text-[9px] ${Math.abs(edgeDelta) < 0.03 ? 'text-muted' : edgeDelta > 0 ? 'text-accent' : 'text-accent2'}`}>
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <p className="font-mono text-[9px] uppercase tracking-widest text-muted/50">
+            Lagveid åpningsduell-rate
+          </p>
+          <span className={`font-mono text-[9px] ${
+            Math.abs(edgeDelta) < 0.03 ? 'text-muted' : edgeDelta > 0 ? 'text-accent' : 'text-accent2'
+          }`}>
             {Math.abs(edgeDelta * 100) < 3
               ? 'Likt fordelt'
-              : `${edgeDelta > 0 ? home.name || 'Hjem' : away.name || 'Borte'} +${Math.abs(edgeDelta * 100).toFixed(1)} pp`
-            }
+              : `${edgeDelta > 0 ? home.name || 'Hjem' : away.name || 'Borte'} +${Math.abs(edgeDelta * 100).toFixed(1)} pp`}
           </span>
-          <span className="text-accent2 tabular-nums">{toPercent(awayTeamOd)}: {away.name || 'Borte'}</span>
         </div>
+        <HeadToHeadBar
+          homeShare={homeTeamOd * 100}
+          awayShare={awayTeamOd * 100}
+          homeLabel={`${home.name || 'Hjem'} ${toPercent(homeTeamOd)}`}
+          awayLabel={`${toPercent(awayTeamOd)} ${away.name || 'Borte'}`}
+          centerLabel="weighted opening"
+        />
       </div>
 
-      {landing && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
-          <div className="rounded-lg border border-border/30 bg-surface2/15 p-3">
-            <p className="font-mono text-[9px] uppercase tracking-widest text-muted/50 mb-2">Trade-struktur</p>
-            <p className="font-mono text-[11px] text-text">
-              {landing.trade_structure_edge?.source === 'bl'
-                ? `${edgeDirection(landing.trade_structure_edge.trade_kill_delta, home.name || 'Hjem', away.name || 'Borte')} har best trade-kill-rate`
-                : 'Mangler robuste BL-trade-felt'}
-            </p>
-            <p className="font-mono text-[10px] text-muted mt-2">
-              Trade K/R: {landing.trade_structure_edge?.home_trade_kill_rate?.toFixed(2) ?? '0.00'} vs {landing.trade_structure_edge?.away_trade_kill_rate?.toFixed(2) ?? '0.00'}
-            </p>
-            {landing.trade_structure_edge?.trade_recovery_delta != null && (
-              <p className="font-mono text-[10px] text-muted mt-1">
-                Death-trade recovery: {signed(landing.trade_structure_edge.trade_recovery_delta * 100, ' pp')}
-              </p>
-            )}
-          </div>
-
-          <div className="rounded-lg border border-border/30 bg-surface2/15 p-3">
-            <p className="font-mono text-[9px] uppercase tracking-widest text-muted/50 mb-2">Survival-disciplin</p>
-            <p className="font-mono text-[11px] text-text">
-              {landing.survival_discipline_edge?.source === 'bl'
-                ? `${edgeDirection(landing.survival_discipline_edge.survival_delta, home.name || 'Hjem', away.name || 'Borte')} overlever bedre uten å lene seg kun på KAST`
-                : 'Viser KAST-only fallback når survival mangler'}
-            </p>
-            <p className="font-mono text-[10px] text-muted mt-2">
-              Survival: {toPercent(landing.survival_discipline_edge?.home_survival ?? 0)} vs {toPercent(landing.survival_discipline_edge?.away_survival ?? 0)}
-            </p>
-            <p className="font-mono text-[10px] text-muted mt-1">
-              KAST: {toPercent(landing.survival_discipline_edge?.home_kast ?? 0)} vs {toPercent(landing.survival_discipline_edge?.away_kast ?? 0)}
-            </p>
-          </div>
-
-          <div className="rounded-lg border border-border/30 bg-surface2/15 p-3">
-            <p className="font-mono text-[9px] uppercase tracking-widest text-muted/50 mb-2">Entry-press</p>
-            <p className="font-mono text-[11px] text-text">
-              {landing.entry_pressure_edge?.source !== 'insufficient'
-                ? `${edgeDirection(landing.entry_pressure_edge?.firstkill_delta ?? 0, home.name || 'Hjem', away.name || 'Borte')} skaper oftest første kontakt`
-                : 'Mangler firstkill-volum i BL-data'}
-            </p>
-            <p className="font-mono text-[10px] text-muted mt-2">
-              FK/R: {(landing.entry_pressure_edge?.home_firstkill_rate ?? 0).toFixed(2)} vs {(landing.entry_pressure_edge?.away_firstkill_rate ?? 0).toFixed(2)}
-            </p>
-            <p className="font-mono text-[10px] text-muted mt-1">
-              OD: {toPercent(landing.entry_pressure_edge?.home_od ?? homeTeamOd)} vs {toPercent(landing.entry_pressure_edge?.away_od ?? awayTeamOd)}
-            </p>
-          </div>
+      <div className="mb-4 grid gap-2 md:grid-cols-2">
+        <div className="rounded-lg border border-border/30 bg-surface2/15 p-3">
+          <p className="font-mono text-[9px] uppercase tracking-widest text-muted/50 mb-1.5">Hva du ser her</p>
+          <p className="font-mono text-[11px] text-text/90">
+            Opening-delen er spillerfokusert og viser hvem som setter første kontakt oftest. Den supplerer
+            <span className="text-text"> Pre-match Control</span>, som allerede dekker trade, survival og entry-press på lagnivå.
+          </p>
         </div>
-      )}
+        <div className="rounded-lg border border-border/30 bg-surface2/15 p-3">
+          <p className="font-mono text-[9px] uppercase tracking-widest text-muted/50 mb-1.5">Formlesning</p>
+          <p className="font-mono text-[11px] text-text/90">
+            Formgrafen viser avvik mot Leetify-baseline. Positiv verdi betyr at spilleren kommer inn i kampen over sitt normale nivå, negativ verdi betyr at profilen er kaldere enn vanlig.
+          </p>
+        </div>
+      </div>
 
       {/* Per-player opening duel breakdown */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-4">
         <div>
           <p className="font-mono text-[9px] uppercase tracking-widest text-muted/50 mb-2 px-0.5">
-            Åpningsdueller per spiller
+            {home.name || 'Hjem'} · Åpningsdueller per spiller
           </p>
           <EarlyStrengthCard title={home.name || 'Hjem'} accentClass="text-accent" players={homeEarly} />
         </div>
         <div>
           <p className="font-mono text-[9px] uppercase tracking-widest text-muted/50 mb-2 px-0.5">
-            Åpningsdueller per spiller
+            {away.name || 'Borte'} · Åpningsdueller per spiller
           </p>
           <EarlyStrengthCard title={away.name || 'Borte'} accentClass="text-accent2" players={awayEarly} />
         </div>
@@ -590,7 +572,7 @@ function EarlyRoundAndFormPanel({
           <FormGraph title={away.name || 'Borte'} accentClass="text-accent2" data={awayForm} />
         </div>
       </div>
-    </section>
+    </AnalysisSection>
   )
 }
 
@@ -1572,9 +1554,12 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
             </div>
 
             {/* ── 2. Økonomi ──────────────────────────────────────────────── */}
-            <div className="break-inside-avoid mb-3 rounded-xl border border-border/35 bg-surface2/20 p-3.5">
-              <div className="flex items-center justify-between gap-2 mb-2">
-                <p className="font-mono text-[10px] uppercase tracking-widest text-muted">Økonomi</p>
+            <AnalysisSection
+              title="Økonomi"
+              className="break-inside-avoid mb-3"
+              titleClassName="text-muted"
+              headerClassName="mb-2"
+              headerRight={(
                 <SectionWinner
                   values={[
                     post.economy_proxies.indicators.opening_control_pp,
@@ -1586,7 +1571,8 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                   homeLabel={hl}
                   awayLabel={al}
                 />
-              </div>
+              )}
+            >
               <p className="font-mono text-[11px] text-text mb-3">{post.economy_proxies.summary}</p>
 
               {/* Primary signals */}
@@ -1659,16 +1645,19 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
               )}
 
               <p className="font-mono text-[9px] text-muted/60 bg-surface/35 rounded px-2 py-1.5 inline-block">{post.economy_proxies.caveat}</p>
-            </div>
+            </AnalysisSection>
 
             {/* ── 3. Teamplay-kontroll ────────────────────────────────────── */}
             {post.teamplay_control && (() => {
               const tradeEdge = post.teamplay_control!.indicators.trade_kill_edge_per_100_rounds
               const tradePct = Math.max(0, Math.min(100, 50 + (tradeEdge / 12) * 50))
               return (
-                <div className="break-inside-avoid mb-3 rounded-xl border border-border/35 bg-surface2/20 p-3.5">
-                  <div className="flex items-center justify-between gap-2 mb-2">
-                    <p className="font-mono text-[10px] uppercase tracking-widest text-muted">Teamplay-kontroll</p>
+                <AnalysisSection
+                  title="Teamplay-kontroll"
+                  className="break-inside-avoid mb-3"
+                  titleClassName="text-muted"
+                  headerClassName="mb-2"
+                  headerRight={(
                     <SectionWinner
                       values={[
                         tradeEdge,
@@ -1678,7 +1667,8 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                       homeLabel={hl}
                       awayLabel={al}
                     />
-                  </div>
+                  )}
+                >
                   <p className="font-mono text-[11px] text-text mb-3">{post.teamplay_control!.summary}</p>
 
                   <div className="space-y-2.5 rounded-lg border border-border/25 bg-surface/40 p-2.5">
@@ -1716,15 +1706,18 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                     />
                   </div>
                   <p className="font-mono text-[9px] text-muted/60 mt-3 bg-surface/35 rounded px-2 py-1.5 inline-block">{post.teamplay_control!.caveat}</p>
-                </div>
+                </AnalysisSection>
               )
             })()}
 
             {/* ── 4. Round Stability ──────────────────────────────────────── */}
             {post.round_stability && (
-              <div className="break-inside-avoid mb-3 rounded-xl border border-border/35 bg-surface2/20 p-3.5">
-                <div className="flex items-center justify-between gap-2 mb-2">
-                  <p className="font-mono text-[10px] uppercase tracking-widest text-muted">Round stability</p>
+              <AnalysisSection
+                title="Round stability"
+                className="break-inside-avoid mb-3"
+                titleClassName="text-muted"
+                headerClassName="mb-2"
+                headerRight={(
                   <SectionWinner
                     values={[
                       post.round_stability.indicators.kast_edge_pp,
@@ -1734,7 +1727,8 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                     homeLabel={hl}
                     awayLabel={al}
                   />
-                </div>
+                )}
+              >
                 <p className="font-mono text-[11px] text-text mb-3">{post.round_stability.summary}</p>
 
                 {/* Radar chart when ≥2 axes */}
@@ -1804,26 +1798,28 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                   )}
                 </div>
                 <p className="font-mono text-[9px] text-muted/60 mt-3 bg-surface/35 rounded px-2 py-1.5 inline-block">{post.round_stability.caveat}</p>
-              </div>
+              </AnalysisSection>
             )}
 
             {/* ── 5. Late-round conversion ────────────────────────────────── */}
             {post.late_round_conversion && (
-              <div className="break-inside-avoid mb-3 rounded-xl border border-border/35 bg-surface2/20 p-3.5">
-                <div className="flex items-center justify-between gap-2 mb-2">
-                  <p className="font-mono text-[10px] uppercase tracking-widest text-muted">Late-round conversion</p>
-                  {lateRoundHasData && (
-                    <SectionWinner
-                      values={[
-                        post.late_round_conversion.indicators.clutch_edge_per_map,
-                        post.late_round_conversion.indicators.one_v_x_edge,
-                        post.late_round_conversion.indicators.explosive_round_edge,
-                      ]}
-                      homeLabel={hl}
-                      awayLabel={al}
-                    />
-                  )}
-                </div>
+              <AnalysisSection
+                title="Late-round conversion"
+                className="break-inside-avoid mb-3"
+                titleClassName="text-muted"
+                headerClassName="mb-2"
+                headerRight={lateRoundHasData ? (
+                  <SectionWinner
+                    values={[
+                      post.late_round_conversion.indicators.clutch_edge_per_map,
+                      post.late_round_conversion.indicators.one_v_x_edge,
+                      post.late_round_conversion.indicators.explosive_round_edge,
+                    ]}
+                    homeLabel={hl}
+                    awayLabel={al}
+                  />
+                ) : undefined}
+              >
                 <p className="font-mono text-[11px] text-text mb-3">{post.late_round_conversion.summary}</p>
 
                 {lateRoundHasData ? (
@@ -1876,19 +1872,21 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                   <DataQualityNotice message="BL-API mangler clutch/explosive-telemetri for denne kampen." />
                 )}
                 <p className="font-mono text-[9px] text-muted/60 mt-3 bg-surface/35 rounded px-2 py-1.5 inline-block">{post.late_round_conversion.caveat}</p>
-              </div>
+              </AnalysisSection>
             )}
 
             {/* ── 6. Spillerutvikling ─────────────────────────────────────── */}
-            <div className="break-inside-avoid mb-3 rounded-xl border border-border/35 bg-surface2/20 p-3.5">
-              <div className="flex items-center justify-between gap-2 mb-2">
-                <p className="font-mono text-[10px] uppercase tracking-widest text-muted">Spillerutvikling</p>
-                {isRelativeDev && (
-                  <Badge variant="outline" className="font-mono text-[8px] uppercase tracking-widest px-1.5 py-0.5 h-auto rounded border-warning/40 text-warning/80 bg-warning/5">
-                    In-match
-                  </Badge>
-                )}
-              </div>
+            <AnalysisSection
+              title="Spillerutvikling"
+              className="break-inside-avoid mb-3"
+              titleClassName="text-muted"
+              headerClassName="mb-2"
+              headerRight={isRelativeDev ? (
+                <Badge variant="outline" className="font-mono text-[8px] uppercase tracking-widest px-1.5 py-0.5 h-auto rounded border-warning/40 text-warning/80 bg-warning/5">
+                  In-match
+                </Badge>
+              ) : undefined}
+            >
               {isRelativeDev && (
                 <p className="font-mono text-[9px] text-muted/60 mb-2.5">Ingen historisk Leetify-baseline — viser relativ kampperformance.</p>
               )}
@@ -1959,11 +1957,15 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
               ) : (
                 <p className="font-mono text-[11px] text-muted">Ingen spillerfokus tilgjengelig.</p>
               )}
-            </div>
+            </AnalysisSection>
 
             {/* ── 7. Coach-anbefalinger ──────────────────────────────────── */}
-            <div className="break-inside-avoid mb-3 rounded-xl border border-border/35 bg-surface2/20 p-3.5">
-              <p className="font-mono text-[10px] uppercase tracking-widest text-muted mb-2">Coach-anbefalinger</p>
+            <AnalysisSection
+              title="Coach-anbefalinger"
+              className="break-inside-avoid mb-3"
+              titleClassName="text-muted"
+              headerClassName="mb-2"
+            >
               {post.coach_recommendations.length > 0 ? (
                 <ol className="space-y-1.5">
                   {post.coach_recommendations.map((recommendation, idx) => (
@@ -1978,7 +1980,7 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
               ) : (
                 <p className="font-mono text-[11px] text-muted">Ingen anbefalinger tilgjengelig.</p>
               )}
-            </div>
+            </AnalysisSection>
 
           </div>
         )
@@ -2168,10 +2170,34 @@ export function AnalysisDisplay({
     }
   }, [hasExactLineups, isUpcoming, result.teams, selectedAwayPlayers, selectedHomePlayers])
 
+  const defaultTeams = useMemo(() => {
+    if (!isUpcoming) return result.teams
+    return {
+      home: {
+        ...result.teams.home,
+        players: homePool.filter((player) => getDefaultIds(homePool).has(player.paradise_user_id)),
+      },
+      away: {
+        ...result.teams.away,
+        players: awayPool.filter((player) => getDefaultIds(awayPool).has(player.paradise_user_id)),
+      },
+    }
+  }, [awayPool, homePool, isUpcoming, result.teams])
+
   const liveMapPool = useMemo<LandingMapPool | undefined>(() => {
     if (!isUpcoming) return undefined
     return result.landing?.map_pool
   }, [isUpcoming, result.landing?.map_pool])
+
+  const displayLanding = useMemo(() => {
+    if (!isUpcoming) return result.landing
+    return deriveLandingAnalytics(displayTeams, { mapPool: liveMapPool })
+  }, [displayTeams, isUpcoming, liveMapPool, result.landing])
+
+  const defaultLanding = useMemo(() => {
+    if (!isUpcoming) return result.landing
+    return deriveLandingAnalytics(defaultTeams, { mapPool: liveMapPool })
+  }, [defaultTeams, isUpcoming, liveMapPool, result.landing])
 
   return (
     <div>
@@ -2200,37 +2226,45 @@ export function AnalysisDisplay({
 
       {isUpcoming ? (
         <>
-          <LineupPicker
-            homeTeamName={homeName}
-            awayTeamName={awayName}
-            homeTeamLogoUrl={result.teams.home.logo_url}
-            awayTeamLogoUrl={result.teams.away.logo_url}
-            homePool={homePool}
-            awayPool={awayPool}
-            selectedHomeIds={selectedHomeIds}
-            selectedAwayIds={selectedAwayIds}
-            lineupSize={lineupSize}
-            onToggleHome={(id) => toggleSelection(setSelectedHomeIds, id)}
-            onToggleAway={(id) => toggleSelection(setSelectedAwayIds, id)}
-          />
-
-          {!hasExactLineups && (
-            <div className="mb-6 rounded border border-warning/40 bg-warning/10 px-3 py-2 font-mono text-[11px] text-warning">
-              Velg nøyaktig {lineupSize} spillere på begge lag for live 5v5-simulering.
-            </div>
+          {displayLanding && defaultLanding && (
+            <UpcomingMatchModules
+              home={displayTeams.home}
+              away={displayTeams.away}
+              defaultHome={defaultTeams.home}
+              defaultAway={defaultTeams.away}
+              landing={displayLanding}
+              defaultLanding={defaultLanding}
+              usingLiveLineup={usingLiveLineup}
+            />
           )}
 
-          <PredictionCard home={displayTeams.home} away={displayTeams.away} />
-          <TeamComparisonBars home={displayTeams.home} away={displayTeams.away} />
-          <div className="mt-6">
-            <MapPoolInsights
-              mapPool={liveMapPool}
-              homeName={homeName}
-              awayName={awayName}
-              homePlayers={result.teams.home.players}
-              awayPlayers={result.teams.away.players}
-            />
-          </div>
+          <details className="mb-6 rounded-xl border border-border/45 bg-surface px-4 py-3">
+            <summary className="cursor-pointer select-none font-display text-[10px] uppercase tracking-[0.2em] text-accent">
+              Lineup simulator
+            </summary>
+            <div className="mt-4">
+              <LineupPicker
+                homeTeamName={homeName}
+                awayTeamName={awayName}
+                homeTeamLogoUrl={result.teams.home.logo_url}
+                awayTeamLogoUrl={result.teams.away.logo_url}
+                homePool={homePool}
+                awayPool={awayPool}
+                selectedHomeIds={selectedHomeIds}
+                selectedAwayIds={selectedAwayIds}
+                lineupSize={lineupSize}
+                onToggleHome={(id) => toggleSelection(setSelectedHomeIds, id)}
+                onToggleAway={(id) => toggleSelection(setSelectedAwayIds, id)}
+              />
+
+              {!hasExactLineups && (
+                <div className="mt-4 rounded border border-warning/40 bg-warning/10 px-3 py-2 font-mono text-[11px] text-warning">
+                  Velg nøyaktig {lineupSize} spillere på begge lag for live 5v5-simulering.
+                </div>
+              )}
+            </div>
+          </details>
+
           <MapPoolDebugPanel
             className="mt-3"
             matchupId={result.matchup_id}

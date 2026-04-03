@@ -155,6 +155,96 @@ export type LandingAnalytics = {
       avoid_for_away?: string
     }
   }
+  matchup_axes?: Array<{
+    key: 'opening_duel' | 'trade_structure' | 'survival_discipline' | 'entry_pressure' | 'map_leverage'
+    label: string
+    home_value: number
+    away_value: number
+    home_display: string
+    away_display: string
+    confidence: 'low' | 'medium' | 'high'
+    source: 'bl' | 'leetify' | 'combined' | 'derived' | 'insufficient'
+    note?: string
+  }>
+  map_battlefield?: {
+    maps: Array<{
+      map: string
+      home_win_rate?: number
+      away_win_rate?: number
+      home_sample_size: number
+      away_sample_size: number
+      favored: 'home' | 'away' | 'even'
+      confidence: 'low' | 'medium' | 'high'
+      home_display: string
+      away_display: string
+    }>
+    strongest_for_home: string[]
+    weakest_for_home: string[]
+    strongest_for_away: string[]
+    weakest_for_away: string[]
+    veto_flow: Array<{
+      step: 'ban' | 'pick' | 'decider'
+      team: 'home' | 'away' | 'neutral'
+      label: string
+      map: string
+    }>
+  }
+  watchlist?: {
+    home: {
+      initiators: Array<{
+        paradise_user_id: number
+        name: string
+        avatar_url?: string
+        reason: string
+        display_value: string
+      }>
+      form_players: Array<{
+        paradise_user_id: number
+        name: string
+        avatar_url?: string
+        reason: string
+        display_value: string
+      }>
+      risk_players: Array<{
+        paradise_user_id: number
+        name: string
+        avatar_url?: string
+        reason: string
+        display_value: string
+      }>
+    }
+    away: {
+      initiators: Array<{
+        paradise_user_id: number
+        name: string
+        avatar_url?: string
+        reason: string
+        display_value: string
+      }>
+      form_players: Array<{
+        paradise_user_id: number
+        name: string
+        avatar_url?: string
+        reason: string
+        display_value: string
+      }>
+      risk_players: Array<{
+        paradise_user_id: number
+        name: string
+        avatar_url?: string
+        reason: string
+        display_value: string
+      }>
+    }
+  }
+  lineup_delta?: {
+    home_win_pct_delta: number
+    away_win_pct_delta: number
+    opening_edge_delta: number
+    map_leverage_delta: number
+    changed: boolean
+  }
+  game_plan?: string[]
 }
 
 export type MapInsight = {
