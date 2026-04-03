@@ -21,7 +21,10 @@ function playerLine(player: PlayerAnalysis): string {
   const kd = player.kd.toFixed(2)
   const dpr = player.dpr.toFixed(0)
   const kast = `${Math.round(player.kast * 100)}%`
-  return `  ${name} ${score}  (K/D ${kd}, DPR ${dpr}, KAST ${kast})`
+  const survival = player.bl_extended?.survival_ratio != null
+    ? `, SURV ${Math.round(player.bl_extended.survival_ratio * 100)}%`
+    : ''
+  return `  ${name} ${score}  (K/D ${kd}, DPR ${dpr}, KAST ${kast}${survival})`
 }
 
 function teamSection(team: Team): string {
@@ -40,6 +43,101 @@ function teamSection(team: Team): string {
 }
 
 export function formatReport(result: AnalyzeResponse): string {
+  if (result.meta.match_status === 'played') {
+    const winnerLabel =
+      result.result_summary?.winner === 'home'
+        ? result.teams.home.name || 'Hjem'
+        : result.result_summary?.winner === 'away'
+          ? result.teams.away.name || 'Borte'
+          : result.result_summary?.winner === 'draw'
+            ? 'Uavgjort'
+            : 'Ukjent'
+
+    const scoreLabel = (
+      result.result_summary?.home_score != null &&
+      result.result_summary?.away_score != null
+    )
+      ? `${result.result_summary.home_score}-${result.result_summary.away_score}`
+      : 'Ukjent score'
+
+    const mapLines = (() => {
+      const maps = result.maps_played
+      if (!maps) return ['Kart: Ikke tilgjengelig']
+      if (maps.maps.length === 0) {
+        return [
+          `Kart: ${maps.total_maps > 0 ? `${maps.total_maps} (uten detaljer)` : 'Ikke tilgjengelig'}`,
+          ...(maps.note ? [`Notat: ${maps.note}`] : []),
+        ]
+      }
+      return [
+        `Kart (${maps.total_maps}):`,
+        ...maps.maps.map((map, index) => {
+          const mapName = map.name ?? `Map ${index + 1}`
+          const mapScore = map.home_score != null && map.away_score != null
+            ? ` ${map.home_score}-${map.away_score}`
+            : ''
+          const source = map.source === 'derived' ? ' (estimert)' : ''
+          return `  - ${mapName}${mapScore}${source}`
+        }),
+        ...(maps.note ? [`Notat: ${maps.note}`] : []),
+      ]
+    })()
+
+    const tactical = result.post_analysis?.tactical_control
+    const economy = result.post_analysis?.economy_proxies
+    const teamplay = result.post_analysis?.teamplay_control
+    const stability = result.post_analysis?.round_stability
+    const lateRound = result.post_analysis?.late_round_conversion
+    const dev = result.post_analysis?.player_development
+    const coach = result.post_analysis?.coach_recommendations ?? []
+
+    const lines = [
+      'CS2 ETTERANALYSE',
+      `${result.teams.home.name || 'Ukjent lag'} vs ${result.teams.away.name || 'Ukjent lag'} — ${formatDate(result.meta)}`,
+      '',
+      `Resultat: ${scoreLabel} (${winnerLabel})`,
+      ...mapLines,
+      '',
+      tactical
+        ? `Taktisk kontroll: ${tactical.summary} (OD-edge ${tactical.opening_duel_edge_pp.toFixed(1)}pp, KAST-edge ${tactical.stability_edge_kast_pp.toFixed(1)}pp, DPR-edge ${tactical.pressure_edge_dpr.toFixed(1)})`
+        : 'Taktisk kontroll: Ikke tilgjengelig',
+      economy
+        ? `Økonomi-proxy: ${economy.summary} (OD ${economy.indicators.opening_control_pp.toFixed(1)}pp, KAST ${economy.indicators.survival_edge_kast_pp.toFixed(1)}pp, DPR ${economy.indicators.damage_pressure_edge_dpr.toFixed(1)}, trade ${economy.indicators.trade_structure_pp?.toFixed(1) ?? 'n/a'})`
+        : 'Økonomi-proxy: Ikke tilgjengelig',
+      teamplay
+        ? `Teamplay-kontroll: ${teamplay.summary} (trade ${teamplay.indicators.trade_kill_edge_per_100_rounds.toFixed(1)}/100r, assist ${teamplay.indicators.assist_edge_per_round.toFixed(2)}/r${teamplay.indicators.trade_recovery_edge_pp != null ? `, recovery ${teamplay.indicators.trade_recovery_edge_pp.toFixed(1)}pp` : ''})`
+        : 'Teamplay-kontroll: Ikke tilgjengelig',
+      stability
+        ? `Round stability: ${stability.summary} (${stability.indicators.survival_edge_pp != null ? `survival ${stability.indicators.survival_edge_pp.toFixed(1)}pp, ` : ''}KAST ${stability.indicators.kast_edge_pp.toFixed(1)}pp${stability.indicators.survival_minus_kast_edge_pp != null ? `, survival-KAST ${stability.indicators.survival_minus_kast_edge_pp.toFixed(1)}pp` : ''})`
+        : 'Round stability: Ikke tilgjengelig',
+      lateRound
+        ? `Late-round conversion: ${lateRound.summary} (${lateRound.indicators.clutch_edge_per_map != null ? `clutch ${lateRound.indicators.clutch_edge_per_map.toFixed(2)}/map, ` : ''}${lateRound.indicators.one_v_x_edge != null ? `1vX ${lateRound.indicators.one_v_x_edge.toFixed(2)}/map, ` : ''}${lateRound.indicators.explosive_round_edge != null ? `explosive ${lateRound.indicators.explosive_round_edge.toFixed(2)}/map` : 'høy varians'})`
+        : 'Late-round conversion: Ikke tilgjengelig',
+      '',
+      teamSection(result.teams.home),
+      '',
+      teamSection(result.teams.away),
+      '',
+      ...(dev && dev.focus_players.length > 0
+        ? [
+          'Utviklingspunkter:',
+          ...dev.focus_players.map((p) =>
+            `  - ${p.player_name} (${p.team === 'home' ? (result.teams.home.name || 'Hjem') : (result.teams.away.name || 'Borte')}): ${p.note} Tiltak: ${p.action}`,
+          ),
+          '',
+        ]
+        : []),
+      ...(coach.length > 0
+        ? [
+          'Coach-anbefalinger:',
+          ...coach.map((c) => `  - ${c}`),
+        ]
+        : []),
+    ]
+
+    return lines.join('\n')
+  }
+
   const homeStats = deriveTeamStats(result.teams.home.players)
   const awayStats = deriveTeamStats(result.teams.away.players)
   const homeWinProbability = roundedProbability(
@@ -68,7 +166,7 @@ export function formatReport(result: AnalyzeResponse): string {
     : 'normal konfidans'
 
   const lines = [
-    `CS2 ANALYSE — Matchup #${result.matchup_id}`,
+    'CS2 ANALYSE',
     `${result.teams.home.name || 'Ukjent lag'} vs ${result.teams.away.name || 'Ukjent lag'} — ${formatDate(result.meta)}`,
     '',
     teamSection(result.teams.home),

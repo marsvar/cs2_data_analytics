@@ -8,9 +8,24 @@
  * Rate limit: ~5 req/min — enforce 3 s delay between batch requests.
  */
 
-import type { LeetifyData, LeetifyProfile } from './types'
+import type {
+  LeetifyData,
+  LeetifyProfile,
+  LeetifyProfileWithRecent,
+  LeetifyRecentMatch,
+} from './types'
 
 const LEETIFY_BASE = 'https://api-public.cs-prod.leetify.com'
+const PROFILE_CACHE_TTL_MS = 6 * 60 * 60 * 1000
+const PROFILE_NOT_FOUND_TTL_MS = 60 * 60 * 1000
+
+type CachedProfileEntry = {
+  value: LeetifyProfileWithRecent | null
+  notFound: boolean
+  expiresAt: number
+}
+
+const profileCache = new Map<string, CachedProfileEntry>()
 
 function normaliseRatio(v: number | null | undefined): number {
   if (v == null || Number.isNaN(v)) return 0
@@ -50,8 +65,15 @@ type RawLeetifyProfile = {
   ranks?: {
     leetify?: number | null
     premier?: number | null
+    faceit?: number | null
     faceit_elo?: number | null
   }
+  recent_matches?: Array<{
+    finished_at?: string | null
+    outcome?: string | null
+    map_name?: string | null
+    leetify_rating?: number | null
+  }>
 }
 
 /**
@@ -131,31 +153,69 @@ export function extractRelevant(raw: RawLeetifyProfile): LeetifyProfile {
 export function toLeetifyData(raw: RawLeetifyProfile): LeetifyData {
   const rating = raw.rating ?? {}
   const stats = raw.stats ?? {}
+  const ranks = raw.ranks ?? {}
   return {
     aim: rating.aim ?? 0,
     positioning: rating.positioning ?? 0,
     utility: rating.utility ?? 0,
+    clutch: rating.clutch ?? 0,
+    opening: rating.opening ?? 0,
     ct_od: normaliseRatio(stats.ct_opening_duel_success_percentage),
     t_od: normaliseRatio(stats.t_opening_duel_success_percentage),
+    reaction_time_ms: stats.reaction_time_ms ?? 0,
+    premier: ranks.premier ?? undefined,
+    faceit_level: ranks.faceit ?? undefined,
+    faceit_elo: ranks.faceit_elo ?? undefined,
   }
+}
+
+function parseRecentMatches(raw: RawLeetifyProfile): LeetifyRecentMatch[] {
+  const recentMatches = raw.recent_matches ?? []
+  const out: LeetifyRecentMatch[] = []
+
+  for (const match of recentMatches) {
+    const finishedAt = match.finished_at ?? ''
+    const mapName = (match.map_name ?? '').trim()
+    if (!finishedAt || !mapName) continue
+
+    const outcomeRaw = (match.outcome ?? '').toLowerCase()
+    if (outcomeRaw !== 'win' && outcomeRaw !== 'loss' && outcomeRaw !== 'tie') continue
+
+    out.push({
+      finished_at: finishedAt,
+      map_name: mapName.toLowerCase(),
+      outcome: outcomeRaw,
+      leetify_rating: match.leetify_rating ?? 0,
+    })
+  }
+
+  return out
 }
 
 /**
  * Batch-fetch Leetify profiles with a 3 s rate-limit delay between requests.
  * Calls onProgress(completed, total) after each fetch if provided.
  *
- * Returns a map of steam64 → LeetifyData (failed/null profiles are omitted).
+ * Returns a map of steam64 → LeetifyProfileWithRecent (failed/null profiles are omitted).
  */
 export async function fetchProfiles(
   steamIds: string[],
   token: string,
   onProgress?: (completed: number, total: number) => void,
-): Promise<Map<string, LeetifyData>> {
-  const results = new Map<string, LeetifyData>()
+): Promise<Map<string, LeetifyProfileWithRecent>> {
+  const results = new Map<string, LeetifyProfileWithRecent>()
   const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
   for (let i = 0; i < steamIds.length; i++) {
     const steam64 = steamIds[i]
+    const now = Date.now()
+    const cached = profileCache.get(steam64)
+    if (cached && cached.expiresAt > now) {
+      if (cached.value) results.set(steam64, cached.value)
+      onProgress?.(i + 1, steamIds.length)
+      continue
+    }
+
     let notFound = false
     let throttled = false
     let attempts = 0
@@ -166,8 +226,24 @@ export async function fetchProfiles(
         notFound = result.notFound
 
         if (result.data) {
-          results.set(steam64, toLeetifyData(result.data))
+          const parsed = {
+            summary: toLeetifyData(result.data),
+            recent_matches: parseRecentMatches(result.data),
+          } satisfies LeetifyProfileWithRecent
+          results.set(steam64, parsed)
+          profileCache.set(steam64, {
+            value: parsed,
+            notFound: false,
+            expiresAt: now + PROFILE_CACHE_TTL_MS,
+          })
           break
+        }
+        if (result.notFound) {
+          profileCache.set(steam64, {
+            value: null,
+            notFound: true,
+            expiresAt: now + PROFILE_NOT_FOUND_TTL_MS,
+          })
         }
         if (result.status === 429) {
           throttled = true
@@ -194,5 +270,5 @@ export async function fetchProfiles(
   return results
 }
 
-// Re-export LeetifyData so consumers can import from one place
-export type { LeetifyData }
+// Re-export Leetify profile types so consumers can import from one place
+export type { LeetifyData, LeetifyProfileWithRecent, LeetifyRecentMatch }

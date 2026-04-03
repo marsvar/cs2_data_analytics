@@ -47,43 +47,23 @@ Auth: Authorization: Bearer {LEETIFY_TOKEN}
 
 **Rate limit:** ~5 req/min. Bruk `time.sleep(3)` mellom kall.
 
-## Kjent kontekst — Vår 2026
+## Sesongkontekst
 
-```python
-COMPETITION_ID = 1220          # "Bedriftsligaen i CS2 — Vår 2026"
-ASYNC_DIVISION_ID = 1138       # "2. divisjon avd. A" (BL-sesongen)
-ASYNC_QUAL_DIVISION_ID = 1031  # "2. Divisjon" (kvalifisering)
-ASYNC_TEAM_ID = 21374
-NAS_TEAM_ID = 23104
-NAS_QUAL_DIVISION_ID = 1040
+Hent gjeldende sesong-IDs fra BL APIet og konfigurer i `.env.local` eller som miljøvariabler:
+
+```bash
+COMPETITION_ID=...        # Sesong-ID fra /competition
+DIVISION_ID=...           # Divisjons-ID (BL-sesongen)
+QUAL_DIVISION_ID=...      # Divisjons-ID (kvalifisering, valgfritt)
 ```
 
-### aSync-spillere (paradise_user_id → Steam64)
-```python
-ASYNC_PLAYERS = {
-    18841: {"name": "t0bben"},
-    14695: {"name": "Ev1"},
-    1888:  {"name": "m4rc",       "steam": "76561198258030105"},
-    5439:  {"name": "FlyySoHigh", "steam": "76561198012553562"},
-    15014: {"name": "Mindseth",   "steam": "76561197985807777"},
-    9924:  {"name": "m0rr0w",     "steam": "76561198005571808"},
-    11904: {"name": "MikaeliX"},
-    # Laserturken: ingen BL-data — kun Leetify
-}
-LASERTURKEN_STEAM = "76561198098169439"
-```
+### Spillere (paradise_user_id → Steam64)
 
-### NAS-spillere
+Bygg opp spillerlisten dynamisk ved å hente lag fra `/competition/{id}/signups` og brukerprofiler fra `/user/{id}`. Spillere uten BL-konto kan knyttes til Leetify via Steam64-ID direkte.
+
 ```python
-NAS_PLAYERS = {
-    16542: {"name": "Hcon",             "steam": "76561198167341329"},
-    16879: {"name": "taghg",            "steam": "76561198993717949"},
-    15446: {"name": "vegg",             "steam": "76561197965657989"},
-    18793: {"name": "Walbern",          "steam": "76561198050639756"},
-    18797: {"name": "MuffinToks",       "steam": "76561199495515753"},
-    15450: {"name": "NUMERO ZINCO",     "steam": "76561197965471361"},
-    18786: {"name": "Flipz",            "steam": "76561199004942491"},
-    18967: {"name": "Satoo",            "steam": "76561198379230401"},
+PLAYERS = {
+    # paradise_user_id: {"name": "...", "steam": "steam64_id"}
 }
 ```
 

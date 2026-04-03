@@ -149,6 +149,35 @@ Estimert fra sportsanalogi (baseball/basketball) og CS-spesifikke egenskaper:
 
 *Med 3 BL-kamper ≈ 32–80 runder per spiller er **ingen** metrikker fullt stabilisert. Bayesiansk kombineringsstrategi er metodologisk nødvendig, ikke valgfri.*
 
+## BL Extended Stats (fra 2026-04-03)
+
+Kjernescore beholdes uendret. Nye BL-felt brukes som separate analysemotorer, ikke som del av en ny samlescore i v1.
+
+### Hvorfor vi ikke blander alt inn i scoren
+
+- `trade_kills` og `survival_ratio` er faglig sterke og relativt nyttige signaler, men representerer andre dimensjoner enn ren output-score.
+- `clutches_won`, `1vX` og explosive rounds er høyimpact, men lavfrekvente og volatile.
+- `rating` er for black-box til å brukes som modellinput når vi allerede har forklarbare grunnmetrikker.
+
+### Hvordan de nye feltene brukes
+
+**Pre-analyse (kommende kamper)**
+- `survival_ratio` brukes sammen med `KAST` for å lese stabilitet og disiplin.
+- `trade_kills` og `traded_deaths` brukes til å estimere lagstruktur og refrag-kvalitet.
+- `firstkills` brukes sammen med OD% for å skille entry-volum fra entry-effektivitet.
+- clutch-/1vX-/explosive-felter brukes bare som høyvarians notater, ikke som hovedprediktorer.
+
+**Post-analyse (ferdigspilte kamper)**
+- `teamplay_control`: trades, death-trade recovery og assist-støtte.
+- `round_stability`: survival vs KAST.
+- `late_round_conversion`: clutch og explosive rounds.
+
+### Faglig tommelfingerregel
+
+- Når et felt beskriver **struktur eller disiplin**, kan det brukes i både pre- og post-analyse.
+- Når et felt beskriver **high-variance heroics**, skal det primært brukes i post-analyse.
+- Når et felt er **black-box eller derivat**, skal det ikke drive modellen alene.
+
 ## James-Stein shrinkage (fremtidig forbedring)
 
 For players med lite data bør scores "krympes" mot lagets gjennomsnitt:

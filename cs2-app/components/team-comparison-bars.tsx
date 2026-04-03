@@ -3,6 +3,7 @@
 import { useMemo } from 'react'
 import type { Team } from '@/lib/types'
 import { deriveTeamStats } from '@/lib/derive-team-stats'
+import { TeamLogo } from './identity-badge'
 
 type StatDef = {
   key: string
@@ -129,19 +130,40 @@ export function TeamComparisonBars({ home, away }: { home: Team; away: Team }) {
     score: [hs.avg_score,    as_.avg_score],
   }
 
+  const showSideSplit = hs.avg_ct_od != null && as_.avg_ct_od != null
+    && hs.avg_t_od != null && as_.avg_t_od != null
+
+  const CT_STAT: StatDef = {
+    key: 'ct_od',
+    label: 'CT OD%',
+    normalize: (v) => v,
+    format: (v) => `${Math.round(v * 100)}%`,
+  }
+  const T_STAT: StatDef = {
+    key: 't_od',
+    label: 'T OD%',
+    normalize: (v) => v,
+    format: (v) => `${Math.round(v * 100)}%`,
+  }
+
   return (
     <div className="bg-surface border border-border/50 rounded-lg p-5 mb-6">
-      <h2 className="font-display text-[11px] tracking-widest uppercase text-muted mb-4">
-        Lagsammenligning
-      </h2>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="font-display text-[11px] tracking-widest uppercase text-muted">
+          Lagsammenligning
+        </h2>
+        <span className="font-mono text-[8px] text-muted/50 uppercase tracking-widest">BL-liga</span>
+      </div>
 
       {/* Team name headers */}
       <div className="grid grid-cols-[1fr_52px_1fr] mb-3">
-        <span className="font-mono text-xs text-accent text-right truncate pr-2">
+        <span className="inline-flex items-center justify-end gap-1.5 font-mono text-xs text-accent text-right truncate pr-2">
+          <TeamLogo name={home.name || 'Hjemmelag'} logoUrl={home.logo_url} tone="home" size="sm" />
           {home.name || 'Hjemmelag'}
         </span>
         <span />
-        <span className="font-mono text-xs text-accent2 truncate pl-2">
+        <span className="inline-flex items-center gap-1.5 font-mono text-xs text-accent2 truncate pl-2">
+          <TeamLogo name={away.name || 'Bortelag'} logoUrl={away.logo_url} tone="away" size="sm" />
           {away.name || 'Bortelag'}
         </span>
       </div>
@@ -159,6 +181,20 @@ export function TeamComparisonBars({ home, away }: { home: Team; away: Team }) {
           />
         )}
       </div>
+
+      {showSideSplit && (
+        <>
+          <div className="flex items-center gap-2 mt-4 mb-2">
+            <div className="h-px flex-1 bg-border/30" />
+            <span className="font-mono text-[8px] uppercase tracking-widest text-muted/60">Side-split (Leetify matchmaking)</span>
+            <div className="h-px flex-1 bg-border/30" />
+          </div>
+          <div className="space-y-3">
+            <StatRow def={CT_STAT} homeVal={hs.avg_ct_od!} awayVal={as_.avg_ct_od!} />
+            <StatRow def={T_STAT} homeVal={hs.avg_t_od!} awayVal={as_.avg_t_od!} />
+          </div>
+        </>
+      )}
     </div>
   )
 }

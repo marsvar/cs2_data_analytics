@@ -15,6 +15,7 @@
  */
 
 import type { BLMatchupStats, BLPlayerStats } from './types'
+import { normalizeBlImageUrl } from './bl-image-url'
 
 const BL_BASE = 'https://app.bedriftsligaen.no/api/paradise/v2'
 
@@ -44,9 +45,26 @@ type RawPlayer = {
   damage?: number
   kast_ratio?: number | null
   headshot_ratio?: number | null
+  survival_ratio?: number | null
   opening_duels_won?: number
   opening_duels_lost?: number
+  opening_duel_win_ratio?: number | null
   firstkills?: number
+  clutches_won?: number
+  trade_kills?: number
+  traded_deaths?: number
+  won_1v1?: number
+  won_1v2?: number
+  won_1v3?: number
+  won_1v4?: number
+  won_1v5?: number
+  rating?: number | string | null
+  damage_diff?: number | string | null
+  rounds_with_2k?: number
+  rounds_with_3k?: number
+  rounds_with_4k?: number
+  rounds_with_5k?: number
+  maps_played?: number
   // side distinguishes home vs away in flat array responses (team/signup are null)
   side?: string | number
   // team info may be nested (present on some endpoint variants)
@@ -67,6 +85,8 @@ type RawMatchupStats = RawPlayer[] | {
 function mapPlayer(p: RawPlayer): BLPlayerStats {
   const rounds = p.rounds_played ?? 0
   const dpr = p.damage_per_round ?? 0
+  const rating = toOptionalNumber(p.rating)
+  const damageDiff = toOptionalNumber(p.damage_diff)
   return {
     paradise_user_id: p.paradise_user_id ?? 0,
     // API uses player_name; fall back to name
@@ -81,6 +101,181 @@ function mapPlayer(p: RawPlayer): BLPlayerStats {
     kast: p.kast_ratio ?? 0,
     opening_kills: p.opening_duels_won ?? p.firstkills ?? 0,
     opening_attempts: (p.opening_duels_won ?? 0) + (p.opening_duels_lost ?? 0),
+    bl_extended: {
+      survival_ratio: p.survival_ratio ?? undefined,
+      trade_kills: p.trade_kills ?? undefined,
+      traded_deaths: p.traded_deaths ?? undefined,
+      firstkills: p.firstkills ?? undefined,
+      clutches_won: p.clutches_won ?? undefined,
+      won_1v1: p.won_1v1 ?? undefined,
+      won_1v2: p.won_1v2 ?? undefined,
+      won_1v3: p.won_1v3 ?? undefined,
+      won_1v4: p.won_1v4 ?? undefined,
+      won_1v5: p.won_1v5 ?? undefined,
+      one_v_x_total: (p.won_1v1 ?? 0) + (p.won_1v2 ?? 0) + (p.won_1v3 ?? 0) + (p.won_1v4 ?? 0) + (p.won_1v5 ?? 0) || undefined,
+      rating: rating ?? undefined,
+      damage_diff: damageDiff ?? undefined,
+      explosive_rounds_total: (p.rounds_with_3k ?? 0) + (p.rounds_with_4k ?? 0) + (p.rounds_with_5k ?? 0) || undefined,
+      multi_kills: {
+        rounds_with_2k: p.rounds_with_2k ?? undefined,
+        rounds_with_3k: p.rounds_with_3k ?? undefined,
+        rounds_with_4k: p.rounds_with_4k ?? undefined,
+        rounds_with_5k: p.rounds_with_5k ?? undefined,
+      },
+    },
+    maps_played: p.maps_played ?? undefined,
+  }
+}
+
+type MatchWinner = 'home' | 'away' | 'draw' | 'unknown'
+
+type MatchupMapSummary = {
+  name?: string
+  image_url?: string
+  home_score?: number | null
+  away_score?: number | null
+  winner?: MatchWinner
+  source: 'api'
+}
+
+function toOptionalNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value)
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return null
+}
+
+function parseWinner(
+  value: unknown,
+  homeTeamId?: number,
+  awayTeamId?: number,
+  homeScore?: number | null,
+  awayScore?: number | null,
+): MatchWinner {
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase()
+    if (normalized === 'home') return 'home'
+    if (normalized === 'away') return 'away'
+    if (normalized === 'draw' || normalized === 'tie') return 'draw'
+  }
+
+  const winnerId = toOptionalNumber(value)
+  if (winnerId != null) {
+    if (homeTeamId != null && winnerId === homeTeamId) return 'home'
+    if (awayTeamId != null && winnerId === awayTeamId) return 'away'
+  }
+
+  if (homeScore != null && awayScore != null) {
+    if (homeScore > awayScore) return 'home'
+    if (awayScore > homeScore) return 'away'
+    if (homeScore === awayScore) return 'draw'
+  }
+
+  return 'unknown'
+}
+
+function parseMapArray(raw: unknown): unknown[] {
+  if (Array.isArray(raw)) return raw
+  return []
+}
+
+function extractMapSummaries(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  raw: any,
+  homeTeamId?: number,
+  awayTeamId?: number,
+): { maps: MatchupMapSummary[]; completeness: 'full' | 'partial' | 'missing'; note?: string } {
+  const candidateArrays = [
+    raw?.matchupmaps,
+    raw?.maps,
+    raw?.map_results,
+    raw?.map_scores,
+    raw?.mapScores,
+    raw?.match_maps,
+    raw?.series?.maps,
+    raw?.results?.maps,
+    raw?.stats?.maps,
+  ]
+
+  let sourceArray: unknown[] = []
+  for (const candidate of candidateArrays) {
+    const arr = parseMapArray(candidate)
+    if (arr.length > 0) {
+      sourceArray = arr
+      break
+    }
+  }
+
+  if (sourceArray.length === 0) {
+    return {
+      maps: [],
+      completeness: 'missing',
+      note: 'Map-detaljer ble ikke returnert fra BL API for denne kampen.',
+    }
+  }
+
+  const maps: MatchupMapSummary[] = []
+  for (const entry of sourceArray) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const row = (entry ?? {}) as any
+    const name = [
+      row.resource?.name,
+      row.resource_name,
+      row.map_name,
+      row.name,
+      row.map,
+      row.slug,
+    ].find((value) => typeof value === 'string' && value.trim().length > 0) as string | undefined
+
+    const homeScore = toOptionalNumber(
+      row.home_score ?? row.team1_score ?? row.score_home ?? row.home_rounds,
+    )
+    const awayScore = toOptionalNumber(
+      row.away_score ?? row.team2_score ?? row.score_away ?? row.away_rounds,
+    )
+    const winner = parseWinner(
+      row.winner ?? row.winner_id ?? row.winner_team_id ?? row.winning_side,
+      homeTeamId,
+      awayTeamId,
+      homeScore,
+      awayScore,
+    )
+    const mapNumber = toOptionalNumber(row.map_number)
+    const finalName = name ?? (mapNumber != null ? `Map ${mapNumber}` : undefined)
+    const imageUrl = normalizeBlImageUrl(
+      row.resource?.image?.url ?? row.image?.url,
+      row.resource?.image?.relative_url ?? row.image?.relative_url,
+    )
+
+    if (!finalName && homeScore == null && awayScore == null && winner === 'unknown') continue
+
+    maps.push({
+      name: finalName,
+      image_url: imageUrl,
+      home_score: homeScore,
+      away_score: awayScore,
+      winner,
+      source: 'api',
+    })
+  }
+
+  if (maps.length === 0) {
+    return {
+      maps: [],
+      completeness: 'missing',
+      note: 'Map-detaljer ble ikke returnert fra BL API for denne kampen.',
+    }
+  }
+
+  const full = maps.every((m) => m.name && m.home_score != null && m.away_score != null)
+  if (full) return { maps, completeness: 'full' }
+
+  return {
+    maps,
+    completeness: 'partial',
+    note: 'Kun delvise map-detaljer var tilgjengelig fra BL API.',
   }
 }
 
@@ -150,14 +345,23 @@ export async function getMatchupStats(
 }
 
 export type MatchupMeta = {
+  bestOf: number | null
   divisionId: number | null
   roundNumber: number | null
   startTime: string | null
   finishedAt: string | null
-  home: { id: number; name: string }
-  away: { id: number; name: string }
+  homeScore: number | null
+  awayScore: number | null
+  winner: MatchWinner
+  maps: MatchupMapSummary[]
+  mapDataCompleteness: 'full' | 'partial' | 'missing'
+  mapDataNote?: string
+  home: { id: number; name: string; logoUrl?: string }
+  away: { id: number; name: string; logoUrl?: string }
   /** paradise_user_id → team id ('home' team id or 'away' team id) */
   playerTeams: Map<number, number>
+  /** paradise_user_id → avatar image url */
+  playerImages: Map<number, string>
 }
 
 /**
@@ -177,24 +381,64 @@ export async function getMatchupMeta(
 
     const homeTeam = raw?.home_signup?.team ?? {}
     const awayTeam = raw?.away_signup?.team ?? {}
+    const homeLogoUrl = normalizeBlImageUrl(
+      homeTeam?.logo?.url,
+      homeTeam?.logo?.relative_url,
+    )
+    const awayLogoUrl = normalizeBlImageUrl(
+      awayTeam?.logo?.url,
+      awayTeam?.logo?.relative_url,
+    )
+    const homeTeamId = toOptionalNumber(homeTeam.id) ?? undefined
+    const awayTeamId = toOptionalNumber(awayTeam.id) ?? undefined
+    const homeScore = toOptionalNumber(raw?.home_score)
+    const awayScore = toOptionalNumber(raw?.away_score)
+    const winner = parseWinner(
+      raw?.winner_id ?? raw?.winner_team_id ?? raw?.winner,
+      homeTeamId,
+      awayTeamId,
+      homeScore,
+      awayScore,
+    )
+    const maps = extractMapSummaries(raw, homeTeamId, awayTeamId)
 
     const playerTeams = new Map<number, number>()
+    const playerImages = new Map<number, string>()
     const matchupUsers: { user_id?: number; team_id?: number }[] =
       raw?.matchup_users ?? []
-    for (const mu of matchupUsers) {
+    for (const mu of matchupUsers as Array<{
+      user_id?: number
+      team_id?: number
+      user?: { image?: { url?: string; relative_url?: string } }
+    }>) {
       if (mu.user_id != null && mu.team_id != null) {
         playerTeams.set(mu.user_id, mu.team_id)
+      }
+      const avatarUrl = normalizeBlImageUrl(
+        mu.user?.image?.url,
+        mu.user?.image?.relative_url,
+      )
+      if (mu.user_id != null && avatarUrl) {
+        playerImages.set(mu.user_id, avatarUrl)
       }
     }
 
     return {
+      bestOf: toOptionalNumber(raw?.best_of),
       divisionId: raw?.matchupable_id ?? null,
       roundNumber: raw?.round?.number ?? raw?.round_number ?? null,
       startTime: raw?.start_time ?? null,
       finishedAt: raw?.finished_at ?? null,
-      home: { id: homeTeam.id ?? 0, name: homeTeam.name ?? '' },
-      away: { id: awayTeam.id ?? 0, name: awayTeam.name ?? '' },
+      homeScore,
+      awayScore,
+      winner,
+      maps: maps.maps,
+      mapDataCompleteness: maps.completeness,
+      mapDataNote: maps.note,
+      home: { id: homeTeam.id ?? 0, name: homeTeam.name ?? '', logoUrl: homeLogoUrl },
+      away: { id: awayTeam.id ?? 0, name: awayTeam.name ?? '', logoUrl: awayLogoUrl },
       playerTeams,
+      playerImages,
     }
   } catch {
     return null
@@ -346,6 +590,189 @@ export async function getDivisionMatchups(
   const arr = Array.isArray(data) ? data : ((data as { data?: unknown[] }).data ?? [])
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return arr as any[]
+}
+
+export type CompetitionDivision = {
+  id: number
+  name: string
+  competition_id: number
+}
+
+export type CompetitionSummary = {
+  id: number
+  name: string
+  starts_at?: string | null
+  ends_at?: string | null
+  status?: string | null
+}
+
+export type CompetitionSignupTeam = {
+  competition_id: number
+  team_id: number
+  team_name: string
+}
+
+export async function getCompetitions(
+  token: string,
+): Promise<CompetitionSummary[]> {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const raw = await blGet<any>('/competition?limit=100&game_id=1', token)
+    const arr: any[] = Array.isArray(raw) ? raw : (raw?.data ?? [])
+    return arr
+      .filter((competition) => competition?.id != null)
+      .map((competition) => ({
+        id: competition.id,
+        name: competition.name ?? `Competition ${competition.id}`,
+        starts_at:
+          competition.starts_at ??
+          competition.start_time ??
+          competition.start_at ??
+          null,
+        ends_at:
+          competition.ends_at ??
+          competition.end_time ??
+          competition.finished_at ??
+          null,
+        status: competition.status ?? null,
+      }))
+  } catch {
+    return []
+  }
+}
+
+export async function getCompetitionSignupTeams(
+  competitionId: number,
+  token: string,
+): Promise<CompetitionSignupTeam[]> {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const raw = await blGet<any>(`/competition/${competitionId}/signups?limit=200`, token)
+    const arr: any[] = Array.isArray(raw) ? raw : (raw?.data ?? [])
+    return arr
+      .map((signup) => {
+        const teamId =
+          signup?.team?.id ??
+          signup?.signupable?.id ??
+          signup?.team_id
+        const teamName =
+          signup?.team?.name ??
+          signup?.signupable?.name ??
+          signup?.name
+
+        if (!Number.isInteger(teamId) || typeof teamName !== 'string' || teamName.trim() === '') {
+          return null
+        }
+
+        return {
+          competition_id: competitionId,
+          team_id: teamId,
+          team_name: teamName.trim(),
+        } satisfies CompetitionSignupTeam
+      })
+      .filter((team): team is CompetitionSignupTeam => team != null)
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Fetch all divisions for a competition.
+ * Used to power the division picker on the landing page.
+ */
+export async function getCompetitionDivisions(
+  competitionId: number,
+  token: string,
+): Promise<CompetitionDivision[]> {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const raw = await blGet<any>(`/competition/${competitionId}/divisions`, token)
+    const arr: any[] = Array.isArray(raw) ? raw : (raw?.data ?? [])
+    return arr
+      .filter((d) => d?.id != null)
+      .map((d) => ({
+        id: d.id,
+        name: d.name ?? `Divisjon ${d.id}`,
+        competition_id: competitionId,
+      }))
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Fetch division matchups with team-side information.
+ * Returns the home/away team IDs for each matchup so callers can determine
+ * which stats belong to which team without fetching full matchup metadata.
+ */
+export async function getDivisionMatchupsWithTeamSides(
+  divisionId: number,
+  token: string,
+): Promise<Array<{
+  id: number
+  homeTeamId?: number
+  awayTeamId?: number
+  finishedAt?: string | null
+}>> {
+  type Raw = { data?: unknown[] } | unknown[]
+  const data = await blGet<Raw>(`/matchup?division_id=${divisionId}&limit=100`, token)
+  const arr = Array.isArray(data) ? data : ((data as { data?: unknown[] }).data ?? [])
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (arr as any[])
+    .filter((m) => Number.isInteger(m?.id) && (m?.id ?? 0) > 0)
+    .map((m) => ({
+      id: m.id as number,
+      homeTeamId: m?.home_signup?.team?.id ?? undefined,
+      awayTeamId: m?.away_signup?.team?.id ?? undefined,
+      finishedAt: m?.finished_at ?? null,
+    }))
+}
+
+/**
+ * Fetch the avatar image URL for a BL user.
+ * Uses /user/{id} which returns the user's image object.
+ */
+export async function getUserImageUrl(
+  userId: number,
+  token: string,
+): Promise<string | undefined> {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const raw = await blGet<any>(`/user/${userId}`, token)
+    return normalizeBlImageUrl(raw?.image?.url, raw?.image?.relative_url) ?? undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Fetch matchup_users for a specific matchup.
+ * Returns all checked-in players with their team assignment and avatar URL.
+ * Only populated for completed matchups — upcoming matches return [].
+ */
+export async function getMatchupTeamPlayers(
+  matchupId: number,
+  token: string,
+): Promise<Array<{ userId: number; teamId: number; userName?: string; avatarUrl?: string }>> {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const raw = await blGet<any>(`/matchup/${matchupId}`, token)
+    const users: Array<{
+      user_id?: number
+      team_id?: number
+      user?: { user_name?: string; image?: { url?: string; relative_url?: string } }
+    }> = raw?.matchup_users ?? []
+    return users
+      .filter((u) => u?.user_id != null && u?.team_id != null)
+      .map((u) => ({
+        userId: u.user_id!,
+        teamId: u.team_id!,
+        userName: u.user?.user_name,
+        avatarUrl: normalizeBlImageUrl(u.user?.image?.url, u.user?.image?.relative_url) ?? undefined,
+      }))
+  } catch {
+    return []
+  }
 }
 
 /**

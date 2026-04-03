@@ -1,16 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { resolveDivisionReference } from '@/lib/divisions'
 import { DivisionServiceError, getDivisionOverview } from '@/lib/division-service'
 
 export async function GET(request: NextRequest) {
-  const divisionIdParam = request.nextUrl.searchParams.get('division_id')
-  const divisionId = Number(divisionIdParam)
+  const divisionParam = request.nextUrl.searchParams.get('division')
+    ?? request.nextUrl.searchParams.get('division_id')
+  const resolved = resolveDivisionReference(divisionParam)
 
-  if (!divisionIdParam || !Number.isInteger(divisionId) || divisionId <= 0) {
+  if (!resolved) {
     return NextResponse.json(
-      { error: 'division_id must be a positive integer' },
+      { error: 'division must be a known name/slug or positive integer id' },
       { status: 400 },
     )
   }
+
+  const divisionId = resolved.id
 
   try {
     const result = await getDivisionOverview(divisionId)

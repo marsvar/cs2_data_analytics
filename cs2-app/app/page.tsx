@@ -2,138 +2,392 @@
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import { TeamLogo } from '@/components/identity-badge'
+import type {
+  DivisionMatchSummary,
+  DivisionResponse,
+  MatchSearchHit,
+  MatchSearchResponse,
+} from '@/lib/types'
 
-function RadarPreview() {
-  const cx = 40; const cy = 40; const r = 26
-  const angles = [-90, -18, 54, 126, 198]
-  const vals = [0.82, 0.68, 0.56, 0.74, 0.79]
+type DivisionOption = { id: number; name: string }
 
-  const pts = (scale: number) =>
-    angles
-      .map((a) => {
-        const rad = (a * Math.PI) / 180
-        return `${(cx + r * scale * Math.cos(rad)).toFixed(1)},${(cy + r * scale * Math.sin(rad)).toFixed(1)}`
-      })
-      .join(' ')
+// ── Status badge ──────────────────────────────────────────────────────────────
 
-  const dataPts = angles
-    .map((a, i) => {
-      const rad = (a * Math.PI) / 180
-      return `${(cx + r * vals[i] * Math.cos(rad)).toFixed(1)},${(cy + r * vals[i] * Math.sin(rad)).toFixed(1)}`
-    })
-    .join(' ')
+function StatusBadge({ status }: { status: DivisionMatchSummary['status'] }) {
+  if (status === 'upcoming') {
+    return (
+      <span className="font-mono text-[8px] uppercase tracking-widest px-1.5 py-0.5 rounded border border-accent/40 text-accent bg-accent/10">
+        Kommende
+      </span>
+    )
+  }
+  if (status === 'live') {
+    return (
+      <span className="font-mono text-[8px] uppercase tracking-widest px-1.5 py-0.5 rounded border border-success/40 text-success bg-success/10 animate-pulse">
+        Live
+      </span>
+    )
+  }
+  if (status === 'completed') {
+    return (
+      <span className="font-mono text-[8px] uppercase tracking-widest px-1.5 py-0.5 rounded border border-border/40 text-muted">
+        Spilt
+      </span>
+    )
+  }
+  return null
+}
 
+function formatMatchDate(iso: string | null): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  return new Intl.DateTimeFormat('nb-NO', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(d)
+}
+
+function formatResultScore(match: DivisionMatchSummary): string | null {
+  if (match.home_score == null || match.away_score == null) return null
+  return `${match.home_score}-${match.away_score}`
+}
+
+function MatchTeamsInline({
+  homeTeam,
+  awayTeam,
+  homeLogoUrl,
+  awayLogoUrl,
+  compact = false,
+}: {
+  homeTeam: string
+  awayTeam: string
+  homeLogoUrl?: string
+  awayLogoUrl?: string
+  compact?: boolean
+}) {
   return (
-    <svg width="80" height="80" viewBox="0 0 80 80" aria-hidden="true">
-      {[0.33, 0.66, 1].map((l) => (
-        <polygon key={l} points={pts(l)} fill="none" stroke="var(--color-border)" strokeWidth="0.6" />
-      ))}
-      {angles.map((a, i) => {
-        const rad = (a * Math.PI) / 180
-        return (
-          <line key={i} x1={cx} y1={cy} x2={cx + r * Math.cos(rad)} y2={cy + r * Math.sin(rad)} stroke="var(--color-border)" strokeWidth="0.5" />
-        )
-      })}
-      <polygon points={dataPts} fill="rgba(37,99,235,0.18)" stroke="rgba(37,99,235,0.75)" strokeWidth="1.5" />
-      {angles.map((a, i) => {
-        const rad = (a * Math.PI) / 180
-        return <circle key={i} cx={cx + r * vals[i] * Math.cos(rad)} cy={cy + r * vals[i] * Math.sin(rad)} r={1.8} fill="rgba(37,99,235,0.9)" />
-      })}
-    </svg>
+    <div className={`flex items-center gap-1.5 min-w-0 ${compact ? 'text-[10px]' : 'text-[11px]'}`}>
+      <TeamLogo name={homeTeam} logoUrl={homeLogoUrl} tone="home" size="sm" />
+      <span className="font-mono text-text truncate">{homeTeam}</span>
+      <span className="font-mono text-muted/60 shrink-0">vs</span>
+      <TeamLogo name={awayTeam} logoUrl={awayLogoUrl} tone="away" size="sm" />
+      <span className="font-mono text-text truncate">{awayTeam}</span>
+    </div>
   )
 }
 
-function ComparisonPreview() {
-  const rows = [
-    { label: 'DPR', a: 0.8, b: 0.62 },
-    { label: 'KAST', a: 0.66, b: 0.78 },
-    { label: 'OD%', a: 0.72, b: 0.55 },
-  ]
-  const width = 48
+// ── Division picker + recent matches ─────────────────────────────────────────
+
+function RecentMatchesPanel({
+  onSelectMatch,
+}: {
+  onSelectMatch: (match: DivisionMatchSummary) => void
+}) {
+  const [divisions, setDivisions] = useState<DivisionOption[]>([])
+  const [selectedDivisionId, setSelectedDivisionId] = useState<number | null>(null)
+  const [matchesData, setMatchesData] = useState<DivisionResponse | null>(null)
+  const [loadingDivisions, setLoadingDivisions] = useState(true)
+  const [loadingMatches, setLoadingMatches] = useState(false)
+
+  // Fetch division list on mount
+  useEffect(() => {
+    let cancelled = false
+    async function fetchDivisions() {
+      try {
+        const res = await fetch('/api/divisions', { cache: 'no-store' })
+        if (!res.ok) return
+        const data = await res.json() as { divisions: DivisionOption[] }
+        if (cancelled) return
+        setDivisions(data.divisions)
+
+        // Prefer division from URL param (read client-side), then first in list
+        const paramId = new URLSearchParams(window.location.search).get('division')
+        const defaultId = paramId ? Number(paramId) : data.divisions[0]?.id ?? null
+        setSelectedDivisionId(defaultId)
+      } catch {
+        // silent fail — not critical
+      } finally {
+        if (!cancelled) setLoadingDivisions(false)
+      }
+    }
+    fetchDivisions()
+    return () => { cancelled = true }
+  }, [])
+
+  // Fetch matches when selected division changes
+  const fetchMatches = useCallback(async (divisionId: number) => {
+    setLoadingMatches(true)
+    setMatchesData(null)
+    try {
+      const res = await fetch(`/api/division?division=${divisionId}`, { cache: 'no-store' })
+      if (!res.ok) return
+      const data = await res.json() as DivisionResponse
+      setMatchesData(data)
+    } catch {
+      // silent fail
+    } finally {
+      setLoadingMatches(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (selectedDivisionId != null) fetchMatches(selectedDivisionId)
+  }, [selectedDivisionId, fetchMatches])
+
+  const recentMatches = matchesData?.matches?.slice(0, 12) ?? []
+  const notPlayedYet = recentMatches.filter((match) => match.phase === 'not_played_yet')
+  const played = recentMatches.filter((match) => match.phase === 'played')
+
   return (
-    <div className="w-40 space-y-2.5">
-      {rows.map(({ label, a, b }) => (
-        <div key={label} className="grid grid-cols-[1fr_30px_1fr] items-center gap-1">
-          <div className="flex justify-end">
-            <div className="h-1.5 rounded-full" style={{ width: `${a * width}px`, background: 'rgba(37,99,235,0.6)' }} />
-          </div>
-          <span className="text-[7px] font-mono text-muted text-center">{label}</span>
+    <div className="rounded-xl border border-border/45 bg-surface/65 backdrop-blur-sm p-5 md:p-6">
+      <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+        <div>
+          <h2 className="font-display text-xs tracking-widest uppercase text-accent">Kommende kamper</h2>
+          <p className="font-mono text-[11px] text-muted mt-1">Velg kamp fra listen eller søk direkte under.</p>
+        </div>
+
+        {/* Division selector */}
+        {loadingDivisions ? (
+          <div className="h-7 w-40 rounded bg-surface2 animate-pulse" />
+        ) : divisions.length > 1 ? (
+          <select
+            value={selectedDivisionId ?? ''}
+            onChange={(e) => setSelectedDivisionId(Number(e.target.value))}
+            className="font-mono text-[10px] text-muted bg-surface border border-border/50 rounded px-2 py-1 focus:outline-none focus:border-accent/50"
+            aria-label="Velg divisjon"
+          >
+            {divisions.map((d) => (
+              <option key={d.id} value={d.id}>{d.name}</option>
+            ))}
+          </select>
+        ) : divisions.length === 1 ? (
+          <span className="font-mono text-[10px] text-muted">{divisions[0].name}</span>
+        ) : null}
+      </div>
+
+      {loadingMatches && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 animate-pulse">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="h-14 rounded-lg bg-surface2" />
+          ))}
+        </div>
+      )}
+
+      {!loadingMatches && recentMatches.length === 0 && (
+        <p className="font-mono text-[11px] text-muted">
+          {selectedDivisionId ? 'Ingen kamper funnet for denne divisjonen.' : 'Velg en divisjon for å se kamper.'}
+        </p>
+      )}
+
+      {!loadingMatches && recentMatches.length > 0 && (
+        <div className="space-y-4">
           <div>
-            <div className="h-1.5 rounded-full" style={{ width: `${b * width}px`, background: 'rgba(249,115,22,0.6)' }} />
+            <p className="font-mono text-[10px] uppercase tracking-widest text-accent mb-2">Ikke spilt ennå</p>
+            {notPlayedYet.length === 0 ? (
+              <p className="font-mono text-[11px] text-muted">Ingen kommende eller live-kamper i utvalget.</p>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {notPlayedYet.map((match) => (
+                  <button
+                    key={match.matchup_id}
+                    type="button"
+                    onClick={() => onSelectMatch(match)}
+                    className="text-left px-3 py-2.5 rounded-lg border border-border/35 bg-surface hover:bg-surface2/60 hover:border-accent/30 transition-colors"
+                  >
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <div className="min-w-0 flex-1">
+                        <MatchTeamsInline
+                          homeTeam={match.home_team}
+                          awayTeam={match.away_team}
+                          homeLogoUrl={match.home_logo_url}
+                          awayLogoUrl={match.away_logo_url}
+                        />
+                      </div>
+                      <StatusBadge status={match.status} />
+                    </div>
+                    {match.date && (
+                      <p className="font-mono text-[9px] text-muted/60">{formatMatchDate(match.date)}</p>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div>
+            <p className="font-mono text-[10px] uppercase tracking-widest text-success mb-2">Ferdigspilt</p>
+            {played.length === 0 ? (
+              <p className="font-mono text-[11px] text-muted">Ingen ferdigspilte kamper i utvalget.</p>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {played.map((match) => {
+                  const score = formatResultScore(match)
+                  return (
+                    <button
+                      key={match.matchup_id}
+                      type="button"
+                      onClick={() => onSelectMatch(match)}
+                      className="text-left px-3 py-2.5 rounded-lg border border-border/35 bg-surface hover:bg-surface2/60 hover:border-accent/30 transition-colors"
+                    >
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <div className="min-w-0 flex-1">
+                          <MatchTeamsInline
+                            homeTeam={match.home_team}
+                            awayTeam={match.away_team}
+                            homeLogoUrl={match.home_logo_url}
+                            awayLogoUrl={match.away_logo_url}
+                          />
+                        </div>
+                        <StatusBadge status={match.status} />
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        {match.date && (
+                          <p className="font-mono text-[9px] text-muted/60">{formatMatchDate(match.date)}</p>
+                        )}
+                        {score && (
+                          <p className="font-mono text-[10px] text-success tabular-nums">{score}</p>
+                        )}
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
           </div>
         </div>
-      ))}
+      )}
+
+      {selectedDivisionId && matchesData && (
+        <div className="mt-3 pt-3 border-t border-border/25 flex items-center justify-between">
+          <Link
+            href={`/division/${selectedDivisionId}`}
+            className="font-mono text-[10px] text-muted hover:text-accent transition-colors"
+          >
+            Se alle kamper i divisjonen →
+          </Link>
+        </div>
+      )}
     </div>
   )
 }
 
-function PredictionPreview() {
-  return (
-    <div className="w-44 space-y-2">
-      <div className="flex justify-between text-[9px] font-mono">
-        <span className="text-accent">62%</span>
-        <span className="text-muted/60 text-[8px]">seierssannsynlighet</span>
-        <span className="text-accent2">38%</span>
-      </div>
-      <div className="relative h-3 bg-surface2 rounded-full overflow-hidden">
-        <div className="absolute inset-y-0 left-0 rounded-l-full" style={{ width: '62%', background: 'var(--color-accent)' }} />
-        <div className="absolute inset-y-0 left-1/2 w-px bg-border/60" />
-      </div>
-      <div className="flex justify-between text-[8px] font-mono text-muted/60">
-        <span>t0bben 9.2</span>
-        <span>Hcon 7.8</span>
-      </div>
-    </div>
-  )
-}
-
-const FEATURES = [
-  {
-    title: 'Spillerprofil',
-    desc: 'Radarkart over 5 dimensjoner — sikte, KAST, åpningsdueller, K/D og posisjonering. Leetify-enriched eller BL-only.',
-    Preview: RadarPreview,
-  },
-  {
-    title: 'Lagsammenligning',
-    desc: 'Side-om-side statistikk for hvert lag: DPR, KAST, OD%, K/D og samlet styrke. Vinnende side lyses opp.',
-    Preview: ComparisonPreview,
-  },
-  {
-    title: 'Seiersprediksjon',
-    desc: 'Bayesiansk seierssannsynlighet med konfidensadvarsel ved få runder. Nøkkelspillere per lag uthevet.',
-    Preview: PredictionPreview,
-  },
-]
+// ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function Home() {
   const router = useRouter()
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [searchLoading, setSearchLoading] = useState(false)
+  const [searchError, setSearchError] = useState<string | null>(null)
+  const [suggestions, setSuggestions] = useState<MatchSearchHit[]>([])
+  const [selectedMatch, setSelectedMatch] = useState<MatchSearchHit | null>(null)
+
+  const trimmedInput = input.trim()
+
+  useEffect(() => {
+    if (selectedMatch && trimmedInput === selectedMatch.label) {
+      setSearchLoading(false)
+      setSearchError(null)
+      return
+    }
+
+    if (trimmedInput.length < 2) {
+      setSuggestions([])
+      setSearchError(null)
+      setSearchLoading(false)
+      if (!/^\d+$/.test(trimmedInput)) setSelectedMatch(null)
+      return
+    }
+
+    if (/^\d+$/.test(trimmedInput)) {
+      setSearchError(null)
+      setSearchLoading(false)
+      setSuggestions([])
+      setSelectedMatch(null)
+      return
+    }
+
+    const controller = new AbortController()
+    const timeout = window.setTimeout(async () => {
+      setSearchLoading(true)
+      setSearchError(null)
+      try {
+        const response = await fetch(
+          `/api/match-search?q=${encodeURIComponent(trimmedInput)}&limit=8`,
+          { signal: controller.signal, cache: 'no-store' },
+        )
+        const payload = (await response.json()) as MatchSearchResponse | { error: string }
+        if (!response.ok || 'error' in payload) {
+          setSuggestions([])
+          setSearchError('Kunne ikke søke i kamper akkurat nå.')
+          return
+        }
+
+        setSuggestions(payload.matches)
+      } catch {
+        if (controller.signal.aborted) return
+        setSuggestions([])
+        setSearchError('Kunne ikke søke i kamper akkurat nå.')
+      } finally {
+        if (!controller.signal.aborted) setSearchLoading(false)
+      }
+    }, 220)
+
+    return () => {
+      controller.abort()
+      window.clearTimeout(timeout)
+    }
+  }, [selectedMatch, trimmedInput])
+
+  function resolveMatchupId(): number | null {
+    if (selectedMatch) return selectedMatch.matchup_id
+
+    if (/^\d+$/.test(trimmedInput)) {
+      const numeric = Number(trimmedInput)
+      if (Number.isInteger(numeric) && numeric > 0) return numeric
+    }
+
+    if (suggestions.length === 1) return suggestions[0].matchup_id
+    return null
+  }
 
   function runAnalysis() {
-    const id = input.trim()
+    const matchupId = resolveMatchupId()
     if (loading) return
 
-    if (!/^\d+$/.test(id)) {
-      setError('Skriv inn et gyldig matchup-id (kun tall).')
+    if (!matchupId) {
+      setError('Søk etter lag og velg riktig kamp fra listen før du går videre.')
       return
     }
 
     setError(null)
     setLoading(true)
-    router.push(`/match/${id}`)
+    router.push(`/match/${matchupId}`)
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key === 'Enter') runAnalysis()
   }
 
+  function handlePickSuggestion(match: MatchSearchHit) {
+    setSelectedMatch(match)
+    setInput(match.label)
+    setSuggestions([])
+    setSearchError(null)
+    setError(null)
+  }
+
+  function handleSelectRecentMatch(match: DivisionMatchSummary) {
+    // Navigate directly to the match page on click
+    router.push(`/match/${match.matchup_id}`)
+  }
+
   return (
-    <main className="min-h-dvh">
+    <main className="min-h-dvh atlas-shell">
+      <div className="atlas-topline" />
       <section
-        className="min-h-dvh py-20 px-6 md:px-10 relative overflow-hidden flex flex-col justify-center"
+        className="py-16 px-6 md:px-10 relative overflow-hidden"
         style={{
           backgroundImage:
             'linear-gradient(to right, rgba(42,48,68,0.18) 1px, transparent 1px),' +
@@ -141,24 +395,17 @@ export default function Home() {
           backgroundSize: '40px 40px',
         }}
       >
-        <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-accent/30 to-transparent" />
-
         <div className="max-w-3xl mx-auto w-full">
-          <div className="flex items-center justify-between mb-12">
+          <div className="flex items-center justify-between mb-10">
             <span className="font-display text-[11px] tracking-widest uppercase text-accent">
               CS2 Analyse
             </span>
-            <div className="flex items-center gap-4">
-              <Link href="/division/1138" className="font-mono text-[10px] text-muted uppercase tracking-widest hover:text-text">
-                Divisjon 1138
-              </Link>
-              <span className="font-mono text-[10px] text-muted uppercase tracking-widest hidden sm:block">
-                Bedriftsligaen · Vår 2026
-              </span>
-            </div>
+            <span className="font-mono text-[10px] text-muted uppercase tracking-widest hidden sm:block">
+              Bedriftsligaen · Vår 2026
+            </span>
           </div>
 
-          <div className="mb-10">
+          <div>
             <h1 className="font-display font-bold uppercase leading-none tracking-tight mb-5">
               <span className="block text-4xl md:text-6xl text-text">TAKTISK</span>
               <span
@@ -172,14 +419,31 @@ export default function Home() {
               </span>
             </h1>
             <p className="font-mono text-sm text-muted max-w-md leading-relaxed">
-              Bayesiansk spilleranalyse for Bedriftsligaen i CS2.
+              Oversikt over kommende kamper i valgt divisjon.
               <br />
-              Kombiner BL API + Leetify for taktisk innsikt og prediksjon.
+              Søk direkte på kamp nederst i oversikten.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* Recent matches from division */}
+      <section className="px-6 md:px-10 pb-6 max-w-5xl mx-auto w-full">
+        <RecentMatchesPanel onSelectMatch={handleSelectRecentMatch} />
+      </section>
+
+      {/* Direct match search */}
+      <section className="px-6 md:px-10 pb-16 max-w-5xl mx-auto w-full">
+        <div className="rounded-xl border border-border/45 bg-surface/65 backdrop-blur-sm p-5 md:p-6">
+          <div className="mb-3">
+            <h2 className="font-display text-xs tracking-widest uppercase text-accent">Søk direkte på kamp</h2>
+            <p className="font-mono text-[11px] text-muted mt-1">
+              Finn kamp på lagnavn, eller lim inn matchup-ID.
             </p>
           </div>
 
           <div className="mb-3">
-            <label htmlFor="matchup-input" className="sr-only">Matchup ID</label>
+            <label htmlFor="matchup-input" className="sr-only">Søk direkte på kamp</label>
             <div
               className="flex items-center border border-border rounded-lg bg-surface overflow-hidden"
               style={{
@@ -191,18 +455,17 @@ export default function Home() {
                 ›
               </span>
 
-              <span className="font-mono text-sm text-muted/50 px-3 py-3.5 shrink-0 hidden sm:block select-none">
-                analyse --matchup
-              </span>
-
               <input
                 id="matchup-input"
                 type="text"
-                inputMode="numeric"
                 value={input}
-                onChange={(e) => setInput(e.target.value)}
+                onChange={(e) => {
+                  setInput(e.target.value)
+                  setSelectedMatch(null)
+                  setError(null)
+                }}
                 onKeyDown={handleKeyDown}
-                placeholder="15846"
+                placeholder="f.eks. Sopra vs GlobalConnect"
                 disabled={loading}
                 className="flex-1 bg-transparent font-mono text-base text-text px-3 py-3.5 focus:outline-none disabled:opacity-50 placeholder:text-muted/30 min-w-0"
               />
@@ -211,7 +474,7 @@ export default function Home() {
                 type="button"
                 onClick={runAnalysis}
                 disabled={loading || input.trim() === ''}
-                aria-label="Gå til analyse"
+                aria-label="Gå til kamp"
                 className="px-5 py-3.5 font-mono text-sm border-l border-border shrink-0 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 style={{ background: 'rgba(37,99,235,0.08)', color: 'var(--color-accent)' }}
               >
@@ -219,6 +482,32 @@ export default function Home() {
               </button>
             </div>
           </div>
+
+          {searchLoading && (
+            <p className="font-mono text-[10px] text-muted mb-2 animate-pulse">Søker i kampnavn…</p>
+          )}
+
+          {!searchLoading && suggestions.length > 0 && (
+            <div className="mb-3 rounded-lg border border-border/40 bg-surface2/30 p-2 space-y-1">
+              {suggestions.map((match) => (
+                <button
+                  key={match.matchup_id}
+                  type="button"
+                  onClick={() => handlePickSuggestion(match)}
+                  className="w-full text-left px-2 py-2 rounded border border-border/30 bg-surface hover:bg-surface2/60 transition-colors"
+                >
+                  <MatchTeamsInline
+                    homeTeam={match.home_team}
+                    awayTeam={match.away_team}
+                    homeLogoUrl={match.home_logo_url}
+                    awayLogoUrl={match.away_logo_url}
+                    compact
+                  />
+                  <p className="font-mono text-[10px] text-muted mt-0.5">{match.label}</p>
+                </button>
+              ))}
+            </div>
+          )}
 
           <div className="h-4">
             {loading && (
@@ -229,33 +518,13 @@ export default function Home() {
             {error && (
               <p className="font-mono text-[11px] text-danger">✗ {error}</p>
             )}
-            {!loading && !error && (
-              <p className="font-mono text-[11px] text-muted/40">f.eks. 15846 · 15810 · 14922</p>
+            {!loading && !error && !searchError && (
+              <p className="font-mono text-[11px] text-muted/40">Tips: Velg kamp fra forslagene for raskere treff.</p>
+            )}
+            {!loading && !error && searchError && (
+              <p className="font-mono text-[11px] text-warning">{searchError}</p>
             )}
           </div>
-        </div>
-      </section>
-
-      <section className="px-6 md:px-10 pb-20 max-w-5xl mx-auto w-full">
-        <div className="flex items-center gap-4 mb-10">
-          <div className="h-px flex-1 bg-border/40" />
-          <span className="font-mono text-[9px] uppercase tracking-[0.2em] text-muted/60">Hva du får</span>
-          <div className="h-px flex-1 bg-border/40" />
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {FEATURES.map(({ title, desc, Preview }) => (
-            <div key={title} className="bg-surface border border-border/40 rounded-lg p-5 flex flex-col gap-4">
-              <div className="flex items-center justify-center h-20">
-                <Preview />
-              </div>
-              <div className="h-px bg-border/30" />
-              <div>
-                <h3 className="font-display text-[11px] tracking-widest uppercase text-accent mb-2">{title}</h3>
-                <p className="font-mono text-[11px] text-muted leading-relaxed">{desc}</p>
-              </div>
-            </div>
-          ))}
         </div>
       </section>
     </main>

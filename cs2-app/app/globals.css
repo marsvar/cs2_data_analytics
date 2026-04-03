@@ -14,10 +14,34 @@
   --color-text: #e4e8f0;
   --color-muted: #7a839a;
 
+  /* shadcn/ui aliases — maps our tokens to standard shadcn CSS variables */
+  --color-background: #0d0f14;
+  --color-foreground: #e4e8f0;
+  --color-primary: #2563EB;
+  --color-primary-foreground: #ffffff;
+  --color-secondary: #1e2330;
+  --color-secondary-foreground: #e4e8f0;
+  --color-muted-foreground: #7a839a;
+  --color-destructive: #f75f5f;
+  --color-card: #161a23;
+  --color-card-foreground: #e4e8f0;
+  --color-popover: #1e2330;
+  --color-popover-foreground: #e4e8f0;
+  --color-input: #2a3044;
+  --color-ring: #2563EB;
+  --color-chart-1: #2563EB;
+  --color-chart-2: #F97316;
+  --color-chart-3: #4fca7a;
+  --color-chart-4: #f7c84f;
+  --color-chart-5: #f75f5f;
+  --radius: 0.5rem;
+
   /* Fonts */
   --font-display: var(--font-fira-code), monospace;
   --font-body: var(--font-fira-sans), sans-serif;
   --font-mono: var(--font-fira-code), monospace;
+
+
 }
 
 @layer base {
@@ -32,5 +56,77 @@
       animation-duration: 0.01ms !important;
       transition-duration: 0.01ms !important;
     }
+  }
+}
+
+@layer components {
+  .atlas-shell {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    background:
+      radial-gradient(1100px 520px at -10% -20%, rgba(37, 99, 235, 0.18), transparent 60%),
+      radial-gradient(900px 420px at 110% 0%, rgba(249, 115, 22, 0.16), transparent 58%),
+      linear-gradient(to bottom, rgba(42, 48, 68, 0.1), transparent 35%),
+      var(--color-bg);
+  }
+
+  .atlas-shell::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background-image:
+      linear-gradient(to right, rgba(42, 48, 68, 0.22) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(42, 48, 68, 0.22) 1px, transparent 1px);
+    background-size: 38px 38px;
+    mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.55), transparent 78%);
+  }
+
+  .atlas-topline {
+    height: 1px;
+    background: linear-gradient(to right, transparent, rgba(37, 99, 235, 0.45), transparent);
+  }
+
+  @keyframes rise-in {
+    0% {
+      opacity: 0;
+      transform: translateY(14px);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes pulse-glow {
+    0%, 100% {
+      box-shadow: 0 0 0 rgba(37, 99, 235, 0);
+    }
+    50% {
+      box-shadow: 0 0 24px rgba(37, 99, 235, 0.2);
+    }
+  }
+
+  .fx-rise {
+    opacity: 0;
+    animation: rise-in 520ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+
+  .fx-rise-d1 {
+    animation-delay: 80ms;
+  }
+
+  .fx-rise-d2 {
+    animation-delay: 160ms;
+  }
+
+  .fx-rise-d3 {
+    animation-delay: 240ms;
+  }
+
+  .fx-pulse-glow {
+    animation: pulse-glow 2.6s ease-in-out infinite;
   }
 }

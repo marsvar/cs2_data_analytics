@@ -1,4 +1,7 @@
 import { getDivisionMatchups } from '@/lib/bl-api'
+import { normalizeBlImageUrl } from '@/lib/bl-image-url'
+import { findDivisionPreset } from '@/lib/divisions'
+import { inferDivisionStatus, phaseFromDivisionStatus } from '@/lib/match-phase'
 import type { DivisionMatchSummary, DivisionResponse } from '@/lib/types'
 
 export class DivisionServiceError extends Error {
@@ -16,9 +19,32 @@ type DivisionMatchupRaw = {
   start_time?: string | null
   finished_at?: string | null
   status?: string | null
-  home_signup?: { team?: { name?: string | null } }
-  away_signup?: { team?: { name?: string | null } }
-  signups?: Array<{ team?: { name?: string | null } }>
+  home_signup?: {
+    team?: {
+      id?: number
+      name?: string | null
+      logo?: { url?: string | null; relative_url?: string | null }
+    }
+  }
+  away_signup?: {
+    team?: {
+      id?: number
+      name?: string | null
+      logo?: { url?: string | null; relative_url?: string | null }
+    }
+  }
+  signups?: Array<{
+    team?: {
+      id?: number
+      name?: string | null
+      logo?: { url?: string | null; relative_url?: string | null }
+    }
+  }>
+  // Score fields — present when match is completed
+  home_score?: number | null
+  away_score?: number | null
+  // Some API variants expose winner_id or result
+  winner_id?: number | null
 }
 
 function safeDate(value?: string | null): Date | null {
@@ -39,21 +65,29 @@ function teamName(raw: DivisionMatchupRaw, index: 0 | 1): string {
   return 'Ukjent lag'
 }
 
-function matchStatus(raw: DivisionMatchupRaw, now: Date): DivisionMatchSummary['status'] {
-  if (raw.finished_at) return 'completed'
+function teamId(raw: DivisionMatchupRaw, index: 0 | 1): number | undefined {
+  const id = index === 0
+    ? raw.home_signup?.team?.id
+    : raw.away_signup?.team?.id
+  if (id != null && id > 0) return id
+  return raw.signups?.[index]?.team?.id ?? undefined
+}
 
-  const status = (raw.status ?? '').toLowerCase()
-  if (status.includes('live') || status.includes('progress') || status.includes('playing')) {
-    return 'live'
-  }
-  if (status.includes('upcoming') || status.includes('scheduled') || status.includes('pending')) {
-    return 'upcoming'
-  }
+function teamLogo(raw: DivisionMatchupRaw, index: 0 | 1): string | undefined {
+  const signupTeam = index === 0
+    ? raw.home_signup?.team
+    : raw.away_signup?.team
+  const signupLogo = normalizeBlImageUrl(
+    signupTeam?.logo?.url,
+    signupTeam?.logo?.relative_url,
+  )
+  if (signupLogo) return signupLogo
 
-  const start = safeDate(raw.start_time)
-  if (start && start > now) return 'upcoming'
-  if (start && start <= now) return 'live'
-  return 'unknown'
+  const fallbackTeam = raw.signups?.[index]?.team
+  return normalizeBlImageUrl(
+    fallbackTeam?.logo?.url,
+    fallbackTeam?.logo?.relative_url,
+  )
 }
 
 function sortMatches(a: DivisionMatchSummary, b: DivisionMatchSummary): number {
@@ -105,18 +139,27 @@ export async function getDivisionOverview(divisionId: number): Promise<DivisionR
     .filter((m) => Number.isInteger(m.id) && (m.id ?? 0) > 0)
     .map((m) => {
       const date = m.start_time ?? m.finished_at ?? null
+      const status = inferDivisionStatus(m, now)
       return {
         matchup_id: m.id as number,
         home_team: teamName(m, 0),
         away_team: teamName(m, 1),
+        home_team_id: teamId(m, 0),
+        away_team_id: teamId(m, 1),
+        home_logo_url: teamLogo(m, 0),
+        away_logo_url: teamLogo(m, 1),
         date,
-        status: matchStatus(m, now),
+        status,
+        phase: phaseFromDivisionStatus(status),
+        home_score: m.home_score ?? null,
+        away_score: m.away_score ?? null,
       } satisfies DivisionMatchSummary
     })
     .sort(sortMatches)
 
   return {
     division_id: divisionId,
+    division_name: findDivisionPreset(divisionId)?.name,
     matches,
     fetched_at: new Date().toISOString(),
   }

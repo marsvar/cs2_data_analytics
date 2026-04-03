@@ -179,6 +179,7 @@ export function buildPlayerAnalysis(
     score: Math.round(finalScore * 10000) / 10000,
     ci,
     rounds,
+    assists: player.assists,
     kd: Math.round(kd * 1000) / 1000,
     kast: Math.round(kast * 10000) / 10000,
     dpr: Math.round(dpr * 10) / 10,

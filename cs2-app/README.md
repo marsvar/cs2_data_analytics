@@ -20,6 +20,22 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## CS2 Map Pool Config
+
+Map/veto analytics only include maps from the configured active-duty pool.
+
+Set this in `.env.local`:
+
+```bash
+CS2_ACTIVE_DUTY_MAPS=de_anubis,de_ancient,de_dust2,de_inferno,de_mirage,de_nuke,de_overpass
+```
+
+Notes:
+- Comma-separated list.
+- Supports canonical names (`de_mirage`) and aliases (`mirage`, `dust2`, `dust ii`).
+- You can include new rotation maps directly (for example `de_train`) without code changes.
+- If unset or invalid, the default pool above is used.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:

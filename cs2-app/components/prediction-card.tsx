@@ -4,6 +4,7 @@ import { useMemo } from 'react'
 import type { Team } from '@/lib/types'
 import { deriveTeamStats } from '@/lib/derive-team-stats'
 import { winProbability, roundedProbability } from '@/lib/win-probability'
+import { PlayerAvatar, TeamLogo } from './identity-badge'
 
 function WarnIcon() {
   return (
@@ -68,11 +69,13 @@ export function PredictionCard({ home, away }: { home: Team; away: Team }) {
 
       {/* Team names */}
       <div className="flex justify-between mb-2">
-        <span className="font-mono text-xs text-accent truncate max-w-[40%]" title={homeName}>
+        <span className="inline-flex items-center gap-1.5 font-mono text-xs text-accent truncate max-w-[45%]" title={homeName}>
+          <TeamLogo name={homeName} logoUrl={home.logo_url} tone="home" size="sm" />
           {homeName}
         </span>
-        <span className="font-mono text-xs text-accent2 truncate max-w-[40%] text-right" title={awayName}>
+        <span className="inline-flex items-center justify-end gap-1.5 font-mono text-xs text-accent2 truncate max-w-[45%] text-right" title={awayName}>
           {awayName}
+          <TeamLogo name={awayName} logoUrl={away.logo_url} tone="away" size="sm" />
         </span>
       </div>
 
@@ -106,7 +109,10 @@ export function PredictionCard({ home, away }: { home: Team; away: Team }) {
           <div className="space-y-1.5">
             {homeThreats.map((p) => (
               <div key={p.paradise_user_id} className="flex items-center justify-between gap-2">
-                <span className="font-mono text-xs text-text truncate">{p.name}</span>
+                <span className="inline-flex items-center gap-1.5 min-w-0">
+                  <PlayerAvatar name={p.name} imageUrl={p.avatar_url} tone="home" size="xs" />
+                  <span className="font-mono text-xs text-text truncate">{p.name}</span>
+                </span>
                 <span
                   className="font-mono text-xs tabular-nums shrink-0"
                   style={{ color: scoreColor(p.score) }}
@@ -124,7 +130,10 @@ export function PredictionCard({ home, away }: { home: Team; away: Team }) {
           <div className="space-y-1.5">
             {awayThreats.map((p) => (
               <div key={p.paradise_user_id} className="flex items-center justify-between gap-2">
-                <span className="font-mono text-xs text-text truncate">{p.name}</span>
+                <span className="inline-flex items-center gap-1.5 min-w-0">
+                  <PlayerAvatar name={p.name} imageUrl={p.avatar_url} tone="away" size="xs" />
+                  <span className="font-mono text-xs text-text truncate">{p.name}</span>
+                </span>
                 <span
                   className="font-mono text-xs tabular-nums shrink-0"
                   style={{ color: scoreColor(p.score) }}

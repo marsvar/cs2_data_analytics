@@ -1,13 +1,45 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import {
+  type CSSProperties,
+  useEffect,
+  useMemo,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from 'react'
 import type { AnalyzeResponse, PlayerAnalysis, Team } from '@/lib/types'
-import { detectRole, ROLE_META } from '@/lib/detect-role'
 import { deriveTeamStats } from '@/lib/derive-team-stats'
 import { formatReport } from '@/lib/format-report'
+import { localMapImageForName } from '@/lib/map-images'
+import { detectRole, ROLE_META } from '@/lib/detect-role'
+import { PlayerAvatar, TeamLogo } from './identity-badge'
+import { MapPoolDebugPanel, MapPoolInsights } from './map-pool-insights'
 import { PlayerDetail } from './player-detail'
 import { PredictionCard } from './prediction-card'
 import { TeamComparisonBars } from './team-comparison-bars'
+import { Badge } from '@/components/ui/badge'
+import { Progress } from '@/components/ui/progress'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from '@/components/ui/chart'
+import {
+  Radar,
+  RadarChart,
+  PolarGrid,
+  PolarAngleAxis,
+  PolarRadiusAxis,
+  ResponsiveContainer,
+} from 'recharts'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -17,13 +49,126 @@ function scoreColor(score: number): string {
   return 'var(--color-danger)'
 }
 
+function confidenceFromSample(sampleSize: number): 'low' | 'medium' | 'high' {
+  if (sampleSize >= 20) return 'high'
+  if (sampleSize >= 8) return 'medium'
+  return 'low'
+}
+
+type LandingMapPool = NonNullable<NonNullable<AnalyzeResponse['landing']>['map_pool']>
+type VetoHint = NonNullable<LandingMapPool['veto_hint']>
+
+function deriveBo3VetoHint(
+  activeMaps: string[],
+  homeMaps: LandingMapPool['home']['maps'],
+  awayMaps: LandingMapPool['away']['maps'],
+): VetoHint | undefined {
+  const minSample = 8
+  const homeByMap = new Map(homeMaps.map((map) => [map.map, map]))
+  const awayByMap = new Map(awayMaps.map((map) => [map.map, map]))
+
+  const edgeForTeam = (
+    team: { win_rate: number; sample_size: number } | undefined,
+    opp: { win_rate: number; sample_size: number } | undefined,
+  ): number => {
+    if (team && opp) return team.win_rate - opp.win_rate
+    if (team && !opp) {
+      const sampleFactor = Math.min(team.sample_size / minSample, 1)
+      return (team.win_rate - 0.5) * 0.6 * sampleFactor
+    }
+    if (!team && opp) {
+      const sampleFactor = Math.min(opp.sample_size / minSample, 1)
+      return (0.5 - opp.win_rate) * 0.6 * sampleFactor
+    }
+    return 0
+  }
+
+  const states = activeMaps.map((map) => {
+    const home = homeByMap.get(map)
+    const away = awayByMap.get(map)
+    const homeSample = home?.sample_size ?? 0
+    const awaySample = away?.sample_size ?? 0
+    return {
+      map,
+      home,
+      away,
+      homeEdge: edgeForTeam(home, away),
+      awayEdge: edgeForTeam(away, home),
+      homeSample,
+      awaySample,
+      combinedSample: homeSample + awaySample,
+    }
+  })
+
+  const hasSignal = states.some((s) => s.homeSample >= minSample || s.awaySample >= minSample)
+  if (!hasSignal) return undefined
+
+  const byMap = new Map(states.map((s) => [s.map, s]))
+  const remaining = new Set(activeMaps)
+
+  const choosePick = (team: 'home' | 'away') => {
+    const sorted = Array.from(remaining)
+      .map((map) => byMap.get(map))
+      .filter((state): state is NonNullable<typeof state> => state != null)
+      .sort((a, b) => {
+        const aEdge = team === 'home' ? a.homeEdge : a.awayEdge
+        const bEdge = team === 'home' ? b.homeEdge : b.awayEdge
+        if (bEdge !== aEdge) return bEdge - aEdge
+        const aSample = team === 'home' ? a.homeSample : a.awaySample
+        const bSample = team === 'home' ? b.homeSample : b.awaySample
+        if (bSample !== aSample) return bSample - aSample
+        if (b.combinedSample !== a.combinedSample) return b.combinedSample - a.combinedSample
+        return a.map.localeCompare(b.map)
+      })
+    return sorted[0]?.map
+  }
+
+  const chooseBan = (team: 'home' | 'away') => {
+    const sorted = Array.from(remaining)
+      .map((map) => byMap.get(map))
+      .filter((state): state is NonNullable<typeof state> => state != null)
+      .sort((a, b) => {
+        const aEdge = team === 'home' ? a.homeEdge : a.awayEdge
+        const bEdge = team === 'home' ? b.homeEdge : b.awayEdge
+        if (aEdge !== bEdge) return aEdge - bEdge
+        const aOppSample = team === 'home' ? a.awaySample : a.homeSample
+        const bOppSample = team === 'home' ? b.awaySample : b.homeSample
+        if (bOppSample !== aOppSample) return bOppSample - aOppSample
+        if (b.combinedSample !== a.combinedSample) return b.combinedSample - a.combinedSample
+        return a.map.localeCompare(b.map)
+      })
+    return sorted[0]?.map
+  }
+
+  const take = (map: string | undefined): string | undefined => {
+    if (!map || !remaining.has(map)) return undefined
+    remaining.delete(map)
+    return map
+  }
+
+  const result: VetoHint = {
+    suggested_ban1_for_home: take(chooseBan('home')),
+    suggested_ban1_for_away: take(chooseBan('away')),
+    suggested_pick_for_home: take(choosePick('home')),
+    suggested_pick_for_away: take(choosePick('away')),
+    suggested_ban2_for_home: take(chooseBan('home')),
+    suggested_ban2_for_away: take(chooseBan('away')),
+    decider_map: Array.from(remaining)[0],
+  }
+
+  result.avoid_for_home = result.suggested_ban1_for_home
+  result.avoid_for_away = result.suggested_ban1_for_away
+
+  return Object.values(result).some(Boolean) ? result : undefined
+}
+
 // ── Data source badge ──────────────────────────────────────────────────────────
 
 function DataBadge({ source }: { source: PlayerAnalysis['data_source'] }) {
   const config: Record<PlayerAnalysis['data_source'], { label: string; cls: string }> = {
-    bl:       { label: 'BL',    cls: 'bg-accent/20 text-accent' },
-    leetify:  { label: 'L',     cls: 'bg-success/20 text-success' },
-    combined: { label: 'BL+L',  cls: 'bg-purple-500/20 text-purple-300' },
+    bl: { label: 'BL', cls: 'bg-accent/20 text-accent' },
+    leetify: { label: 'L', cls: 'bg-success/20 text-success' },
+    combined: { label: 'BL+L', cls: 'bg-purple-500/20 text-purple-300' },
   }
   const { label, cls } = config[source]
   return (
@@ -31,66 +176,447 @@ function DataBadge({ source }: { source: PlayerAnalysis['data_source'] }) {
   )
 }
 
-// ── Role badge ─────────────────────────────────────────────────────────────────
-
-function RoleBadge({ player }: { player: PlayerAnalysis }) {
-  const role = detectRole(player)
-  if (!role) return null
-  const { label, desc, colorClass } = ROLE_META[role]
-  return (
-    <span
-      className={`text-[8px] font-mono px-1 py-px border border-current/25 rounded ${colorClass} shrink-0`}
-      title={desc}
-    >
-      {label}
-    </span>
-  )
-}
-
 function TrendBadge({ player }: { player: PlayerAnalysis }) {
   if (player.leetify_prior == null) return null
 
   const delta = player.score - player.leetify_prior
+  const deltaLabel = `${delta > 0 ? '+' : ''}${(delta * 10).toFixed(1)}`
+
   if (delta > 0.05) {
     return (
       <span
-        className="text-[9px] font-mono text-success tabular-nums"
-        title={`Over karrieresnitt (${(delta * 10).toFixed(1)})`}
+        className="text-[8px] font-mono text-success tabular-nums border border-success/35 bg-success/10 rounded px-1 py-px shrink-0"
+        title={`Over karrieresnitt (${deltaLabel})`}
       >
-        ↑
+        ↑ {deltaLabel}
       </span>
     )
   }
   if (delta < -0.05) {
     return (
       <span
-        className="text-[9px] font-mono text-danger tabular-nums"
-        title={`Under karrieresnitt (${(delta * 10).toFixed(1)})`}
+        className="text-[8px] font-mono text-danger tabular-nums border border-danger/35 bg-danger/10 rounded px-1 py-px shrink-0"
+        title={`Under karrieresnitt (${deltaLabel})`}
       >
-        ↓
+        ↓ {deltaLabel}
       </span>
     )
   }
   return (
     <span
-      className="text-[9px] font-mono text-muted tabular-nums"
+      className="text-[8px] font-mono text-muted tabular-nums border border-border/45 bg-surface2/55 rounded px-1 py-px shrink-0"
       title="På linje med karrieresnitt"
     >
-      →
+      → 0.0
     </span>
+  )
+}
+
+type PlayerEarlyInsight = {
+  paradise_user_id: number
+  name: string
+  blended_od: number
+  bl_od?: number
+  leetify_od?: number
+  source: 'BL' | 'L' | 'BL+L'
+  rounds: number
+}
+
+type PlayerFormInsight = {
+  paradise_user_id: number
+  name: string
+  delta: number
+}
+
+function toPercent(value: number): string {
+  return `${(value * 100).toFixed(1)}%`
+}
+
+function edgeDirection(delta: number, homeLabel: string, awayLabel: string): string {
+  if (Math.abs(delta) < 0.0001) return 'Jevnt'
+  return delta > 0 ? homeLabel : awayLabel
+}
+
+function toScaledDelta(value: number): string {
+  const scaled = value * 10
+  return `${scaled >= 0 ? '+' : ''}${scaled.toFixed(2)}`
+}
+
+function computePlayerEarlyInsights(players: PlayerAnalysis[]): PlayerEarlyInsight[] {
+  const insights: PlayerEarlyInsight[] = []
+  for (const player of players) {
+    const blOd = Number.isFinite(player.od_rate) ? player.od_rate : undefined
+    const leetifyOd = player.leetify
+      ? (player.leetify.ct_od + player.leetify.t_od) / 2
+      : undefined
+
+    const blended =
+      blOd != null && leetifyOd != null
+        ? blOd * 0.65 + leetifyOd * 0.35
+        : blOd ?? leetifyOd
+
+    if (blended == null) continue
+
+    insights.push({
+      paradise_user_id: player.paradise_user_id,
+      name: player.name,
+      blended_od: blended,
+      bl_od: blOd,
+      leetify_od: leetifyOd,
+      source: blOd != null && leetifyOd != null ? 'BL+L' : blOd != null ? 'BL' : 'L',
+      rounds: player.rounds,
+    })
+  }
+  return insights
+}
+
+function weightedTeamEarlyOd(players: PlayerEarlyInsight[]): number {
+  if (players.length === 0) return 0.5
+
+  let weightedSum = 0
+  let totalWeight = 0
+  for (const player of players) {
+    const weight = Math.max(20, Math.min(player.rounds, 400))
+    weightedSum += player.blended_od * weight
+    totalWeight += weight
+  }
+  return totalWeight > 0 ? weightedSum / totalWeight : 0.5
+}
+
+function computeFormInsights(players: PlayerAnalysis[]): PlayerFormInsight[] {
+  return players
+    .filter((player) => player.leetify_prior != null)
+    .map((player) => ({
+      paradise_user_id: player.paradise_user_id,
+      name: player.name,
+      delta: player.score - (player.leetify_prior ?? player.score),
+    }))
+}
+
+function strongestAndWeakest(
+  players: PlayerEarlyInsight[],
+): { strengths: PlayerEarlyInsight[]; weaknesses: PlayerEarlyInsight[] } {
+  if (players.length === 0) return { strengths: [], weaknesses: [] }
+
+  const sorted = [...players].sort((a, b) => b.blended_od - a.blended_od)
+  const strengths = sorted.slice(0, Math.min(2, sorted.length))
+
+  const weaknesses: PlayerEarlyInsight[] = []
+  for (let i = sorted.length - 1; i >= 0 && weaknesses.length < 2; i -= 1) {
+    const candidate = sorted[i]
+    if (strengths.some((player) => player.paradise_user_id === candidate.paradise_user_id)) {
+      continue
+    }
+    weaknesses.push(candidate)
+  }
+
+  return { strengths, weaknesses }
+}
+
+function EarlyStrengthCard({
+  title,
+  accentClass,
+  players,
+}: {
+  title: string
+  accentClass: string
+  players: PlayerEarlyInsight[]
+}) {
+  const { strengths, weaknesses } = useMemo(() => strongestAndWeakest(players), [players])
+
+  return (
+    <div className="rounded border border-border/35 bg-surface2/20 p-3">
+      <p className={`font-mono text-[11px] mb-2 ${accentClass}`}>{title}</p>
+
+      <div className="space-y-2">
+        <div>
+          <p className="font-mono text-[9px] uppercase tracking-widest text-success/70 mb-1.5">Sterkest i opening</p>
+          {strengths.length > 0 ? (
+            <div className="space-y-1.5">
+              {strengths.map((player) => {
+                const od = player.blended_od
+                return (
+                  <div key={`strength-${player.paradise_user_id}`} className="flex items-center gap-2">
+                    <span className="font-mono text-[11px] text-text truncate flex-1">{player.name}</span>
+                    <div className="w-16 h-1.5 bg-surface rounded-full overflow-hidden shrink-0">
+                      <div className="h-full rounded-full bg-success/70" style={{ width: `${od * 100}%` }} />
+                    </div>
+                    <span className="font-mono text-[10px] tabular-nums text-success w-9 text-right shrink-0">{toPercent(od)}</span>
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            <p className="font-mono text-[10px] text-muted">Ingen data.</p>
+          )}
+        </div>
+
+        <div>
+          <p className="font-mono text-[9px] uppercase tracking-widest text-danger/70 mb-1.5">Svakest i opening</p>
+          {weaknesses.length > 0 ? (
+            <div className="space-y-1.5">
+              {weaknesses.map((player) => {
+                const od = player.blended_od
+                return (
+                  <div key={`weakness-${player.paradise_user_id}`} className="flex items-center gap-2">
+                    <span className="font-mono text-[11px] text-text truncate flex-1">{player.name}</span>
+                    <div className="w-16 h-1.5 bg-surface rounded-full overflow-hidden shrink-0">
+                      <div className="h-full rounded-full bg-danger/70" style={{ width: `${od * 100}%` }} />
+                    </div>
+                    <span className="font-mono text-[10px] tabular-nums text-danger w-9 text-right shrink-0">{toPercent(od)}</span>
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            <p className="font-mono text-[10px] text-muted">Ingen tydelig svakhet.</p>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function FormGraph({
+  title,
+  accentClass,
+  data,
+}: {
+  title: string
+  accentClass: string
+  data: PlayerFormInsight[]
+}) {
+  const maxAbs = useMemo(() => {
+    const base = data.reduce((acc, player) => Math.max(acc, Math.abs(player.delta)), 0)
+    return Math.max(base, 0.05)
+  }, [data])
+
+  const teamAvg = useMemo(() => {
+    if (data.length === 0) return 0
+    const total = data.reduce((sum, player) => sum + player.delta, 0)
+    return total / data.length
+  }, [data])
+
+  return (
+    <div className="rounded border border-border/35 bg-surface2/20 p-3">
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <p className={`font-mono text-[11px] ${accentClass}`}>{title}</p>
+        <span className="font-mono text-[10px] tabular-nums text-muted">
+          Snitt: <span className={teamAvg >= 0 ? 'text-success' : 'text-danger'}>{toScaledDelta(teamAvg)}</span>
+        </span>
+      </div>
+
+      {data.length === 0 ? (
+        <p className="font-mono text-[10px] text-muted">Mangler Leetify-data for å beregne formavvik.</p>
+      ) : (
+        <div className="space-y-1.5">
+          {data.map((player) => {
+            const pct = (Math.abs(player.delta) / maxAbs) * 50
+            const positive = player.delta >= 0
+            return (
+              <div key={player.paradise_user_id} className="flex items-center gap-2">
+                <span className="w-24 shrink-0 font-mono text-[10px] text-text truncate">{player.name}</span>
+                <div className="relative flex-1 h-3 rounded bg-surface/70 overflow-hidden border border-border/30">
+                  <div className="absolute inset-y-0 left-1/2 w-px bg-border/80" />
+                  <div
+                    className={`absolute top-0 h-full ${positive ? 'bg-success/70 left-1/2' : 'bg-danger/70 left-1/2'}`}
+                    style={
+                      positive
+                        ? { width: `${pct}%` }
+                        : { width: `${pct}%`, transform: 'translateX(-100%)' }
+                    }
+                  />
+                </div>
+                <span className={`w-14 shrink-0 text-right font-mono text-[10px] tabular-nums ${positive ? 'text-success' : 'text-danger'}`}>
+                  {toScaledDelta(player.delta)}
+                </span>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function EarlyRoundAndFormPanel({
+  home,
+  away,
+  landing,
+  usingLiveLineup,
+}: {
+  home: Team
+  away: Team
+  landing?: AnalyzeResponse['landing']
+  usingLiveLineup: boolean
+}) {
+  const homeEarly = useMemo(() => computePlayerEarlyInsights(home.players), [home.players])
+  const awayEarly = useMemo(() => computePlayerEarlyInsights(away.players), [away.players])
+  const homeForm = useMemo(() => computeFormInsights(home.players), [home.players])
+  const awayForm = useMemo(() => computeFormInsights(away.players), [away.players])
+
+  const homeTeamOd = weightedTeamEarlyOd(homeEarly)
+  const awayTeamOd = weightedTeamEarlyOd(awayEarly)
+  const edgeDelta = homeTeamOd - awayTeamOd
+
+  const sourceLabel = landing?.early_round_edge.source === 'combined'
+    ? 'BL + Leetify'
+    : landing?.early_round_edge.source === 'leetify'
+      ? 'Leetify'
+      : 'BL'
+
+  return (
+    <section className="mt-6 mb-6 bg-surface rounded-xl border border-border/45 p-4">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-3 mb-4">
+        <div>
+          <h3 className="font-display text-[10px] uppercase tracking-widest text-accent mb-1">
+            Åpningsdueller &amp; Form
+          </h3>
+          <p className="font-mono text-[9px] text-muted/60 leading-relaxed max-w-sm">
+            Åpningsduel-win% avgjør ~70% av alle runder. Formgrafen viser avvik fra Leetify karrieresnitt — positiv = bedre form enn normalt.
+          </p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          {usingLiveLineup && (
+            <span className="font-mono text-[9px] uppercase tracking-widest rounded border border-accent/40 bg-accent/10 text-accent px-2 py-1">
+              Live lineup
+            </span>
+          )}
+          <span className="font-mono text-[9px] uppercase tracking-widest rounded border border-border/40 text-muted/70 px-2 py-1">
+            {sourceLabel}
+          </span>
+        </div>
+      </div>
+
+      {/* Team OD comparison bar */}
+      <div className="rounded-lg border border-border/30 bg-surface2/15 p-3 mb-4">
+        <p className="font-mono text-[9px] uppercase tracking-widest text-muted/50 mb-2">
+          Lagveid åpningsduel-rate
+        </p>
+        <div className="relative h-2.5 rounded-full bg-surface overflow-hidden mb-2">
+          <div
+            className="absolute inset-y-0 left-0 rounded-l-full bg-accent transition-all duration-700"
+            style={{ width: `${Math.max(0, Math.min(100, homeTeamOd * 100))}%` }}
+          />
+          <div className="absolute inset-y-0 left-1/2 w-px bg-border/60" />
+        </div>
+        <div className="flex items-center justify-between font-mono text-[11px]">
+          <span className="text-accent tabular-nums">{home.name || 'Hjem'}: {toPercent(homeTeamOd)}</span>
+          <span className={`text-[9px] ${Math.abs(edgeDelta) < 0.03 ? 'text-muted' : edgeDelta > 0 ? 'text-accent' : 'text-accent2'}`}>
+            {Math.abs(edgeDelta * 100) < 3
+              ? 'Likt fordelt'
+              : `${edgeDelta > 0 ? home.name || 'Hjem' : away.name || 'Borte'} +${Math.abs(edgeDelta * 100).toFixed(1)} pp`
+            }
+          </span>
+          <span className="text-accent2 tabular-nums">{toPercent(awayTeamOd)}: {away.name || 'Borte'}</span>
+        </div>
+      </div>
+
+      {landing && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+          <div className="rounded-lg border border-border/30 bg-surface2/15 p-3">
+            <p className="font-mono text-[9px] uppercase tracking-widest text-muted/50 mb-2">Trade-struktur</p>
+            <p className="font-mono text-[11px] text-text">
+              {landing.trade_structure_edge?.source === 'bl'
+                ? `${edgeDirection(landing.trade_structure_edge.trade_kill_delta, home.name || 'Hjem', away.name || 'Borte')} har best trade-kill-rate`
+                : 'Mangler robuste BL-trade-felt'}
+            </p>
+            <p className="font-mono text-[10px] text-muted mt-2">
+              Trade K/R: {landing.trade_structure_edge?.home_trade_kill_rate?.toFixed(2) ?? '0.00'} vs {landing.trade_structure_edge?.away_trade_kill_rate?.toFixed(2) ?? '0.00'}
+            </p>
+            {landing.trade_structure_edge?.trade_recovery_delta != null && (
+              <p className="font-mono text-[10px] text-muted mt-1">
+                Death-trade recovery: {signed(landing.trade_structure_edge.trade_recovery_delta * 100, ' pp')}
+              </p>
+            )}
+          </div>
+
+          <div className="rounded-lg border border-border/30 bg-surface2/15 p-3">
+            <p className="font-mono text-[9px] uppercase tracking-widest text-muted/50 mb-2">Survival-disciplin</p>
+            <p className="font-mono text-[11px] text-text">
+              {landing.survival_discipline_edge?.source === 'bl'
+                ? `${edgeDirection(landing.survival_discipline_edge.survival_delta, home.name || 'Hjem', away.name || 'Borte')} overlever bedre uten å lene seg kun på KAST`
+                : 'Viser KAST-only fallback når survival mangler'}
+            </p>
+            <p className="font-mono text-[10px] text-muted mt-2">
+              Survival: {toPercent(landing.survival_discipline_edge?.home_survival ?? 0)} vs {toPercent(landing.survival_discipline_edge?.away_survival ?? 0)}
+            </p>
+            <p className="font-mono text-[10px] text-muted mt-1">
+              KAST: {toPercent(landing.survival_discipline_edge?.home_kast ?? 0)} vs {toPercent(landing.survival_discipline_edge?.away_kast ?? 0)}
+            </p>
+          </div>
+
+          <div className="rounded-lg border border-border/30 bg-surface2/15 p-3">
+            <p className="font-mono text-[9px] uppercase tracking-widest text-muted/50 mb-2">Entry-press</p>
+            <p className="font-mono text-[11px] text-text">
+              {landing.entry_pressure_edge?.source !== 'insufficient'
+                ? `${edgeDirection(landing.entry_pressure_edge?.firstkill_delta ?? 0, home.name || 'Hjem', away.name || 'Borte')} skaper oftest første kontakt`
+                : 'Mangler firstkill-volum i BL-data'}
+            </p>
+            <p className="font-mono text-[10px] text-muted mt-2">
+              FK/R: {(landing.entry_pressure_edge?.home_firstkill_rate ?? 0).toFixed(2)} vs {(landing.entry_pressure_edge?.away_firstkill_rate ?? 0).toFixed(2)}
+            </p>
+            <p className="font-mono text-[10px] text-muted mt-1">
+              OD: {toPercent(landing.entry_pressure_edge?.home_od ?? homeTeamOd)} vs {toPercent(landing.entry_pressure_edge?.away_od ?? awayTeamOd)}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Per-player opening duel breakdown */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-4">
+        <div>
+          <p className="font-mono text-[9px] uppercase tracking-widest text-muted/50 mb-2 px-0.5">
+            Åpningsdueller per spiller
+          </p>
+          <EarlyStrengthCard title={home.name || 'Hjem'} accentClass="text-accent" players={homeEarly} />
+        </div>
+        <div>
+          <p className="font-mono text-[9px] uppercase tracking-widest text-muted/50 mb-2 px-0.5">
+            Åpningsdueller per spiller
+          </p>
+          <EarlyStrengthCard title={away.name || 'Borte'} accentClass="text-accent2" players={awayEarly} />
+        </div>
+      </div>
+
+      {/* Form vs career baseline */}
+      <div>
+        <p className="font-mono text-[9px] uppercase tracking-widest text-muted/50 mb-2 px-0.5">
+          Form vs karrieresnitt (Leetify) — positiv betyr over normalt nivå
+        </p>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+          <FormGraph title={home.name || 'Hjem'} accentClass="text-accent" data={homeForm} />
+          <FormGraph title={away.name || 'Borte'} accentClass="text-accent2" data={awayForm} />
+        </div>
+      </div>
+    </section>
   )
 }
 
 // ── Expandable player row ──────────────────────────────────────────────────────
 
-function PlayerRow({ player }: { player: PlayerAnalysis }) {
+function PlayerRow({
+  player,
+  matchStatus,
+  tone,
+}: {
+  player: PlayerAnalysis
+  matchStatus: AnalyzeResponse['meta']['match_status']
+  tone: 'home' | 'away'
+}) {
   const [expanded, setExpanded] = useState(false)
   const displayScore = (player.score * 10).toFixed(2)
   const displayCI = player.ci.toFixed(2)
+  const role = detectRole(player)
+  const roleMeta = role ? ROLE_META[role] : null
+
+  const hasCTT = player.leetify != null
+  const ctPct = player.leetify ? Math.round(player.leetify.ct_od * 100) : null
+  const tPct = player.leetify ? Math.round(player.leetify.t_od * 100) : null
 
   return (
     <div className="border-b border-border/25 last:border-0">
-      {/* Clickable row */}
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
@@ -98,7 +624,6 @@ function PlayerRow({ player }: { player: PlayerAnalysis }) {
         aria-expanded={expanded}
         aria-controls={`detail-${player.paradise_user_id}`}
       >
-        {/* Expand chevron */}
         <svg
           width="10"
           height="10"
@@ -117,14 +642,31 @@ function PlayerRow({ player }: { player: PlayerAnalysis }) {
           />
         </svg>
 
-        {/* Name + role + trend */}
-        <div className="flex items-center gap-1.5 w-28 shrink-0 min-w-0">
-          <span className="font-mono text-xs text-text truncate">{player.name}</span>
-          <RoleBadge player={player} />
-          <TrendBadge player={player} />
+        <div className="flex flex-col min-w-0 w-36 shrink-0">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <PlayerAvatar
+              name={player.name}
+              imageUrl={player.avatar_url}
+              tone={tone}
+              size="xs"
+            />
+            <span className="font-mono text-xs text-text truncate">{player.name}</span>
+            <TrendBadge player={player} />
+          </div>
+          <div className="flex items-center gap-1.5 mt-0.5">
+            {roleMeta && (
+              <span className={`text-[8px] font-mono ${roleMeta.colorClass}`} title={roleMeta.desc}>
+                {roleMeta.label}
+              </span>
+            )}
+            {hasCTT && ctPct != null && tPct != null && (
+              <span className="text-[8px] font-mono text-muted/60 tabular-nums" title="CT/T OD% (Leetify matchmaking)">
+                CT{ctPct}%·T{tPct}%
+              </span>
+            )}
+          </div>
         </div>
 
-        {/* Power bar */}
         <div className="relative flex-1 h-1 bg-surface2 rounded-full mx-2">
           <div
             className="absolute inset-y-0 left-0 rounded-full"
@@ -136,7 +678,6 @@ function PlayerRow({ player }: { player: PlayerAnalysis }) {
           />
         </div>
 
-        {/* Score ±CI */}
         <span
           className="w-20 shrink-0 font-mono text-xs text-right tabular-nums"
           style={{ color: scoreColor(player.score) }}
@@ -145,13 +686,11 @@ function PlayerRow({ player }: { player: PlayerAnalysis }) {
           <span className="text-muted text-[10px]">±{displayCI}</span>
         </span>
 
-        {/* Data badge */}
         <div className="w-12 shrink-0 flex justify-end">
           <DataBadge source={player.data_source} />
         </div>
       </button>
 
-      {/* Collapsible detail panel — CSS grid trick for smooth height animation */}
       <div
         id={`detail-${player.paradise_user_id}`}
         style={{
@@ -162,7 +701,7 @@ function PlayerRow({ player }: { player: PlayerAnalysis }) {
       >
         <div style={{ overflow: 'hidden' }}>
           <div className="px-3 pt-3 pb-4 my-1 mx-1 rounded-md bg-surface2/30 border border-border/20">
-            <PlayerDetail player={player} />
+            <PlayerDetail player={player} matchStatus={matchStatus} />
           </div>
         </div>
       </div>
@@ -172,7 +711,15 @@ function PlayerRow({ player }: { player: PlayerAnalysis }) {
 
 // ── Team card ──────────────────────────────────────────────────────────────────
 
-function TeamCard({ team, accent }: { team: Team; accent: 'accent' | 'accent2' }) {
+function TeamCard({
+  team,
+  accent,
+  matchStatus,
+}: {
+  team: Team
+  accent: 'accent' | 'accent2'
+  matchStatus: AnalyzeResponse['meta']['match_status']
+}) {
   const sorted = useMemo(
     () => [...team.players].sort((a, b) => b.score - a.score),
     [team.players],
@@ -181,12 +728,18 @@ function TeamCard({ team, accent }: { team: Team; accent: 'accent' | 'accent2' }
 
   const headerColor = accent === 'accent' ? 'text-accent' : 'text-accent2'
   const borderColor = accent === 'accent' ? 'border-accent/25' : 'border-accent2/25'
+  const tone: 'home' | 'away' = accent === 'accent' ? 'home' : 'away'
 
   return (
     <div className={`bg-surface rounded-lg border ${borderColor} p-4`}>
-      {/* Header row */}
       <div className="flex items-baseline justify-between mb-4">
-        <h2 className={`font-display text-sm tracking-widest uppercase ${headerColor}`}>
+        <h2 className={`font-display text-sm tracking-widest uppercase ${headerColor} flex items-center gap-2`}>
+          <TeamLogo
+            name={team.name || 'Team'}
+            logoUrl={team.logo_url}
+            tone={tone}
+            size="md"
+          />
           {team.name || 'Team'}
         </h2>
         <span className="font-mono text-[10px] text-muted tabular-nums">
@@ -197,9 +750,8 @@ function TeamCard({ team, accent }: { team: Team; accent: 'accent' | 'accent2' }
         </span>
       </div>
 
-      {/* Column labels */}
       <div className="flex items-center gap-2 mb-1 px-5">
-        <span className="w-28 shrink-0 text-[9px] font-mono text-muted uppercase tracking-widest">
+        <span className="w-36 shrink-0 text-[9px] font-mono text-muted uppercase tracking-widest">
           Spiller
         </span>
         <span className="flex-1 mx-2 text-[9px] font-mono text-muted uppercase tracking-widest">
@@ -215,7 +767,12 @@ function TeamCard({ team, accent }: { team: Team; accent: 'accent' | 'accent2' }
 
       <div>
         {sorted.map((p) => (
-          <PlayerRow key={p.paradise_user_id} player={p} />
+          <PlayerRow
+            key={p.paradise_user_id}
+            player={p}
+            matchStatus={matchStatus}
+            tone={tone}
+          />
         ))}
       </div>
     </div>
@@ -227,6 +784,10 @@ function TeamCard({ team, accent }: { team: Team; accent: 'accent' | 'accent2' }
 function MetaBar({ meta }: { meta: AnalyzeResponse['meta'] }) {
   return (
     <div className="flex flex-wrap gap-x-5 gap-y-1 text-[10px] font-mono text-muted bg-surface rounded-md px-4 py-2.5 border border-border/40 mb-6">
+      <span>
+        <span className="text-text/70">Status</span>{' '}
+        <span className="tabular-nums">{meta.match_status === 'played' ? 'Spilt' : 'Kommende'}</span>
+      </span>
       <span>
         <span className="text-text/70">Runder</span>{' '}
         <span className="tabular-nums">{meta.rounds_fetched}</span>
@@ -263,14 +824,1268 @@ function CopyReportButton({ result }: { result: AnalyzeResponse }) {
   }
 
   return (
-    <button
-      type="button"
-      onClick={copyReport}
-      className="font-mono text-[10px] uppercase tracking-widest px-3 py-1.5 rounded border border-border/50 bg-surface hover:bg-surface2/50 transition-colors"
-      title="Kopier analyse som tekst"
+    <div className="flex flex-col items-end gap-1">
+      <button
+        type="button"
+        onClick={copyReport}
+        className="font-mono text-[10px] uppercase tracking-widest px-3 py-1.5 rounded border border-border/50 bg-surface hover:bg-surface2/50 transition-colors"
+        title="Kopier analyse som tekst"
+      >
+        {state === 'copied' ? 'Kopiert' : state === 'error' ? 'Feilet' : 'Kopier analyse'}
+      </button>
+      <span aria-live="polite" className="font-mono text-[9px] text-muted h-3">
+        {state === 'copied'
+          ? 'Analyse kopiert til utklippstavle.'
+          : state === 'error'
+            ? 'Kunne ikke kopiere. Sjekk nettleser-tilgang til utklippstavle.'
+            : ''}
+      </span>
+    </div>
+  )
+}
+
+function teamLabel(result: AnalyzeResponse, side: 'home' | 'away'): string {
+  return side === 'home'
+    ? (result.teams.home.name || 'Hjem')
+    : (result.teams.away.name || 'Borte')
+}
+
+function winnerLabel(result: AnalyzeResponse, winner?: 'home' | 'away' | 'draw' | 'unknown'): string {
+  const resolved = winner ?? result.result_summary?.winner ?? 'unknown'
+  if (resolved === 'home') return teamLabel(result, 'home')
+  if (resolved === 'away') return teamLabel(result, 'away')
+  if (resolved === 'draw') return 'Uavgjort'
+  return 'Ukjent'
+}
+
+function signed(value: number, suffix = ''): string {
+  return `${value >= 0 ? '+' : ''}${value.toFixed(1)}${suffix}`
+}
+
+function boLabel(result: AnalyzeResponse): string {
+  const fromNote = result.maps_played?.note?.match(/BO(\d+)/i)
+  if (fromNote) return `BO${fromNote[1]}`
+
+  const homeWins = result.result_summary?.home_score ?? 0
+  const awayWins = result.result_summary?.away_score ?? 0
+  const maxWins = Math.max(homeWins, awayWins)
+  if (maxWins >= 3) return 'BO5'
+  if (maxWins >= 2) return 'BO3'
+  if (maxWins >= 1) return 'BO1'
+
+  const mapCount = result.maps_played?.maps.length ?? 0
+  if (mapCount >= 5) return 'BO5'
+  if (mapCount >= 3) return 'BO3'
+  if (mapCount > 0) return 'BO1'
+  return 'BO?'
+}
+
+function completenessBadgeClass(completeness: 'full' | 'partial' | 'missing'): string {
+  if (completeness === 'full') return 'border-success/40 text-success bg-success/10'
+  if (completeness === 'partial') return 'border-warning/40 text-warning bg-warning/10'
+  return 'border-border/40 text-muted bg-surface2/40'
+}
+
+function mapWinnerFromScore(
+  home?: number | null,
+  away?: number | null,
+): 'home' | 'away' | 'draw' | 'unknown' {
+  if (home == null || away == null) return 'unknown'
+  if (home > away) return 'home'
+  if (away > home) return 'away'
+  return 'draw'
+}
+
+function winnerBadgeClass(side: 'home' | 'away' | 'draw' | 'unknown'): string {
+  if (side === 'home') return 'border-accent/45 text-accent bg-accent/10'
+  if (side === 'away') return 'border-accent2/45 text-accent2 bg-accent2/10'
+  if (side === 'draw') return 'border-warning/45 text-warning bg-warning/10'
+  return 'border-border/40 text-muted bg-surface2/50'
+}
+
+function trendBadgeClass(trend: 'overperforming' | 'underperforming' | 'stable'): string {
+  if (trend === 'overperforming') return 'border-success/45 text-success bg-success/10'
+  if (trend === 'underperforming') return 'border-danger/45 text-danger bg-danger/10'
+  return 'border-border/45 text-muted bg-surface2/40'
+}
+
+function mapSurfaceStyle(name: string | undefined, imageUrl: string | undefined): CSSProperties {
+  if (imageUrl) {
+    const safeUrl = encodeURI(imageUrl).replace(/"/g, '\\"')
+    return {
+      backgroundImage: `linear-gradient(to top, rgba(7,10,15,0.86), rgba(7,10,15,0.40)), url("${safeUrl}")`,
+      backgroundSize: 'cover',
+      backgroundPosition: 'center',
+      backgroundRepeat: 'no-repeat',
+    }
+  }
+
+  const seed = (name ?? 'map')
+    .split('')
+    .reduce((sum, char) => sum + char.charCodeAt(0), 0) % 360
+  return {
+    backgroundImage: `linear-gradient(140deg, hsl(${seed} 58% 22%), hsl(${(seed + 46) % 360} 64% 16%))`,
+  }
+}
+
+/** @deprecated use MetricBar */
+function EdgeMeter({
+  label,
+  value,
+  maxAbs,
+  suffix = '',
+}: {
+  label: string
+  value: number
+  maxAbs: number
+  suffix?: string
+}) {
+  const width = Math.min(Math.abs(value) / maxAbs, 1) * 50
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between gap-3">
+        <span className="font-mono text-[10px] text-muted">{label}</span>
+        <span className={`font-mono text-[10px] tabular-nums ${value >= 0 ? 'text-accent' : 'text-accent2'}`}>
+          {signed(value, suffix)}
+        </span>
+      </div>
+      <div className="relative h-1.5 rounded-full bg-surface">
+        <div className="absolute left-1/2 top-0 bottom-0 w-px bg-border/80" />
+        {value >= 0 ? (
+          <div
+            className="absolute top-0 bottom-0 left-1/2 rounded-r-full bg-accent/80"
+            style={{ width: `${width}%` }}
+          />
+        ) : (
+          <div
+            className="absolute top-0 bottom-0 right-1/2 rounded-l-full bg-accent2/80"
+            style={{ width: `${width}%` }}
+          />
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── New visualization components ───────────────────────────────────────────────
+
+/**
+ * Two-sided metric bar with team labels and significant-edge threshold marker.
+ * Positive value → home (accent/blue) wins. Negative → away (accent2/orange) wins.
+ */
+function MetricBar({
+  label,
+  tooltip: tooltipText,
+  value,
+  maxAbs,
+  suffix = '',
+  homeVal,
+  awayVal,
+  homeLogo,
+  awayLogo,
+  homeLabel,
+  awayLabel,
+  dim = false,
+}: {
+  label: string
+  tooltip?: string
+  value: number
+  maxAbs: number
+  suffix?: string
+  homeVal?: string
+  awayVal?: string
+  homeLogo?: string
+  awayLogo?: string
+  homeLabel?: string
+  awayLabel?: string
+  dim?: boolean
+}) {
+  if (!Number.isFinite(value)) return null
+  const pct = Math.min(Math.abs(value) / maxAbs, 1) * 50
+  const isHome = value >= 0
+  const sigThresholdPct = 50 * 0.33
+  const hasActualVals = homeVal != null && awayVal != null
+
+  // Bar fills toward the WINNING team's side.
+  // Home is left, away is right — winner's fill extends outward from center toward them.
+  const barTrack = (
+    <div className="relative h-2.5 rounded-full bg-surface overflow-hidden">
+      <div className="absolute top-0 bottom-0 w-px bg-border/60 z-10" style={{ left: `${50 - sigThresholdPct}%` }} />
+      <div className="absolute top-0 bottom-0 w-px bg-border/60 z-10" style={{ left: `${50 + sigThresholdPct}%` }} />
+      <div className="absolute left-1/2 top-0 bottom-0 w-px bg-border z-10" />
+      {isHome
+        ? <div className="absolute inset-y-0 left-0 right-1/2 bg-accent/5" />
+        : <div className="absolute inset-y-0 left-1/2 right-0 bg-accent2/5" />}
+      {isHome ? (
+        <div
+          className="absolute top-0 bottom-0 right-1/2 rounded-l-full bg-gradient-to-l from-accent/60 to-accent transition-all duration-700"
+          style={{ width: `${pct}%` }}
+        />
+      ) : (
+        <div
+          className="absolute top-0 bottom-0 left-1/2 rounded-r-full bg-gradient-to-r from-accent2/60 to-accent2 transition-all duration-700"
+          style={{ width: `${pct}%` }}
+        />
+      )}
+    </div>
+  )
+
+  const teamIcon = (logoUrl: string | undefined, side: 'home' | 'away') =>
+    logoUrl
+      ? <img src={logoUrl} alt="" className="w-4 h-4 rounded object-contain bg-surface2 shrink-0" />
+      : <div className={`w-2 h-2 rounded-full shrink-0 ${side === 'home' ? 'bg-accent' : 'bg-accent2'}`} />
+
+  const barEl = (
+    <div className={`space-y-1 ${dim ? 'opacity-65' : ''}`}>
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-mono text-[10px] text-muted">{label}</span>
+        {hasActualVals ? (
+          <span className={`font-mono text-[10px] tabular-nums ${isHome ? 'text-accent/80' : 'text-accent2/80'}`}>
+            Δ {Math.abs(value).toFixed(1)}
+          </span>
+        ) : (
+          <span className={`font-mono text-[13px] font-semibold tabular-nums leading-none ${isHome ? 'text-accent' : 'text-accent2'}`}>
+            {signed(value, suffix)}
+          </span>
+        )}
+      </div>
+
+      {hasActualVals ? (
+        <div className="flex items-center gap-1.5 min-w-0">
+          {/* Home: icon + value */}
+          <div className="flex items-center gap-1 min-w-[52px]">
+            {teamIcon(homeLogo, 'home')}
+            <span className={`font-mono text-[11px] font-semibold tabular-nums leading-none ${isHome ? 'text-accent' : 'text-muted/60'}`}>
+              {homeVal}
+            </span>
+          </div>
+          <div className="flex-1">{barTrack}</div>
+          {/* Away: value + icon */}
+          <div className="flex items-center gap-1 justify-end min-w-[52px]">
+            <span className={`font-mono text-[11px] font-semibold tabular-nums leading-none ${!isHome ? 'text-accent2' : 'text-muted/60'}`}>
+              {awayVal}
+            </span>
+            {teamIcon(awayLogo, 'away')}
+          </div>
+        </div>
+      ) : (
+        <>
+          {barTrack}
+          {(homeLabel || awayLabel || homeLogo || awayLogo) && (
+            <div className="flex justify-between font-mono leading-none mt-0.5">
+              <div className="flex items-center gap-1">
+                {homeLogo && <img src={homeLogo} alt="" className="w-3 h-3 rounded object-contain shrink-0" />}
+                {homeLabel && <span className={`text-[9px] ${isHome ? 'text-accent/80' : 'text-muted/50'} truncate max-w-[45%]`}>{homeLabel}</span>}
+              </div>
+              <div className="flex items-center gap-1 justify-end">
+                {awayLabel && <span className={`text-[9px] ${!isHome ? 'text-accent2/80' : 'text-muted/50'} truncate max-w-[45%] text-right`}>{awayLabel}</span>}
+                {awayLogo && <img src={awayLogo} alt="" className="w-3 h-3 rounded object-contain shrink-0" />}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+
+  if (!tooltipText) return barEl
+  return (
+    <TooltipProvider delayDuration={300}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div className="cursor-default">{barEl}</div>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="max-w-[220px] text-[10px] font-mono bg-surface2 border-border text-text">
+          {tooltipText}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  )
+}
+
+/**
+ * Small badge showing which team won the most sub-metrics in a section.
+ * Pass an array of signed values: positive = home wins that metric.
+ */
+function SectionWinner({
+  values,
+  homeLabel,
+  awayLabel,
+}: {
+  values: (number | undefined)[]
+  homeLabel: string
+  awayLabel: string
+}) {
+  const defined = values.filter((v): v is number => v != null && Number.isFinite(v))
+  if (defined.length === 0) return null
+  const homeWins = defined.filter((v) => v > 0).length
+  const awayWins = defined.filter((v) => v < 0).length
+  const total = defined.length
+
+  if (homeWins === awayWins) {
+    return (
+      <Badge variant="outline" className="font-mono text-[9px] uppercase tracking-widest text-muted border-border/50 px-1.5 py-0.5 h-auto rounded">
+        Jevnt
+      </Badge>
+    )
+  }
+  const winner = homeWins > awayWins
+  const label = winner ? homeLabel : awayLabel
+  const wins = winner ? homeWins : awayWins
+  return (
+    <Badge
+      variant="outline"
+      className={`font-mono text-[9px] uppercase tracking-widest px-1.5 py-0.5 h-auto rounded ${
+        winner
+          ? 'text-accent border-accent/50 bg-accent/10'
+          : 'text-accent2 border-accent2/50 bg-accent2/10'
+      }`}
     >
-      {state === 'copied' ? 'Kopiert' : state === 'error' ? 'Feilet' : 'Kopier analyse'}
-    </button>
+      {wins}/{total} {label} ▲
+    </Badge>
+  )
+}
+
+/** Shown when a section has no usable data from the BL API. */
+function DataQualityNotice({ message }: { message: string }) {
+  return (
+    <div className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/5 px-3 py-2.5">
+      <span className="text-warning text-[11px] leading-none mt-0.5">⚠</span>
+      <p className="font-mono text-[10px] text-warning/80">{message}</p>
+    </div>
+  )
+}
+
+function PostMatchReport({ result }: { result: AnalyzeResponse }) {
+  const resultSummary = result.result_summary
+  const mapsPlayed = result.maps_played
+  const post = result.post_analysis
+  const homePlayers = result.teams.home.players
+  const awayPlayers = result.teams.away.players
+  const playerByTeamAndName = (team: 'home' | 'away', name: string): PlayerAnalysis | undefined => {
+    const pool = team === 'home' ? homePlayers : awayPlayers
+    return pool.find((player) => player.name === name)
+  }
+  const seriesDecidedEarly = Boolean(
+    mapsPlayed?.note?.toLowerCase().includes('serien allerede var avgjort'),
+  )
+  const completeness = mapsPlayed?.completeness ?? 'missing'
+  const completionLabel =
+    completeness === 'full' ? 'Komplett data' : completeness === 'partial' ? 'Delvis data' : 'Mangler data'
+  const scoreLabel = (
+    resultSummary?.home_score != null &&
+    resultSummary?.away_score != null
+  )
+    ? `${resultSummary.home_score}-${resultSummary.away_score}`
+    : 'Ukjent'
+  const finishedLabel = resultSummary?.finished_at
+    ? new Date(resultSummary.finished_at).toLocaleString('nb-NO')
+    : 'Ukjent tidspunkt'
+
+  return (
+    <section className="mb-6 rounded-xl border border-accent/30 bg-gradient-to-b from-surface to-surface2/15 p-4 md:p-5">
+      <div className="flex items-center justify-between gap-3 mb-5">
+        <h3 className="font-display text-[10px] uppercase tracking-widest text-accent">Etteranalyse</h3>
+        <span className="font-mono text-[9px] uppercase tracking-widest rounded border border-accent/40 text-accent bg-accent/10 px-2 py-1.5">
+          Spilt kamp
+        </span>
+      </div>
+
+      <div className="rounded-xl border border-border/40 bg-gradient-to-br from-surface2/55 via-surface to-surface p-4 mb-4">
+        <div className="flex items-center justify-between gap-3 mb-3.5">
+          <p className="font-mono text-[10px] uppercase tracking-widest text-muted">Resultat & kampkontekst</p>
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            <span className={`font-mono text-[9px] uppercase tracking-widest rounded border px-2 py-1.5 ${completenessBadgeClass(completeness)}`}>
+              {completionLabel}
+            </span>
+            <span className="font-mono text-[9px] uppercase tracking-widest rounded border border-border/40 text-muted px-2 py-1.5">
+              {boLabel(result)}
+            </span>
+            <span className={`font-mono text-[9px] uppercase tracking-widest rounded border px-2 py-1.5 ${winnerBadgeClass(resultSummary?.winner ?? 'unknown')}`}>
+              {winnerLabel(result)}
+            </span>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] items-center gap-3 sm:gap-4">
+          <div className="flex items-center gap-2 sm:justify-start justify-center min-w-0">
+            <TeamLogo
+              name={teamLabel(result, 'home')}
+              logoUrl={result.teams.home.logo_url}
+              tone="home"
+              size="sm"
+            />
+            <p className="font-mono text-xs text-accent truncate">{teamLabel(result, 'home')}</p>
+          </div>
+          <div className="text-center">
+            <p className="font-display text-3xl md:text-4xl tabular-nums text-success leading-none">{scoreLabel}</p>
+            <p className="font-mono text-[10px] text-muted mt-1">Sluttresultat</p>
+          </div>
+          <div className="flex items-center gap-2 sm:justify-end justify-center min-w-0">
+            <p className="font-mono text-xs text-accent2 truncate">{teamLabel(result, 'away')}</p>
+            <TeamLogo
+              name={teamLabel(result, 'away')}
+              logoUrl={result.teams.away.logo_url}
+              tone="away"
+              size="sm"
+            />
+          </div>
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px]">
+          <p className="font-mono text-[10px] text-muted">
+            Vinner: <span className="text-text">{winnerLabel(result)}</span>
+          </p>
+          <p className="font-mono text-[10px] text-muted tabular-nums">
+            Ferdig: {finishedLabel}
+          </p>
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-border/35 bg-surface2/20 p-3 mb-4">
+        <p className="font-mono text-[10px] uppercase tracking-widest text-muted mb-2">Map story</p>
+        {mapsPlayed ? (
+          <>
+            <p className="font-mono text-[11px] text-text mb-2">
+              Maps spilt: <span className="tabular-nums">{mapsPlayed.total_maps}</span> / {mapsPlayed.maps.length || mapsPlayed.total_maps}{' '}
+              <span className="text-muted">({mapsPlayed.completeness})</span>
+            </p>
+            {mapsPlayed.maps.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2.5">
+                {mapsPlayed.maps.map((map, i) => {
+                  const mapWinner = mapWinnerFromScore(map.home_score, map.away_score)
+                  const mapPlayed = map.home_score != null && map.away_score != null
+                  const imageUrl = localMapImageForName(map.name) ?? map.image_url
+
+                  return (
+                    <div
+                      key={`${map.name ?? 'map'}-${i}`}
+                      className={`rounded-xl border p-3 min-h-[162px] flex flex-col justify-between overflow-hidden relative ${winnerBadgeClass(mapWinner)}`}
+                      style={mapSurfaceStyle(map.name, imageUrl)}
+                    >
+                      <div className="absolute inset-0 bg-black/10 pointer-events-none" />
+                      <div className="relative z-10 flex items-start justify-between gap-2">
+                        <span className="font-mono text-[9px] uppercase tracking-widest text-muted/90 border border-border/40 bg-surface/40 rounded px-1.5 py-0.5">
+                          Map {i + 1}
+                        </span>
+                        {!mapPlayed && (
+                          <span className="font-mono text-[8px] uppercase tracking-widest text-muted border border-border/40 bg-surface/45 rounded px-1.5 py-0.5">
+                            Ikke spilt
+                          </span>
+                        )}
+                        {mapPlayed && (
+                          <span className={`font-mono text-[8px] uppercase tracking-widest rounded border px-1.5 py-0.5 ${winnerBadgeClass(mapWinner)}`}>
+                            {winnerLabel(result, mapWinner)}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="relative z-10 mt-2">
+                        <div className="font-mono text-[12px] text-text">
+                          {map.name ?? `Map ${i + 1}`}
+                        </div>
+                        {map.source === 'derived' && (
+                          <span className="inline-block mt-1 font-mono text-[8px] uppercase tracking-widest text-muted border border-border/40 rounded px-1 py-0.5 bg-surface/40">
+                            Est.
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="relative z-10 space-y-1 mt-2">
+                        {mapPlayed ? (
+                          <>
+                            <div className="inline-flex items-baseline gap-1 font-display text-2xl tabular-nums text-text bg-surface/45 rounded px-2 py-1 leading-none">
+                              {map.home_score}-{map.away_score}
+                            </div>
+                            <div className={`font-mono text-[9px] uppercase tracking-widest ${mapWinner === 'home' ? 'text-accent' : mapWinner === 'away' ? 'text-accent2' : 'text-warning'}`}>
+                              Vinner: {winnerLabel(result, mapWinner)}
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="font-mono text-[11px] text-muted tabular-nums">Ikke spilt</div>
+                            <div className="font-mono text-[9px] text-muted/80">
+                              {seriesDecidedEarly ? 'Serien var allerede avgjort.' : 'Ingen score registrert.'}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            ) : (
+              <p className="font-mono text-[11px] text-muted">Ingen map-liste tilgjengelig for denne kampen.</p>
+            )}
+            {mapsPlayed.note && (
+              <p className={`font-mono text-[10px] mt-2 ${seriesDecidedEarly ? 'text-muted' : 'text-warning'}`}>
+                {mapsPlayed.note}
+              </p>
+            )}
+          </>
+        ) : (
+          <p className="font-mono text-[11px] text-muted">Map-detaljer mangler i responsen.</p>
+        )}
+      </div>
+
+      {post && (() => {
+        const hl = teamLabel(result, 'home')
+        const al = teamLabel(result, 'away')
+
+        // ── Team-level stat averages ───────────────────────────────────────
+        // Computes a simple mean across players; skips nulls and NaN.
+        // teamAvgStat returns 0 on no data; teamAvgOrNull returns null.
+        const teamAvgStat = (
+          players: PlayerAnalysis[],
+          fn: (p: PlayerAnalysis) => number | null | undefined,
+        ): number => {
+          const vals = players.map(fn).filter((v): v is number => v != null && Number.isFinite(v))
+          return vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : 0
+        }
+        const teamAvgOrNull = (
+          players: PlayerAnalysis[],
+          fn: (p: PlayerAnalysis) => number | null | undefined,
+        ): number | null => {
+          const vals = players.map(fn).filter((v): v is number => v != null && Number.isFinite(v))
+          return vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : null
+        }
+
+        // Core per-team stats (used across MetricBars and radar)
+        const homeODpct   = teamAvgStat(result.teams.home.players, (p) => p.od_rate * 100)
+        const awayODpct   = teamAvgStat(result.teams.away.players, (p) => p.od_rate * 100)
+        const homeKASTpct = teamAvgStat(result.teams.home.players, (p) => p.kast * 100)
+        const awayKASTpct = teamAvgStat(result.teams.away.players, (p) => p.kast * 100)
+        const homeDPRraw  = teamAvgStat(result.teams.home.players, (p) => p.dpr)
+        const awayDPRraw  = teamAvgStat(result.teams.away.players, (p) => p.dpr)
+        // DPR: normalise against 120 dmg/round ceiling so all radar axes share 0–100 scale
+        const homeDPRn    = Math.min(homeDPRraw / 120 * 100, 100)
+        const awayDPRn    = Math.min(awayDPRraw / 120 * 100, 100)
+
+        // BL-extended stats (null when bl_extended not populated)
+        const homeSurvPct     = teamAvgOrNull(result.teams.home.players, (p) => p.bl_extended?.survival_ratio != null ? p.bl_extended.survival_ratio * 100 : null)
+        const awaySurvPct     = teamAvgOrNull(result.teams.away.players, (p) => p.bl_extended?.survival_ratio != null ? p.bl_extended.survival_ratio * 100 : null)
+        const homeTradeK100   = teamAvgOrNull(result.teams.home.players, (p) => p.bl_extended?.trade_kills != null && p.rounds > 0 ? p.bl_extended.trade_kills / p.rounds * 100 : null)
+        const awayTradeK100   = teamAvgOrNull(result.teams.away.players, (p) => p.bl_extended?.trade_kills != null && p.rounds > 0 ? p.bl_extended.trade_kills / p.rounds * 100 : null)
+        const homeTradeD100   = teamAvgOrNull(result.teams.home.players, (p) => p.bl_extended?.traded_deaths != null && p.rounds > 0 ? p.bl_extended.traded_deaths / p.rounds * 100 : null)
+        const awayTradeD100   = teamAvgOrNull(result.teams.away.players, (p) => p.bl_extended?.traded_deaths != null && p.rounds > 0 ? p.bl_extended.traded_deaths / p.rounds * 100 : null)
+        const homeAssistPR    = teamAvgStat(result.teams.home.players, (p) => p.rounds > 0 ? p.assists / p.rounds : null)
+        const awayAssistPR    = teamAvgStat(result.teams.away.players, (p) => p.rounds > 0 ? p.assists / p.rounds : null)
+        const homeKASTSurvGap = homeSurvPct != null ? homeSurvPct - homeKASTpct : null
+        const awayKASTSurvGap = awaySurvPct != null ? awaySurvPct - awayKASTpct : null
+
+        // Team logos for MetricBar icons
+        const homeLogo = result.teams.home.logo_url
+        const awayLogo = result.teams.away.logo_url
+
+        // ── Radar chart configs ────────────────────────────────────────────
+        const tacticalChartConfig: ChartConfig = {
+          home: { label: hl, color: 'var(--color-accent)' },
+          away: { label: al, color: 'var(--color-accent2)' },
+        }
+
+        type RadarRow = { metric: string; home: number; away: number; homeLabel: string; awayLabel: string }
+        const tacticalData: RadarRow[] = [
+          {
+            metric: 'OD %',
+            home: homeODpct,   away: awayODpct,
+            homeLabel: `${homeODpct.toFixed(1)}%`, awayLabel: `${awayODpct.toFixed(1)}%`,
+          },
+          {
+            metric: 'KAST %',
+            home: homeKASTpct, away: awayKASTpct,
+            homeLabel: `${homeKASTpct.toFixed(1)}%`, awayLabel: `${awayKASTpct.toFixed(1)}%`,
+          },
+          {
+            metric: 'DPR',
+            home: homeDPRn,    away: awayDPRn,
+            homeLabel: homeDPRraw.toFixed(1), awayLabel: awayDPRraw.toFixed(1),
+          },
+        ]
+
+        // Round Stability: edge-based (survival is patchy; edge is more reliable here)
+        const toRadar = (edge: number, maxAbsEdge: number) =>
+          Math.max(20, Math.min(80, 50 + (edge / maxAbsEdge) * 30))
+
+        const stabilityData = post.round_stability ? [
+          {
+            metric: 'KAST',
+            home: toRadar(post.round_stability.indicators.kast_edge_pp, 20),
+            away: toRadar(-post.round_stability.indicators.kast_edge_pp, 20),
+          },
+          ...(post.round_stability.indicators.survival_edge_pp != null &&
+            Number.isFinite(post.round_stability.indicators.survival_edge_pp) ? [{
+            metric: 'Survival',
+            home: toRadar(post.round_stability.indicators.survival_edge_pp, 20),
+            away: toRadar(-post.round_stability.indicators.survival_edge_pp, 20),
+          }] : []),
+          ...(post.round_stability.indicators.survival_minus_kast_edge_pp != null &&
+            Number.isFinite(post.round_stability.indicators.survival_minus_kast_edge_pp) ? [{
+            metric: 'Surv−KAST',
+            home: toRadar(post.round_stability.indicators.survival_minus_kast_edge_pp, 12),
+            away: toRadar(-post.round_stability.indicators.survival_minus_kast_edge_pp, 12),
+          }] : []),
+        ] : []
+
+        // BL API returns 0 instead of null for missing clutch/explosive data,
+        // so we require at least one indicator to be non-zero and finite.
+        const lateRoundHasData = [
+          post.late_round_conversion?.indicators.clutch_edge_per_map,
+          post.late_round_conversion?.indicators.one_v_x_edge,
+          post.late_round_conversion?.indicators.explosive_round_edge,
+        ].some((v) => v != null && Number.isFinite(v) && v !== 0)
+
+        const isRelativeDev = post.player_development.focus_players[0]?.is_relative ?? false
+
+        return (
+          <div className="columns-1 lg:columns-2 gap-3">
+
+            {/* ── 1. Taktisk kontroll ─────────────────────────────────────── */}
+            <div className="break-inside-avoid mb-3 rounded-xl border border-border/35 bg-surface2/20 p-3.5">
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <p className="font-mono text-[10px] uppercase tracking-widest text-muted">Taktisk kontroll</p>
+                <SectionWinner
+                  values={[
+                    post.tactical_control.opening_duel_edge_pp,
+                    post.tactical_control.stability_edge_kast_pp,
+                    post.tactical_control.pressure_edge_dpr,
+                  ]}
+                  homeLabel={hl}
+                  awayLabel={al}
+                />
+              </div>
+              <p className="font-mono text-[11px] text-text mb-3">{post.tactical_control.summary}</p>
+
+              {/* Radar chart — actual per-team values */}
+              <ChartContainer config={tacticalChartConfig} className="h-[180px] w-full mb-3">
+                <RadarChart data={tacticalData} margin={{ top: 8, right: 24, bottom: 8, left: 24 }}>
+                  <PolarGrid stroke="rgba(42,48,68,0.6)" />
+                  <PolarAngleAxis
+                    dataKey="metric"
+                    tick={{ fill: 'var(--color-muted)', fontSize: 10, fontFamily: 'var(--font-mono)' }}
+                  />
+                  <PolarRadiusAxis domain={[0, 100]} tick={false} axisLine={false} />
+                  <Radar
+                    name={hl}
+                    dataKey="home"
+                    stroke="var(--color-accent)"
+                    fill="var(--color-accent)"
+                    fillOpacity={0.22}
+                    strokeWidth={1.5}
+                  />
+                  <Radar
+                    name={al}
+                    dataKey="away"
+                    stroke="var(--color-accent2)"
+                    fill="var(--color-accent2)"
+                    fillOpacity={0.18}
+                    strokeWidth={1.5}
+                  />
+                  <ChartTooltip
+                    content={({ payload, label }) => {
+                      if (!payload?.length) return null
+                      const row = tacticalData.find((d) => d.metric === label)
+                      if (!row) return null
+                      return (
+                        <div className="rounded border border-border/50 bg-surface2 px-2.5 py-1.5 font-mono text-[10px] shadow-lg">
+                          <p className="text-muted mb-1">{label}</p>
+                          <p className="text-accent">{hl}: {row.homeLabel}</p>
+                          <p className="text-accent2">{al}: {row.awayLabel}</p>
+                        </div>
+                      )
+                    }}
+                  />
+                </RadarChart>
+              </ChartContainer>
+
+              {/* Metric bars under chart */}
+              <div className="space-y-2.5 rounded-lg border border-border/25 bg-surface/40 p-2.5">
+                <MetricBar
+                  label="Opening duel"
+                  tooltip="Åpningsduell-vinnrate. Vinner av første kill kontrollerer 70–80% av runder."
+                  value={post.tactical_control.opening_duel_edge_pp}
+                  maxAbs={15}
+                  homeVal={`${homeODpct.toFixed(1)}%`}
+                  awayVal={`${awayODpct.toFixed(1)}%`}
+                  homeLogo={homeLogo}
+                  awayLogo={awayLogo}
+                />
+                <MetricBar
+                  label="KAST"
+                  tooltip="Kill/Assist/Survived/Traded per runde — mer stabilt enn K/D ved få runder."
+                  value={post.tactical_control.stability_edge_kast_pp}
+                  maxAbs={20}
+                  homeVal={`${homeKASTpct.toFixed(1)}%`}
+                  awayVal={`${awayKASTpct.toFixed(1)}%`}
+                  homeLogo={homeLogo}
+                  awayLogo={awayLogo}
+                />
+                <MetricBar
+                  label="Damage per round"
+                  tooltip="DPR-edge. Høyt DPR presser motstander til force-buys og eco-runder."
+                  value={post.tactical_control.pressure_edge_dpr}
+                  maxAbs={20}
+                  homeVal={homeDPRraw.toFixed(1)}
+                  awayVal={awayDPRraw.toFixed(1)}
+                  homeLogo={homeLogo}
+                  awayLogo={awayLogo}
+                />
+              </div>
+              {/* Role impact */}
+              {post.tactical_control.role_impact.length > 0 && (
+                <div className="mt-3 pt-2.5 border-t border-border/25 space-y-2">
+                  {post.tactical_control.role_impact.map((impact, idx) => {
+                    const player = playerByTeamAndName(impact.team, impact.player_name)
+                    const scorePct = player ? Math.round(player.score * 100) : null
+                    return (
+                      <div key={`${impact.player_name}-${idx}`} className="flex items-start gap-2.5">
+                        <PlayerAvatar
+                          name={impact.player_name}
+                          imageUrl={player?.avatar_url}
+                          tone={impact.team}
+                          size="xs"
+                          className="mt-0.5 shrink-0"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5 mb-0.5">
+                            <span className={`font-mono text-[10px] font-semibold ${impact.team === 'home' ? 'text-accent' : 'text-accent2'}`}>
+                              {impact.player_name}
+                            </span>
+                            <Badge variant="outline" className="font-mono text-[8px] uppercase tracking-widest px-1 py-0 h-auto border-border/50 text-muted rounded">
+                              {impact.role}
+                            </Badge>
+                            {scorePct != null && (
+                              <span className="font-mono text-[9px] text-muted tabular-nums ml-auto">{scorePct}%</span>
+                            )}
+                          </div>
+                          {scorePct != null && (
+                            <Progress
+                              value={scorePct}
+                              className="h-1 mb-1 bg-surface"
+                              style={{ '--color-primary': `var(--color-${impact.team === 'home' ? 'accent' : 'accent2'})` } as React.CSSProperties}
+                            />
+                          )}
+                          <p className="font-mono text-[9px] text-muted/80">{impact.impact_note}</p>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* ── 2. Økonomi ──────────────────────────────────────────────── */}
+            <div className="break-inside-avoid mb-3 rounded-xl border border-border/35 bg-surface2/20 p-3.5">
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <p className="font-mono text-[10px] uppercase tracking-widest text-muted">Økonomi</p>
+                <SectionWinner
+                  values={[
+                    post.economy_proxies.indicators.opening_control_pp,
+                    post.economy_proxies.indicators.survival_edge_kast_pp,
+                    post.economy_proxies.indicators.damage_pressure_edge_dpr,
+                    post.economy_proxies.indicators.trade_structure_pp,
+                    post.economy_proxies.indicators.survival_edge_pp,
+                  ]}
+                  homeLabel={hl}
+                  awayLabel={al}
+                />
+              </div>
+              <p className="font-mono text-[11px] text-text mb-3">{post.economy_proxies.summary}</p>
+
+              {/* Primary signals */}
+              <div className="space-y-2.5 rounded-lg border border-border/25 bg-surface/40 p-2.5 mb-2">
+                <p className="font-mono text-[9px] uppercase tracking-widest text-muted/60 pb-1 border-b border-border/20">Primærsignaler</p>
+                <MetricBar
+                  label="Åpningskontroll"
+                  tooltip="Opening duel win% som proxy for hvem som setter økonomisk tempo første halvdel av runden."
+                  value={post.economy_proxies.indicators.opening_control_pp}
+                  maxAbs={15}
+                  homeVal={`${homeODpct.toFixed(1)}%`}
+                  awayVal={`${awayODpct.toFixed(1)}%`}
+                  homeLogo={homeLogo}
+                  awayLogo={awayLogo}
+                />
+                <MetricBar
+                  label="KAST"
+                  tooltip="KAST-edge: høy KAST = flere runder med weapons i hånden neste runde."
+                  value={post.economy_proxies.indicators.survival_edge_kast_pp}
+                  maxAbs={20}
+                  homeVal={`${homeKASTpct.toFixed(1)}%`}
+                  awayVal={`${awayKASTpct.toFixed(1)}%`}
+                  homeLogo={homeLogo}
+                  awayLogo={awayLogo}
+                />
+                <MetricBar
+                  label="Damage per round"
+                  tooltip="DPR-edge. Skadepress → motstander sparer mer og kjøper dårligere neste runde."
+                  value={post.economy_proxies.indicators.damage_pressure_edge_dpr}
+                  maxAbs={20}
+                  homeVal={homeDPRraw.toFixed(1)}
+                  awayVal={awayDPRraw.toFixed(1)}
+                  homeLogo={homeLogo}
+                  awayLogo={awayLogo}
+                />
+              </div>
+
+              {/* Support signals */}
+              {(post.economy_proxies.indicators.trade_structure_pp != null ||
+                post.economy_proxies.indicators.survival_edge_pp != null) && (
+                <div className="space-y-2 rounded-lg border border-border/20 bg-surface/25 p-2.5 mb-3">
+                  <p className="font-mono text-[9px] uppercase tracking-widest text-muted/50 pb-1 border-b border-border/15">Støttesignaler</p>
+                  {post.economy_proxies.indicators.trade_structure_pp != null && (
+                    <MetricBar
+                      label="Trade kills"
+                      tooltip="Trade kills per 100 runder som økonomiproxy — gode trades = neste runde med full weaponset."
+                      value={post.economy_proxies.indicators.trade_structure_pp}
+                      maxAbs={12}
+                      homeVal={homeTradeK100 != null ? `${homeTradeK100.toFixed(1)}/100r` : undefined}
+                      awayVal={awayTradeK100 != null ? `${awayTradeK100.toFixed(1)}/100r` : undefined}
+                      homeLogo={homeLogo}
+                      awayLogo={awayLogo}
+                      dim
+                    />
+                  )}
+                  {post.economy_proxies.indicators.survival_edge_pp != null && (
+                    <MetricBar
+                      label="Survival"
+                      tooltip="Overlevelsesrate per runde. Direkte korrelert med å beholde gun-round neste runde."
+                      value={post.economy_proxies.indicators.survival_edge_pp}
+                      maxAbs={20}
+                      homeVal={homeSurvPct != null ? `${homeSurvPct.toFixed(1)}%` : undefined}
+                      awayVal={awaySurvPct != null ? `${awaySurvPct.toFixed(1)}%` : undefined}
+                      homeLogo={homeLogo}
+                      awayLogo={awayLogo}
+                      dim
+                    />
+                  )}
+                </div>
+              )}
+
+              <p className="font-mono text-[9px] text-muted/60 bg-surface/35 rounded px-2 py-1.5 inline-block">{post.economy_proxies.caveat}</p>
+            </div>
+
+            {/* ── 3. Teamplay-kontroll ────────────────────────────────────── */}
+            {post.teamplay_control && (() => {
+              const tradeEdge = post.teamplay_control!.indicators.trade_kill_edge_per_100_rounds
+              const tradePct = Math.max(0, Math.min(100, 50 + (tradeEdge / 12) * 50))
+              return (
+                <div className="break-inside-avoid mb-3 rounded-xl border border-border/35 bg-surface2/20 p-3.5">
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <p className="font-mono text-[10px] uppercase tracking-widest text-muted">Teamplay-kontroll</p>
+                    <SectionWinner
+                      values={[
+                        tradeEdge,
+                        post.teamplay_control!.indicators.trade_recovery_edge_pp,
+                        post.teamplay_control!.indicators.assist_edge_per_round,
+                      ]}
+                      homeLabel={hl}
+                      awayLabel={al}
+                    />
+                  </div>
+                  <p className="font-mono text-[11px] text-text mb-3">{post.teamplay_control!.summary}</p>
+
+                  <div className="space-y-2.5 rounded-lg border border-border/25 bg-surface/40 p-2.5">
+                    <MetricBar
+                      label="Trade kills"
+                      tooltip="Trade kills per 100 runder. Trade = kill innen 5 sek etter lagkamerat ble drept."
+                      value={tradeEdge}
+                      maxAbs={12}
+                      homeVal={homeTradeK100 != null ? `${homeTradeK100.toFixed(1)}/100r` : undefined}
+                      awayVal={awayTradeK100 != null ? `${awayTradeK100.toFixed(1)}/100r` : undefined}
+                      homeLogo={homeLogo}
+                      awayLogo={awayLogo}
+                    />
+                    {post.teamplay_control!.indicators.trade_recovery_edge_pp != null && (
+                      <MetricBar
+                        label="Death-trade recovery"
+                        tooltip="Andel dødsfall som ble traded. Høy recovery = laget mister sjelden gunround av ett tap."
+                        value={post.teamplay_control!.indicators.trade_recovery_edge_pp}
+                        maxAbs={20}
+                        homeVal={homeTradeD100 != null ? `${homeTradeD100.toFixed(1)}/100r` : undefined}
+                        awayVal={awayTradeD100 != null ? `${awayTradeD100.toFixed(1)}/100r` : undefined}
+                        homeLogo={homeLogo}
+                        awayLogo={awayLogo}
+                      />
+                    )}
+                    <MetricBar
+                      label="Assists"
+                      tooltip="Assists per runde som proxy for utility-synk og koordinerte pushes."
+                      value={post.teamplay_control!.indicators.assist_edge_per_round}
+                      maxAbs={0.12}
+                      homeVal={`${homeAssistPR.toFixed(2)}/r`}
+                      awayVal={`${awayAssistPR.toFixed(2)}/r`}
+                      homeLogo={homeLogo}
+                      awayLogo={awayLogo}
+                    />
+                  </div>
+                  <p className="font-mono text-[9px] text-muted/60 mt-3 bg-surface/35 rounded px-2 py-1.5 inline-block">{post.teamplay_control!.caveat}</p>
+                </div>
+              )
+            })()}
+
+            {/* ── 4. Round Stability ──────────────────────────────────────── */}
+            {post.round_stability && (
+              <div className="break-inside-avoid mb-3 rounded-xl border border-border/35 bg-surface2/20 p-3.5">
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <p className="font-mono text-[10px] uppercase tracking-widest text-muted">Round stability</p>
+                  <SectionWinner
+                    values={[
+                      post.round_stability.indicators.kast_edge_pp,
+                      post.round_stability.indicators.survival_edge_pp,
+                      post.round_stability.indicators.survival_minus_kast_edge_pp,
+                    ]}
+                    homeLabel={hl}
+                    awayLabel={al}
+                  />
+                </div>
+                <p className="font-mono text-[11px] text-text mb-3">{post.round_stability.summary}</p>
+
+                {/* Radar chart when ≥2 axes */}
+                {stabilityData.length >= 2 && (
+                  <ChartContainer config={tacticalChartConfig} className="h-[160px] w-full mb-3">
+                    <RadarChart data={stabilityData} margin={{ top: 8, right: 28, bottom: 8, left: 28 }}>
+                      <PolarGrid stroke="rgba(42,48,68,0.6)" />
+                      <PolarAngleAxis
+                        dataKey="metric"
+                        tick={{ fill: 'var(--color-muted)', fontSize: 10, fontFamily: 'var(--font-mono)' }}
+                      />
+                      <Radar
+                        name={hl}
+                        dataKey="home"
+                        stroke="var(--color-accent)"
+                        fill="var(--color-accent)"
+                        fillOpacity={0.22}
+                        strokeWidth={1.5}
+                      />
+                      <Radar
+                        name={al}
+                        dataKey="away"
+                        stroke="var(--color-accent2)"
+                        fill="var(--color-accent2)"
+                        fillOpacity={0.18}
+                        strokeWidth={1.5}
+                      />
+                      <ChartTooltip content={<ChartTooltipContent />} />
+                    </RadarChart>
+                  </ChartContainer>
+                )}
+
+                <div className="space-y-2.5 rounded-lg border border-border/25 bg-surface/40 p-2.5">
+                  {post.round_stability.indicators.survival_edge_pp != null && (
+                    <MetricBar
+                      label="Survival"
+                      tooltip="Andel spillere som overlever runden. Høy survival → beholder utstyr og setter press."
+                      value={post.round_stability.indicators.survival_edge_pp}
+                      maxAbs={20}
+                      homeVal={homeSurvPct != null ? `${homeSurvPct.toFixed(1)}%` : undefined}
+                      awayVal={awaySurvPct != null ? `${awaySurvPct.toFixed(1)}%` : undefined}
+                      homeLogo={homeLogo}
+                      awayLogo={awayLogo}
+                    />
+                  )}
+                  <MetricBar
+                    label="KAST"
+                    tooltip="KAST stabiliserer seg ved ~150 runder (vs K/D ~400). Mest pålitelig stabilitetsindikator."
+                    value={post.round_stability.indicators.kast_edge_pp}
+                    maxAbs={20}
+                    homeVal={`${homeKASTpct.toFixed(1)}%`}
+                    awayVal={`${awayKASTpct.toFixed(1)}%`}
+                    homeLogo={homeLogo}
+                    awayLogo={awayLogo}
+                  />
+                  {post.round_stability.indicators.survival_minus_kast_edge_pp != null && (
+                    <MetricBar
+                      label="Surv − KAST gap"
+                      tooltip="Per lag: survival% minus KAST%. Positiv = overlever uten å bidra (passivt). Negativt = bidrar selv om man dør (aggressivt)."
+                      value={post.round_stability.indicators.survival_minus_kast_edge_pp}
+                      maxAbs={12}
+                      homeVal={homeKASTSurvGap != null ? `${homeKASTSurvGap >= 0 ? '+' : ''}${homeKASTSurvGap.toFixed(1)}%` : undefined}
+                      awayVal={awayKASTSurvGap != null ? `${awayKASTSurvGap >= 0 ? '+' : ''}${awayKASTSurvGap.toFixed(1)}%` : undefined}
+                      homeLogo={homeLogo}
+                      awayLogo={awayLogo}
+                    />
+                  )}
+                </div>
+                <p className="font-mono text-[9px] text-muted/60 mt-3 bg-surface/35 rounded px-2 py-1.5 inline-block">{post.round_stability.caveat}</p>
+              </div>
+            )}
+
+            {/* ── 5. Late-round conversion ────────────────────────────────── */}
+            {post.late_round_conversion && (
+              <div className="break-inside-avoid mb-3 rounded-xl border border-border/35 bg-surface2/20 p-3.5">
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <p className="font-mono text-[10px] uppercase tracking-widest text-muted">Late-round conversion</p>
+                  {lateRoundHasData && (
+                    <SectionWinner
+                      values={[
+                        post.late_round_conversion.indicators.clutch_edge_per_map,
+                        post.late_round_conversion.indicators.one_v_x_edge,
+                        post.late_round_conversion.indicators.explosive_round_edge,
+                      ]}
+                      homeLabel={hl}
+                      awayLabel={al}
+                    />
+                  )}
+                </div>
+                <p className="font-mono text-[11px] text-text mb-3">{post.late_round_conversion.summary}</p>
+
+                {lateRoundHasData ? (
+                  <div className="space-y-2.5 rounded-lg border border-border/25 bg-surface/40 p-2.5">
+                    {/* These are edge values only — no per-team absolute rates available from BL API */}
+                    {Number.isFinite(post.late_round_conversion.indicators.clutch_edge_per_map) && post.late_round_conversion.indicators.clutch_edge_per_map !== 0 && (
+                      <MetricBar
+                        label="Clutch-runder"
+                        tooltip="Vunne 1vX-situasjoner per kart. Høy varians ved ≤3 kart — bruk som tendensindikator."
+                        value={post.late_round_conversion.indicators.clutch_edge_per_map ?? 0}
+                        maxAbs={1.5}
+                        suffix="/kart"
+                        homeLogo={homeLogo}
+                        awayLogo={awayLogo}
+                        homeLabel={hl}
+                        awayLabel={al}
+                      />
+                    )}
+                    {Number.isFinite(post.late_round_conversion.indicators.one_v_x_edge) && post.late_round_conversion.indicators.one_v_x_edge !== 0 && (
+                      <MetricBar
+                        label="1vX-situasjoner"
+                        tooltip="Antall 1vX-forsøk per kart. Sier noe om kaosberedskap og press under pistolrunder."
+                        value={post.late_round_conversion.indicators.one_v_x_edge ?? 0}
+                        maxAbs={2}
+                        suffix="/kart"
+                        homeLogo={homeLogo}
+                        awayLogo={awayLogo}
+                        homeLabel={hl}
+                        awayLabel={al}
+                      />
+                    )}
+                    {Number.isFinite(post.late_round_conversion.indicators.explosive_round_edge) && post.late_round_conversion.indicators.explosive_round_edge !== 0 && (
+                      <MetricBar
+                        label="Eksplosive runder"
+                        tooltip="Runder med 3+ raske kills per kart — proxy for aggresjonstempo og entry-evne."
+                        value={post.late_round_conversion.indicators.explosive_round_edge ?? 0}
+                        maxAbs={2}
+                        suffix="/kart"
+                        homeLogo={homeLogo}
+                        awayLogo={awayLogo}
+                        homeLabel={hl}
+                        awayLabel={al}
+                      />
+                    )}
+                    <p className="font-mono text-[9px] text-muted/50 border-t border-border/20 pt-1.5">
+                      Høy varians ved ≤3 kart — tendenser, ikke fasit.
+                    </p>
+                  </div>
+                ) : (
+                  <DataQualityNotice message="BL-API mangler clutch/explosive-telemetri for denne kampen." />
+                )}
+                <p className="font-mono text-[9px] text-muted/60 mt-3 bg-surface/35 rounded px-2 py-1.5 inline-block">{post.late_round_conversion.caveat}</p>
+              </div>
+            )}
+
+            {/* ── 6. Spillerutvikling ─────────────────────────────────────── */}
+            <div className="break-inside-avoid mb-3 rounded-xl border border-border/35 bg-surface2/20 p-3.5">
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <p className="font-mono text-[10px] uppercase tracking-widest text-muted">Spillerutvikling</p>
+                {isRelativeDev && (
+                  <Badge variant="outline" className="font-mono text-[8px] uppercase tracking-widest px-1.5 py-0.5 h-auto rounded border-warning/40 text-warning/80 bg-warning/5">
+                    In-match
+                  </Badge>
+                )}
+              </div>
+              {isRelativeDev && (
+                <p className="font-mono text-[9px] text-muted/60 mb-2.5">Ingen historisk Leetify-baseline — viser relativ kampperformance.</p>
+              )}
+              {post.player_development.focus_players.length > 0 ? (
+                <div className="space-y-2">
+                  {post.player_development.focus_players.map((focus, idx) => {
+                    const player = playerByTeamAndName(focus.team, focus.player_name)
+                    const scoreVal = focus.score != null ? focus.score : player?.score
+                    const scoreMax = focus.score_max ?? 1
+                    const scorePct = scoreVal != null ? Math.round((scoreVal / scoreMax) * 100) : null
+                    return (
+                      <div key={`${focus.player_name}-${idx}`} className="rounded-lg border border-border/25 px-2.5 py-2.5 bg-surface/30">
+                        <div className="flex flex-wrap items-center gap-2 mb-1.5">
+                          <Badge
+                            variant="outline"
+                            className={`font-mono text-[8px] uppercase tracking-widest px-1.5 py-0.5 h-auto rounded ${
+                              focus.team === 'home'
+                                ? 'border-accent/40 text-accent bg-accent/10'
+                                : 'border-accent2/40 text-accent2 bg-accent2/10'
+                            }`}
+                          >
+                            {teamLabel(result, focus.team)}
+                          </Badge>
+                          <span className="inline-flex items-center gap-1.5">
+                            <PlayerAvatar
+                              name={focus.player_name}
+                              imageUrl={player?.avatar_url}
+                              tone={focus.team}
+                              size="xs"
+                            />
+                            <span className="font-mono text-[11px] text-text font-semibold">{focus.player_name}</span>
+                          </span>
+                          <Badge
+                            variant="outline"
+                            className={`font-mono text-[8px] uppercase tracking-widest px-1.5 py-0.5 h-auto rounded ml-auto ${trendBadgeClass(focus.trend)}`}
+                          >
+                            {focus.trend === 'overperforming'
+                              ? '▲ Over'
+                              : focus.trend === 'underperforming'
+                                ? '▼ Under'
+                                : '— Stabil'}
+                          </Badge>
+                        </div>
+
+                        {/* Score bar */}
+                        {scorePct != null && (
+                          <div className="mb-2">
+                            <div className="flex justify-between items-baseline mb-0.5">
+                              <span className="font-mono text-[9px] text-muted/70">Score</span>
+                              <span className="font-mono text-[10px] tabular-nums text-muted">{scorePct}%</span>
+                            </div>
+                            <Progress
+                              value={scorePct}
+                              className="h-1.5 bg-surface"
+                              style={{ '--color-primary': `var(--color-${focus.team === 'home' ? 'accent' : 'accent2'})` } as React.CSSProperties}
+                            />
+                          </div>
+                        )}
+
+                        <p className="font-mono text-[10px] text-muted">{focus.note}</p>
+                        <p className="font-mono text-[10px] text-muted/70 mt-1">
+                          <span className="text-muted/50">Tiltak: </span>{focus.action}
+                        </p>
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : (
+                <p className="font-mono text-[11px] text-muted">Ingen spillerfokus tilgjengelig.</p>
+              )}
+            </div>
+
+            {/* ── 7. Coach-anbefalinger ──────────────────────────────────── */}
+            <div className="break-inside-avoid mb-3 rounded-xl border border-border/35 bg-surface2/20 p-3.5">
+              <p className="font-mono text-[10px] uppercase tracking-widest text-muted mb-2">Coach-anbefalinger</p>
+              {post.coach_recommendations.length > 0 ? (
+                <ol className="space-y-1.5">
+                  {post.coach_recommendations.map((recommendation, idx) => (
+                    <li key={`coach-${idx}`} className="flex items-start gap-2">
+                      <span className="mt-0.5 w-4 h-4 shrink-0 rounded-full border border-border/45 text-[9px] font-mono text-muted flex items-center justify-center">
+                        {idx + 1}
+                      </span>
+                      <p className="font-mono text-[10px] text-text/90">{recommendation}</p>
+                    </li>
+                  ))}
+                </ol>
+              ) : (
+                <p className="font-mono text-[11px] text-muted">Ingen anbefalinger tilgjengelig.</p>
+              )}
+            </div>
+
+          </div>
+        )
+      })()}
+    </section>
+  )
+}
+
+function LineupPicker({
+  homeTeamName,
+  awayTeamName,
+  homeTeamLogoUrl,
+  awayTeamLogoUrl,
+  homePool,
+  awayPool,
+  selectedHomeIds,
+  selectedAwayIds,
+  lineupSize,
+  onToggleHome,
+  onToggleAway,
+}: {
+  homeTeamName: string
+  awayTeamName: string
+  homeTeamLogoUrl?: string
+  awayTeamLogoUrl?: string
+  homePool: PlayerAnalysis[]
+  awayPool: PlayerAnalysis[]
+  selectedHomeIds: Set<number>
+  selectedAwayIds: Set<number>
+  lineupSize: number
+  onToggleHome: (id: number) => void
+  onToggleAway: (id: number) => void
+}) {
+  const selectedHomeCount = selectedHomeIds.size
+  const selectedAwayCount = selectedAwayIds.size
+
+  return (
+    <div className="bg-surface border border-border/50 rounded-lg p-4 mb-6">
+      <div className="flex items-center justify-between gap-3 mb-3">
+        <h3 className="font-display text-[10px] uppercase tracking-widest text-accent">
+          5v5 lineup-simulator
+        </h3>
+        <span className="font-mono text-[10px] text-muted">
+          Velg {lineupSize} per lag
+        </span>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="rounded border border-border/35 p-3">
+          <p className="font-mono text-xs text-accent mb-2 inline-flex items-center gap-1.5">
+            <TeamLogo name={homeTeamName} logoUrl={homeTeamLogoUrl} tone="home" size="sm" />
+            {homeTeamName}
+          </p>
+          <p className="font-mono text-[10px] text-muted mb-2">Valgt: {selectedHomeCount}/{lineupSize}</p>
+          <div className="space-y-1.5">
+            {homePool.map((player) => {
+              const selected = selectedHomeIds.has(player.paradise_user_id)
+              const disabled = !selected && selectedHomeIds.size >= lineupSize
+              return (
+                <button
+                  key={player.paradise_user_id}
+                  type="button"
+                  onClick={() => onToggleHome(player.paradise_user_id)}
+                  disabled={disabled}
+                  className={`w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded border text-left ${selected ? 'border-accent/60 bg-accent/10' : 'border-border/35 bg-surface2/25'} disabled:opacity-45`}
+                >
+                  <span className="inline-flex items-center gap-1.5 min-w-0">
+                    <PlayerAvatar name={player.name} imageUrl={player.avatar_url} tone="home" size="xs" />
+                    <span className="font-mono text-[11px] text-text truncate">{player.name}</span>
+                  </span>
+                  <span className="font-mono text-[10px] tabular-nums text-muted">{(player.score * 10).toFixed(1)}</span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
+        <div className="rounded border border-border/35 p-3">
+          <p className="font-mono text-xs text-accent2 mb-2 inline-flex items-center gap-1.5">
+            <TeamLogo name={awayTeamName} logoUrl={awayTeamLogoUrl} tone="away" size="sm" />
+            {awayTeamName}
+          </p>
+          <p className="font-mono text-[10px] text-muted mb-2">Valgt: {selectedAwayCount}/{lineupSize}</p>
+          <div className="space-y-1.5">
+            {awayPool.map((player) => {
+              const selected = selectedAwayIds.has(player.paradise_user_id)
+              const disabled = !selected && selectedAwayIds.size >= lineupSize
+              return (
+                <button
+                  key={player.paradise_user_id}
+                  type="button"
+                  onClick={() => onToggleAway(player.paradise_user_id)}
+                  disabled={disabled}
+                  className={`w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded border text-left ${selected ? 'border-accent2/60 bg-accent2/10' : 'border-border/35 bg-surface2/25'} disabled:opacity-45`}
+                >
+                  <span className="inline-flex items-center gap-1.5 min-w-0">
+                    <PlayerAvatar name={player.name} imageUrl={player.avatar_url} tone="away" size="xs" />
+                    <span className="font-mono text-[11px] text-text truncate">{player.name}</span>
+                  </span>
+                  <span className="font-mono text-[10px] tabular-nums text-muted">{(player.score * 10).toFixed(1)}</span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -284,18 +2099,94 @@ export function AnalysisDisplay({
   showCopyReport?: boolean
 }) {
   const matchTime = result.meta.match_start_time ?? result.meta.match_finished_time
+  const homeName = result.teams.home.name || 'Hjem'
+  const awayName = result.teams.away.name || 'Borte'
+  const isUpcoming = result.meta.match_status === 'upcoming'
+
+  const lineupSize = result.simulation?.lineup_size ?? 5
+  const homePool = result.teams.home.players
+  const awayPool = result.teams.away.players
+
+  const getDefaultIds = (players: PlayerAnalysis[]) =>
+    new Set(
+      [...players]
+        .sort((a, b) => b.score - a.score)
+        .slice(0, Math.min(lineupSize, players.length))
+        .map((p) => p.paradise_user_id),
+    )
+
+  const [selectedHomeIds, setSelectedHomeIds] = useState<Set<number>>(() => getDefaultIds(homePool))
+  const [selectedAwayIds, setSelectedAwayIds] = useState<Set<number>>(() => getDefaultIds(awayPool))
+
+  useEffect(() => {
+    setSelectedHomeIds(getDefaultIds(homePool))
+    setSelectedAwayIds(getDefaultIds(awayPool))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [result.matchup_id, result.meta.fetched_at, lineupSize])
+
+  const toggleSelection = (
+    setter: Dispatch<SetStateAction<Set<number>>>,
+    id: number,
+  ) => {
+    setter((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        next.delete(id)
+        return next
+      }
+      if (next.size >= lineupSize) return prev
+      next.add(id)
+      return next
+    })
+  }
+
+  const selectedHomePlayers = useMemo(
+    () => homePool.filter((p) => selectedHomeIds.has(p.paradise_user_id)),
+    [homePool, selectedHomeIds],
+  )
+  const selectedAwayPlayers = useMemo(
+    () => awayPool.filter((p) => selectedAwayIds.has(p.paradise_user_id)),
+    [awayPool, selectedAwayIds],
+  )
+
+  const hasExactLineups =
+    selectedHomePlayers.length === Math.min(lineupSize, homePool.length) &&
+    selectedAwayPlayers.length === Math.min(lineupSize, awayPool.length)
+  const usingLiveLineup = isUpcoming && hasExactLineups
+
+  const displayTeams = useMemo(() => {
+    if (!isUpcoming || !hasExactLineups) return result.teams
+    return {
+      home: {
+        ...result.teams.home,
+        players: selectedHomePlayers,
+      },
+      away: {
+        ...result.teams.away,
+        players: selectedAwayPlayers,
+      },
+    }
+  }, [hasExactLineups, isUpcoming, result.teams, selectedAwayPlayers, selectedHomePlayers])
+
+  const liveMapPool = useMemo<LandingMapPool | undefined>(() => {
+    if (!isUpcoming) return undefined
+    return result.landing?.map_pool
+  }, [isUpcoming, result.landing?.map_pool])
 
   return (
     <div>
-      {/* Matchup heading */}
       <div className="mb-5 flex items-baseline justify-between gap-3">
         <div className="flex items-baseline gap-3">
           <span className="font-display text-[10px] tracking-widest uppercase text-muted">
-            Matchup
+            Kamp
           </span>
-          <span className="font-mono text-accent text-sm tabular-nums">
-            #{result.matchup_id}
-          </span>
+          <div className="flex items-center gap-2 min-w-0">
+            <TeamLogo name={homeName} logoUrl={result.teams.home.logo_url} tone="home" size="sm" />
+            <span className="font-mono text-accent text-sm truncate">{homeName}</span>
+            <span className="font-mono text-muted/60 text-sm">vs</span>
+            <span className="font-mono text-accent2 text-sm truncate">{awayName}</span>
+            <TeamLogo name={awayName} logoUrl={result.teams.away.logo_url} tone="away" size="sm" />
+          </div>
           {matchTime && (
             <span className="font-mono text-[10px] text-muted tabular-nums">
               {new Date(matchTime).toLocaleString('nb-NO')}
@@ -306,12 +2197,62 @@ export function AnalysisDisplay({
       </div>
 
       <MetaBar meta={result.meta} />
-      <PredictionCard home={result.teams.home} away={result.teams.away} />
-      <TeamComparisonBars home={result.teams.home} away={result.teams.away} />
+
+      {isUpcoming ? (
+        <>
+          <LineupPicker
+            homeTeamName={homeName}
+            awayTeamName={awayName}
+            homeTeamLogoUrl={result.teams.home.logo_url}
+            awayTeamLogoUrl={result.teams.away.logo_url}
+            homePool={homePool}
+            awayPool={awayPool}
+            selectedHomeIds={selectedHomeIds}
+            selectedAwayIds={selectedAwayIds}
+            lineupSize={lineupSize}
+            onToggleHome={(id) => toggleSelection(setSelectedHomeIds, id)}
+            onToggleAway={(id) => toggleSelection(setSelectedAwayIds, id)}
+          />
+
+          {!hasExactLineups && (
+            <div className="mb-6 rounded border border-warning/40 bg-warning/10 px-3 py-2 font-mono text-[11px] text-warning">
+              Velg nøyaktig {lineupSize} spillere på begge lag for live 5v5-simulering.
+            </div>
+          )}
+
+          <PredictionCard home={displayTeams.home} away={displayTeams.away} />
+          <TeamComparisonBars home={displayTeams.home} away={displayTeams.away} />
+          <div className="mt-6">
+            <MapPoolInsights
+              mapPool={liveMapPool}
+              homeName={homeName}
+              awayName={awayName}
+              homePlayers={result.teams.home.players}
+              awayPlayers={result.teams.away.players}
+            />
+          </div>
+          <MapPoolDebugPanel
+            className="mt-3"
+            matchupId={result.matchup_id}
+            mapPool={liveMapPool}
+          />
+        </>
+      ) : (
+        <PostMatchReport result={result} />
+      )}
+
+      {isUpcoming && (
+        <EarlyRoundAndFormPanel
+          home={displayTeams.home}
+          away={displayTeams.away}
+          landing={result.landing}
+          usingLiveLineup={usingLiveLineup}
+        />
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <TeamCard team={result.teams.home} accent="accent" />
-        <TeamCard team={result.teams.away} accent="accent2" />
+        <TeamCard team={displayTeams.home} accent="accent" matchStatus={result.meta.match_status} />
+        <TeamCard team={displayTeams.away} accent="accent2" matchStatus={result.meta.match_status} />
       </div>
     </div>
   )
