@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { AnalysisDisplay } from '@/components/analysis-display'
+import { HeadToHeadBar } from '@/components/head-to-head-bar'
 import { PlayerAvatar, TeamLogo } from '@/components/identity-badge'
 import { analyzeMatchup, AnalyzeServiceError } from '@/lib/analyze-service'
 import type { AnalyzeResponse, PlayerAnalysis } from '@/lib/types'
@@ -8,16 +9,29 @@ export const dynamic = 'force-dynamic'
 
 type MatchPageProps = {
   params: Promise<{ id: string }>
+  searchParams?: Promise<{ division?: string }>
 }
 
-function ErrorCard({ title, detail }: { title: string; detail: string }) {
+function buildHomeHref(divisionId?: string): string {
+  return divisionId ? `/?division=${encodeURIComponent(divisionId)}` : '/'
+}
+
+function ErrorCard({
+  title,
+  detail,
+  divisionId,
+}: {
+  title: string
+  detail: string
+  divisionId?: string
+}) {
   return (
     <section className="atlas-shell min-h-dvh">
       <div className="atlas-topline" />
       <div className="max-w-5xl mx-auto px-6 md:px-10 py-12">
       <div className="mb-6">
         <Link
-          href="/"
+          href={buildHomeHref(divisionId)}
           className="font-mono text-[11px] uppercase tracking-widest text-muted hover:text-text"
         >
           ← Til søk
@@ -76,6 +90,7 @@ function MatchHeadlineCard({ result }: { result: AnalyzeResponse }) {
   const isPlayed = result.meta.match_status === 'played'
   const tactical = result.landing?.tactical_edge
   const reliability = result.landing?.reliability
+  const gamePlan = result.landing?.game_plan ?? []
   const homeTop = topPlayer(home.players)
   const awayTop = topPlayer(away.players)
   const playedScore = (
@@ -124,18 +139,20 @@ function MatchHeadlineCard({ result }: { result: AnalyzeResponse }) {
       {/* Win probability bar — only for upcoming */}
       {!isPlayed && tactical && (
         <div className="mb-4">
-          <div className="relative h-2.5 rounded-full bg-surface2 overflow-hidden mb-1.5">
-            <div
-              className="absolute inset-y-0 left-0 rounded-l-full transition-all duration-700"
-              style={{ width: `${tactical.home_win_pct}%`, background: 'var(--color-accent)' }}
-            />
-            <div className="absolute inset-y-0 left-1/2 w-px bg-border/60" />
-          </div>
-          <div className="flex items-center justify-between font-mono text-xs">
-            <span className="text-accent tabular-nums">{home.name || 'Hjem'} {tactical.home_win_pct}%</span>
-            <span className="text-muted/50 text-[9px]">{tactical.confidence_note}</span>
-            <span className="text-accent2 tabular-nums">{tactical.away_win_pct}% {away.name || 'Borte'}</span>
-          </div>
+          <HeadToHeadBar
+            homeShare={tactical.home_win_pct}
+            awayShare={tactical.away_win_pct}
+            homeLabel={`${home.name || 'Hjem'} ${tactical.home_win_pct}%`}
+            awayLabel={`${tactical.away_win_pct}% ${away.name || 'Borte'}`}
+            centerLabel={tactical.confidence_note}
+          />
+        </div>
+      )}
+
+      {!isPlayed && gamePlan.length > 0 && (
+        <div className="mb-4 rounded-lg border border-border/35 bg-surface2/25 px-3 py-2.5">
+          <p className="font-mono text-[9px] uppercase tracking-widest text-muted/55 mb-1.5">Matchup read</p>
+          <p className="font-mono text-[11px] text-text/90">{gamePlan[0]}</p>
         </div>
       )}
 
@@ -173,8 +190,10 @@ function MatchHeadlineCard({ result }: { result: AnalyzeResponse }) {
   )
 }
 
-export default async function MatchPage({ params }: MatchPageProps) {
+export default async function MatchPage({ params, searchParams }: MatchPageProps) {
   const { id } = await params
+  const resolvedSearchParams = searchParams ? await searchParams : undefined
+  const divisionId = resolvedSearchParams?.division
   const matchupId = Number(id)
 
   if (!Number.isInteger(matchupId) || matchupId <= 0) {
@@ -182,6 +201,7 @@ export default async function MatchPage({ params }: MatchPageProps) {
       <ErrorCard
         title="Ugyldig kamp"
         detail="Lenken peker ikke til en gyldig kamp."
+        divisionId={divisionId}
       />
     )
   }
@@ -196,7 +216,7 @@ export default async function MatchPage({ params }: MatchPageProps) {
           <div className="mb-7 fx-rise">
             <div className="flex items-center justify-between gap-3 mb-5">
               <Link
-                href="/"
+                href={buildHomeHref(divisionId)}
                 className="font-mono text-[11px] uppercase tracking-widest text-muted hover:text-text"
               >
                 ← Til søk
@@ -216,12 +236,13 @@ export default async function MatchPage({ params }: MatchPageProps) {
     )
   } catch (err) {
     if (err instanceof AnalyzeServiceError) {
-      return <ErrorCard title="Kunne ikke hente analyse" detail={err.message} />
+      return <ErrorCard title="Kunne ikke hente analyse" detail={err.message} divisionId={divisionId} />
     }
     return (
       <ErrorCard
         title="Uventet feil"
         detail="Det oppstod en feil under lasting av analysen. Prøv igjen om litt."
+        divisionId={divisionId}
       />
     )
   }

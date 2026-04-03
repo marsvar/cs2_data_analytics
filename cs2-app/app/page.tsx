@@ -104,8 +104,9 @@ function MatchTeamsInline({
 function RecentMatchesPanel({
   onSelectMatch,
 }: {
-  onSelectMatch: (match: DivisionMatchSummary) => void
+  onSelectMatch: (match: DivisionMatchSummary, divisionId: number | null) => void
 }) {
+  const router = useRouter()
   const [divisions, setDivisions] = useState<DivisionOption[]>([])
   const [selectedDivisionId, setSelectedDivisionId] = useState<number | null>(null)
   const [matchesData, setMatchesData] = useState<DivisionResponse | null>(null)
@@ -156,6 +157,20 @@ function RecentMatchesPanel({
   useEffect(() => {
     if (selectedDivisionId != null) fetchMatches(selectedDivisionId)
   }, [selectedDivisionId, fetchMatches])
+
+  useEffect(() => {
+    if (selectedDivisionId == null || loadingDivisions || typeof window === 'undefined') return
+
+    const params = new URLSearchParams(window.location.search)
+    const currentDivision = params.get('division')
+    const nextDivision = String(selectedDivisionId)
+
+    if (currentDivision === nextDivision) return
+
+    params.set('division', nextDivision)
+    const query = params.toString()
+    router.replace(query ? `/?${query}` : '/', { scroll: false })
+  }, [loadingDivisions, router, selectedDivisionId])
 
   const allMatches = matchesData?.matches ?? []
   const notPlayedYet = allMatches
@@ -217,7 +232,7 @@ function RecentMatchesPanel({
                   <button
                     key={match.matchup_id}
                     type="button"
-                    onClick={() => onSelectMatch(match)}
+                    onClick={() => onSelectMatch(match, selectedDivisionId)}
                     className="text-left px-3 py-2.5 rounded-lg border border-border/35 bg-surface hover:bg-surface2/60 hover:border-accent/30 transition-colors"
                   >
                     <div className="flex items-center justify-between gap-2 mb-1">
@@ -259,7 +274,7 @@ function RecentMatchesPanel({
                     <button
                       key={match.matchup_id}
                       type="button"
-                      onClick={() => onSelectMatch(match)}
+                      onClick={() => onSelectMatch(match, selectedDivisionId)}
                       className="text-left px-3 py-2.5 rounded-lg border border-border/35 bg-surface hover:bg-surface2/60 hover:border-accent/30 transition-colors"
                     >
                       <div className="flex items-center justify-between gap-2 mb-1">
@@ -293,7 +308,7 @@ function RecentMatchesPanel({
       {selectedDivisionId && matchesData && (
         <div className="mt-3 pt-3 border-t border-border/25 flex items-center justify-between">
           <Link
-            href={`/division/${selectedDivisionId}`}
+            href={`/division/${selectedDivisionId}?division=${selectedDivisionId}`}
             className="font-mono text-[10px] text-muted hover:text-accent transition-colors"
           >
             Se alle kamper i divisjonen →
@@ -396,7 +411,11 @@ export default function Home() {
 
     setError(null)
     setLoading(true)
-    router.push(`/match/${matchupId}`)
+    const params = typeof window !== 'undefined'
+      ? new URLSearchParams(window.location.search)
+      : new URLSearchParams()
+    const query = params.toString()
+    router.push(query ? `/match/${matchupId}?${query}` : `/match/${matchupId}`)
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
@@ -411,9 +430,15 @@ export default function Home() {
     setError(null)
   }
 
-  function handleSelectRecentMatch(match: DivisionMatchSummary) {
-    // Navigate directly to the match page on click
-    router.push(`/match/${match.matchup_id}`)
+  function handleSelectRecentMatch(match: DivisionMatchSummary, divisionId: number | null) {
+    const params = typeof window !== 'undefined'
+      ? new URLSearchParams(window.location.search)
+      : new URLSearchParams()
+
+    if (divisionId != null) params.set('division', String(divisionId))
+
+    const query = params.toString()
+    router.push(query ? `/match/${match.matchup_id}?${query}` : `/match/${match.matchup_id}`)
   }
 
   return (
