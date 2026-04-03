@@ -304,6 +304,7 @@ export type AnalyzeError = {
 
 export type DivisionMatchSummary = {
   matchup_id: number
+  round_number?: number
   home_team: string
   away_team: string
   home_team_id?: number
