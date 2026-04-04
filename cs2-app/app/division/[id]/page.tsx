@@ -90,7 +90,12 @@ function StandingsTable({ result }: { result: DivisionResponse }) {
             <span className="font-mono text-[10px] tabular-nums text-muted/50">{i + 1}</span>
             <div className="flex items-center gap-2 min-w-0">
               <TeamLogo name={row.name} logoUrl={row.logoUrl} tone="neutral" size="sm" />
-              <span className="font-mono text-xs text-text truncate">{row.name}</span>
+              <Link
+                href={`/team/${row.teamId}`}
+                className="font-mono text-xs text-text hover:text-accent hover:underline underline-offset-2 truncate transition-colors"
+              >
+                {row.name}
+              </Link>
             </div>
             <span className="font-mono text-[10px] tabular-nums text-muted text-center">{row.played}</span>
             <span className="font-mono text-[11px] tabular-nums text-success text-center font-medium">
@@ -163,9 +168,18 @@ function MatchCard({
       <div className="flex items-center gap-3">
         {/* Home team */}
         <div className="flex-1 flex items-center gap-2 min-w-0 justify-end">
-          <span className={`font-mono text-xs truncate text-right ${homewon ? 'text-text font-medium' : 'text-text/75'}`}>
-            {match.home_team}
-          </span>
+          {match.home_team_id ? (
+            <Link
+              href={`/team/${match.home_team_id}`}
+              className={`font-mono text-xs truncate text-right hover:underline underline-offset-2 transition-colors ${homewon ? 'text-text font-medium hover:text-accent' : 'text-text/75 hover:text-accent/80'}`}
+            >
+              {match.home_team}
+            </Link>
+          ) : (
+            <span className={`font-mono text-xs truncate text-right ${homewon ? 'text-text font-medium' : 'text-text/75'}`}>
+              {match.home_team}
+            </span>
+          )}
           <TeamLogo name={match.home_team} logoUrl={match.home_logo_url} tone="home" size="md" />
         </div>
 
@@ -185,9 +199,18 @@ function MatchCard({
         {/* Away team */}
         <div className="flex-1 flex items-center gap-2 min-w-0">
           <TeamLogo name={match.away_team} logoUrl={match.away_logo_url} tone="away" size="md" />
-          <span className={`font-mono text-xs truncate ${awaywon ? 'text-text font-medium' : 'text-text/75'}`}>
-            {match.away_team}
-          </span>
+          {match.away_team_id ? (
+            <Link
+              href={`/team/${match.away_team_id}`}
+              className={`font-mono text-xs truncate hover:underline underline-offset-2 transition-colors ${awaywon ? 'text-text font-medium hover:text-accent' : 'text-text/75 hover:text-accent/80'}`}
+            >
+              {match.away_team}
+            </Link>
+          ) : (
+            <span className={`font-mono text-xs truncate ${awaywon ? 'text-text font-medium' : 'text-text/75'}`}>
+              {match.away_team}
+            </span>
+          )}
         </div>
 
         {/* Action link */}

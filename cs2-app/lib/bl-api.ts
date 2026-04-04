@@ -746,6 +746,84 @@ export async function getUserImageUrl(
 }
 
 /**
+ * Fetch the team ID for a BL user from their active signup.
+ * Returns null if the user has no team or on any error.
+ */
+export async function getUserTeamId(
+  userId: number,
+  token: string,
+): Promise<number | null> {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const raw = await blGet<any>(`/user/${userId}`, token)
+    const teamId =
+      raw?.signup?.team?.id ??
+      raw?.team?.id ??
+      raw?.signups?.[0]?.team?.id ??
+      null
+    return typeof teamId === 'number' ? teamId : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Fetch basic team metadata (name, logo).
+ * Returns null on any error — the caller falls back to data extracted from matchup metadata.
+ */
+export async function getTeamInfo(
+  teamId: number,
+  token: string,
+): Promise<{ name: string; logoUrl?: string } | null> {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const raw = await blGet<any>(`/team/${teamId}`, token)
+    const name = raw?.name ?? raw?.team_name ?? ''
+    if (!name) return null
+    const logoUrl = normalizeBlImageUrl(raw?.logo?.url, raw?.logo?.relative_url) ?? undefined
+    return { name, logoUrl }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Fetch map pick/ban veto data for a matchup.
+ * Returns null on any error — veto data is optional enrichment.
+ */
+export async function getMatchupVeto(
+  matchupId: number,
+  token: string,
+): Promise<{ picks?: Array<{ map: string; team_id: number }>; bans?: Array<{ map: string; team_id: number }> } | null> {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const raw = await blGet<any>(`/matchup/${matchupId}/veto`, token)
+    if (!raw) return null
+    return {
+      picks: Array.isArray(raw.picks) ? raw.picks : undefined,
+      bans: Array.isArray(raw.bans) ? raw.bans : undefined,
+    }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Fetch division standings/table.
+ * Returns null on any error — table data is optional enrichment.
+ */
+export async function getDivisionTable(
+  divisionId: number,
+  token: string,
+): Promise<unknown | null> {
+  try {
+    return await blGet<unknown>(`/division/${divisionId}/tables`, token)
+  } catch {
+    return null
+  }
+}
+
+/**
  * Fetch matchup_users for a specific matchup.
  * Returns all checked-in players with their team assignment and avatar URL.
  * Only populated for completed matchups — upcoming matches return [].
