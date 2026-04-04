@@ -57,6 +57,26 @@ function confidenceFromSample(sampleSize: number): 'low' | 'medium' | 'high' {
   return 'low'
 }
 
+function formatSigned(value: number, digits = 2): string {
+  return `${value >= 0 ? '+' : ''}${value.toFixed(digits)}`
+}
+
+const osloDateTimeFormatter = new Intl.DateTimeFormat('nb-NO', {
+  timeZone: 'Europe/Oslo',
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+})
+
+function formatOsloDateTime(value: string): string {
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return value
+  return osloDateTimeFormatter.format(parsed)
+}
+
 type LandingMapPool = NonNullable<NonNullable<AnalyzeResponse['landing']>['map_pool']>
 type VetoHint = NonNullable<LandingMapPool['veto_hint']>
 
@@ -552,13 +572,13 @@ function EarlyRoundAndFormPanel({
           <p className="font-mono text-[9px] uppercase tracking-widest text-muted/50 mb-2 px-0.5">
             {home.name || 'Hjem'} · Åpningsdueller per spiller
           </p>
-          <EarlyStrengthCard title={home.name || 'Hjem'} accentClass="text-accent" players={homeEarly} />
+            <EarlyStrengthCard title={home.name || 'Hjem'} accentClass="text-accent" players={homeEarly} />
         </div>
         <div>
           <p className="font-mono text-[9px] uppercase tracking-widest text-muted/50 mb-2 px-0.5">
             {away.name || 'Borte'} · Åpningsdueller per spiller
           </p>
-          <EarlyStrengthCard title={away.name || 'Borte'} accentClass="text-accent2" players={awayEarly} />
+            <EarlyStrengthCard title={away.name || 'Borte'} accentClass="text-accent2" players={awayEarly} />
         </div>
       </div>
 
@@ -734,16 +754,16 @@ function TeamCard({
 
       <div className="flex items-center gap-2 mb-1 px-5">
         <span className="w-36 shrink-0 text-[9px] font-mono text-muted uppercase tracking-widest">
-          Spiller
+          Player
         </span>
         <span className="flex-1 mx-2 text-[9px] font-mono text-muted uppercase tracking-widest">
-          Ranking
+          Rating
         </span>
         <span className="w-20 shrink-0 text-[9px] font-mono text-muted uppercase tracking-widest text-right">
           Score ±CI
         </span>
         <span className="w-12 shrink-0 text-[9px] font-mono text-muted uppercase tracking-widest text-right">
-          Kilde
+          Source
         </span>
       </div>
 
@@ -1161,7 +1181,7 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
     ? `${resultSummary.home_score}-${resultSummary.away_score}`
     : 'Ukjent'
   const finishedLabel = resultSummary?.finished_at
-    ? new Date(resultSummary.finished_at).toLocaleString('nb-NO')
+    ? formatOsloDateTime(resultSummary.finished_at)
     : 'Ukjent tidspunkt'
 
   return (
@@ -1212,14 +1232,9 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
             />
           </div>
         </div>
-        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px]">
-          <p className="font-mono text-[10px] text-muted">
-            Vinner: <span className="text-text">{winnerLabel(result)}</span>
-          </p>
-          <p className="font-mono text-[10px] text-muted tabular-nums">
-            Ferdig: {finishedLabel}
-          </p>
-        </div>
+        <p className="mt-3 font-mono text-[10px] text-muted tabular-nums">
+          Finished: {finishedLabel}
+        </p>
       </div>
 
       <div className="rounded-xl border border-border/35 bg-surface2/20 p-3 mb-4">
@@ -1406,23 +1421,60 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
           }] : []),
         ] : []
 
-        // BL API returns 0 instead of null for missing clutch/explosive data,
-        // so we require at least one indicator to be non-zero and finite.
+        type LegacyLateRound = NonNullable<AnalyzeResponse['post_analysis']>['late_round_conversion'] & {
+          indicators?: {
+            clutch_edge_per_map?: number
+            one_v_x_edge?: number
+            explosive_round_edge?: number
+          }
+        }
+        const rawLateRound = post.late_round_conversion
+        const legacyLateRound = post.late_round_conversion as LegacyLateRound | undefined
+        const lateRoundMetrics = rawLateRound?.metrics ?? (
+          legacyLateRound?.indicators
+            ? {
+              clutch_wins_per_map: legacyLateRound.indicators.clutch_edge_per_map != null
+                ? {
+                  home: 0,
+                  away: 0,
+                  edge: legacyLateRound.indicators.clutch_edge_per_map,
+                }
+                : undefined,
+              one_v_x_wins_per_map: legacyLateRound.indicators.one_v_x_edge != null
+                ? {
+                  home: 0,
+                  away: 0,
+                  edge: legacyLateRound.indicators.one_v_x_edge,
+                }
+                : undefined,
+              explosive_rounds_per_map: legacyLateRound.indicators.explosive_round_edge != null
+                ? {
+                  home: 0,
+                  away: 0,
+                  edge: legacyLateRound.indicators.explosive_round_edge,
+                }
+                : undefined,
+            }
+            : undefined
+        )
+
+        // Support both the new `metrics` shape and older cached `indicators` responses.
         const lateRoundHasData = [
-          post.late_round_conversion?.indicators.clutch_edge_per_map,
-          post.late_round_conversion?.indicators.one_v_x_edge,
-          post.late_round_conversion?.indicators.explosive_round_edge,
-        ].some((v) => v != null && Number.isFinite(v) && v !== 0)
+          lateRoundMetrics?.clutch_wins_per_map,
+          lateRoundMetrics?.one_v_x_wins_per_map,
+          lateRoundMetrics?.explosive_rounds_per_map,
+        ].some((metric) => metric != null)
 
         const isRelativeDev = post.player_development.focus_players[0]?.is_relative ?? false
+        const isRatingDev = post.player_development.focus_players[0]?.metric === 'bl_rating'
 
         return (
-          <div className="columns-1 lg:columns-2 gap-3">
+          <div className="space-y-3">
 
-            {/* ── 1. Taktisk kontroll ─────────────────────────────────────── */}
-            <div className="break-inside-avoid mb-3 rounded-xl border border-border/35 bg-surface2/20 p-3.5">
+            {/* ── 1. Tactical Control ────────────────────────────────────── */}
+            <div className="rounded-xl border border-border/35 bg-surface2/20 p-3.5">
               <div className="flex items-center justify-between gap-2 mb-2">
-                <p className="font-mono text-[10px] uppercase tracking-widest text-muted">Taktisk kontroll</p>
+                <p className="font-mono text-[10px] uppercase tracking-widest text-muted">Tactical Control</p>
                 <SectionWinner
                   values={[
                     post.tactical_control.opening_duel_edge_pp,
@@ -1480,8 +1532,8 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
               {/* Metric bars under chart */}
               <div className="space-y-2.5 rounded-lg border border-border/25 bg-surface/40 p-2.5">
                 <MetricBar
-                  label="Opening duel"
-                  tooltip="Åpningsduell-vinnrate. Vinner av første kill kontrollerer 70–80% av runder."
+                  label="Opening Duel"
+                  tooltip="Opening duel win rate. Winning first kill usually controls 70-80% of rounds."
                   value={post.tactical_control.opening_duel_edge_pp}
                   maxAbs={15}
                   homeVal={`${homeODpct.toFixed(1)}%`}
@@ -1491,7 +1543,7 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                 />
                 <MetricBar
                   label="KAST"
-                  tooltip="Kill/Assist/Survived/Traded per runde — mer stabilt enn K/D ved få runder."
+                  tooltip="Kill/Assist/Survived/Traded per round. More stable than K/D in small samples."
                   value={post.tactical_control.stability_edge_kast_pp}
                   maxAbs={20}
                   homeVal={`${homeKASTpct.toFixed(1)}%`}
@@ -1500,8 +1552,8 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                   awayLogo={awayLogo}
                 />
                 <MetricBar
-                  label="Damage per round"
-                  tooltip="DPR-edge. Høyt DPR presser motstander til force-buys og eco-runder."
+                  label="Damage Per Round"
+                  tooltip="DPR edge. High DPR pushes opponents into force-buys and weaker economy rounds."
                   value={post.tactical_control.pressure_edge_dpr}
                   maxAbs={20}
                   homeVal={homeDPRraw.toFixed(1)}
@@ -1515,7 +1567,8 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                 <div className="mt-3 pt-2.5 border-t border-border/25 space-y-2">
                   {post.tactical_control.role_impact.map((impact, idx) => {
                     const player = playerByTeamAndName(impact.team, impact.player_name)
-                    const scorePct = player ? Math.round(player.score * 100) : null
+                    const scoreProgress = player ? Math.round(player.score * 100) : null
+                    const scoreDisplay = player ? (player.score * 10).toFixed(1) : null
                     return (
                       <div key={`${impact.player_name}-${idx}`} className="flex items-start gap-2.5">
                         <PlayerAvatar
@@ -1533,13 +1586,13 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                             <Badge variant="outline" className="font-mono text-[8px] uppercase tracking-widest px-1 py-0 h-auto border-border/50 text-muted rounded">
                               {impact.role}
                             </Badge>
-                            {scorePct != null && (
-                              <span className="font-mono text-[9px] text-muted tabular-nums ml-auto">{scorePct}%</span>
+                            {scoreDisplay != null && (
+                              <span className="font-mono text-[9px] text-muted tabular-nums ml-auto">{scoreDisplay}</span>
                             )}
                           </div>
-                          {scorePct != null && (
+                          {scoreProgress != null && (
                             <Progress
-                              value={scorePct}
+                              value={scoreProgress}
                               className="h-1 mb-1 bg-surface"
                               style={{ '--color-primary': `var(--color-${impact.team === 'home' ? 'accent' : 'accent2'})` } as React.CSSProperties}
                             />
@@ -1553,9 +1606,10 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
               )}
             </div>
 
-            {/* ── 2. Økonomi ──────────────────────────────────────────────── */}
+            <div className="columns-1 lg:columns-2 gap-3">
+            {/* ── 2. Economy ─────────────────────────────────────────────── */}
             <AnalysisSection
-              title="Økonomi"
+              title="Economy"
               className="break-inside-avoid mb-3"
               titleClassName="text-muted"
               headerClassName="mb-2"
@@ -1577,10 +1631,10 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
 
               {/* Primary signals */}
               <div className="space-y-2.5 rounded-lg border border-border/25 bg-surface/40 p-2.5 mb-2">
-                <p className="font-mono text-[9px] uppercase tracking-widest text-muted/60 pb-1 border-b border-border/20">Primærsignaler</p>
+                <p className="font-mono text-[9px] uppercase tracking-widest text-muted/60 pb-1 border-b border-border/20">Primary Signals</p>
                 <MetricBar
-                  label="Åpningskontroll"
-                  tooltip="Opening duel win% som proxy for hvem som setter økonomisk tempo første halvdel av runden."
+                  label="Opening Duel"
+                  tooltip="Opening duel win% as a proxy for who sets the economy tempo early in the round."
                   value={post.economy_proxies.indicators.opening_control_pp}
                   maxAbs={15}
                   homeVal={`${homeODpct.toFixed(1)}%`}
@@ -1590,7 +1644,7 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                 />
                 <MetricBar
                   label="KAST"
-                  tooltip="KAST-edge: høy KAST = flere runder med weapons i hånden neste runde."
+                  tooltip="KAST edge. Higher KAST usually means more weapons carried into the next round."
                   value={post.economy_proxies.indicators.survival_edge_kast_pp}
                   maxAbs={20}
                   homeVal={`${homeKASTpct.toFixed(1)}%`}
@@ -1599,8 +1653,8 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                   awayLogo={awayLogo}
                 />
                 <MetricBar
-                  label="Damage per round"
-                  tooltip="DPR-edge. Skadepress → motstander sparer mer og kjøper dårligere neste runde."
+                  label="Damage Per Round"
+                  tooltip="DPR edge. Damage pressure forces more saves and weaker buys next round."
                   value={post.economy_proxies.indicators.damage_pressure_edge_dpr}
                   maxAbs={20}
                   homeVal={homeDPRraw.toFixed(1)}
@@ -1614,11 +1668,11 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
               {(post.economy_proxies.indicators.trade_structure_pp != null ||
                 post.economy_proxies.indicators.survival_edge_pp != null) && (
                 <div className="space-y-2 rounded-lg border border-border/20 bg-surface/25 p-2.5 mb-3">
-                  <p className="font-mono text-[9px] uppercase tracking-widest text-muted/50 pb-1 border-b border-border/15">Støttesignaler</p>
+                  <p className="font-mono text-[9px] uppercase tracking-widest text-muted/50 pb-1 border-b border-border/15">Support Signals</p>
                   {post.economy_proxies.indicators.trade_structure_pp != null && (
                     <MetricBar
-                      label="Trade kills"
-                      tooltip="Trade kills per 100 runder som økonomiproxy — gode trades = neste runde med full weaponset."
+                      label="Trade Kills"
+                      tooltip="Trade kills per 100 rounds as an economy proxy. Strong trading preserves full-weapon rounds."
                       value={post.economy_proxies.indicators.trade_structure_pp}
                       maxAbs={12}
                       homeVal={homeTradeK100 != null ? `${homeTradeK100.toFixed(1)}/100r` : undefined}
@@ -1631,7 +1685,7 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                   {post.economy_proxies.indicators.survival_edge_pp != null && (
                     <MetricBar
                       label="Survival"
-                      tooltip="Overlevelsesrate per runde. Direkte korrelert med å beholde gun-round neste runde."
+                      tooltip="Survival rate per round. Directly tied to carrying weapons into the next round."
                       value={post.economy_proxies.indicators.survival_edge_pp}
                       maxAbs={20}
                       homeVal={homeSurvPct != null ? `${homeSurvPct.toFixed(1)}%` : undefined}
@@ -1644,16 +1698,14 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                 </div>
               )}
 
-              <p className="font-mono text-[9px] text-muted/60 bg-surface/35 rounded px-2 py-1.5 inline-block">{post.economy_proxies.caveat}</p>
             </AnalysisSection>
 
-            {/* ── 3. Teamplay-kontroll ────────────────────────────────────── */}
+            {/* ── 3. Teamplay Control ────────────────────────────────────── */}
             {post.teamplay_control && (() => {
               const tradeEdge = post.teamplay_control!.indicators.trade_kill_edge_per_100_rounds
-              const tradePct = Math.max(0, Math.min(100, 50 + (tradeEdge / 12) * 50))
               return (
                 <AnalysisSection
-                  title="Teamplay-kontroll"
+                  title="Teamplay Control"
                   className="break-inside-avoid mb-3"
                   titleClassName="text-muted"
                   headerClassName="mb-2"
@@ -1673,8 +1725,8 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
 
                   <div className="space-y-2.5 rounded-lg border border-border/25 bg-surface/40 p-2.5">
                     <MetricBar
-                      label="Trade kills"
-                      tooltip="Trade kills per 100 runder. Trade = kill innen 5 sek etter lagkamerat ble drept."
+                      label="Trade Kills"
+                      tooltip="Trade kills per 100 rounds. A trade is a kill within 5 seconds after a teammate dies."
                       value={tradeEdge}
                       maxAbs={12}
                       homeVal={homeTradeK100 != null ? `${homeTradeK100.toFixed(1)}/100r` : undefined}
@@ -1684,8 +1736,8 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                     />
                     {post.teamplay_control!.indicators.trade_recovery_edge_pp != null && (
                       <MetricBar
-                        label="Death-trade recovery"
-                        tooltip="Andel dødsfall som ble traded. Høy recovery = laget mister sjelden gunround av ett tap."
+                        label="Death-Trade Recovery"
+                        tooltip="Share of deaths that were immediately traded. High recovery means fewer rounds lost off one pick."
                         value={post.teamplay_control!.indicators.trade_recovery_edge_pp}
                         maxAbs={20}
                         homeVal={homeTradeD100 != null ? `${homeTradeD100.toFixed(1)}/100r` : undefined}
@@ -1696,7 +1748,7 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                     )}
                     <MetricBar
                       label="Assists"
-                      tooltip="Assists per runde som proxy for utility-synk og koordinerte pushes."
+                      tooltip="Assists per round as a proxy for utility sync and coordinated fights."
                       value={post.teamplay_control!.indicators.assist_edge_per_round}
                       maxAbs={0.12}
                       homeVal={`${homeAssistPR.toFixed(2)}/r`}
@@ -1705,7 +1757,6 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                       awayLogo={awayLogo}
                     />
                   </div>
-                  <p className="font-mono text-[9px] text-muted/60 mt-3 bg-surface/35 rounded px-2 py-1.5 inline-block">{post.teamplay_control!.caveat}</p>
                 </AnalysisSection>
               )
             })()}
@@ -1713,7 +1764,7 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
             {/* ── 4. Round Stability ──────────────────────────────────────── */}
             {post.round_stability && (
               <AnalysisSection
-                title="Round stability"
+                title="Round Stability"
                 className="break-inside-avoid mb-3"
                 titleClassName="text-muted"
                 headerClassName="mb-2"
@@ -1765,7 +1816,7 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                   {post.round_stability.indicators.survival_edge_pp != null && (
                     <MetricBar
                       label="Survival"
-                      tooltip="Andel spillere som overlever runden. Høy survival → beholder utstyr og setter press."
+                      tooltip="Share of players who survive the round. Higher survival helps preserve weapons and maintain pressure."
                       value={post.round_stability.indicators.survival_edge_pp}
                       maxAbs={20}
                       homeVal={homeSurvPct != null ? `${homeSurvPct.toFixed(1)}%` : undefined}
@@ -1776,7 +1827,7 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                   )}
                   <MetricBar
                     label="KAST"
-                    tooltip="KAST stabiliserer seg ved ~150 runder (vs K/D ~400). Mest pålitelig stabilitetsindikator."
+                    tooltip="KAST stabilizes around 150 rounds, much sooner than K/D. Strongest stability indicator here."
                     value={post.round_stability.indicators.kast_edge_pp}
                     maxAbs={20}
                     homeVal={`${homeKASTpct.toFixed(1)}%`}
@@ -1786,8 +1837,8 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                   />
                   {post.round_stability.indicators.survival_minus_kast_edge_pp != null && (
                     <MetricBar
-                      label="Surv − KAST gap"
-                      tooltip="Per lag: survival% minus KAST%. Positiv = overlever uten å bidra (passivt). Negativt = bidrar selv om man dør (aggressivt)."
+                      label="Survival − KAST Gap"
+                      tooltip="Per team: survival% minus KAST%. Positive means passive survivability; negative means impact despite deaths."
                       value={post.round_stability.indicators.survival_minus_kast_edge_pp}
                       maxAbs={12}
                       homeVal={homeKASTSurvGap != null ? `${homeKASTSurvGap >= 0 ? '+' : ''}${homeKASTSurvGap.toFixed(1)}%` : undefined}
@@ -1797,23 +1848,22 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                     />
                   )}
                 </div>
-                <p className="font-mono text-[9px] text-muted/60 mt-3 bg-surface/35 rounded px-2 py-1.5 inline-block">{post.round_stability.caveat}</p>
               </AnalysisSection>
             )}
 
-            {/* ── 5. Late-round conversion ────────────────────────────────── */}
+            {/* ── 5. Late-round impact ────────────────────────────────────── */}
             {post.late_round_conversion && (
               <AnalysisSection
-                title="Late-round conversion"
+                title="Late-round Impact"
                 className="break-inside-avoid mb-3"
                 titleClassName="text-muted"
                 headerClassName="mb-2"
                 headerRight={lateRoundHasData ? (
                   <SectionWinner
                     values={[
-                      post.late_round_conversion.indicators.clutch_edge_per_map,
-                      post.late_round_conversion.indicators.one_v_x_edge,
-                      post.late_round_conversion.indicators.explosive_round_edge,
+                      lateRoundMetrics?.clutch_wins_per_map?.edge,
+                      lateRoundMetrics?.one_v_x_wins_per_map?.edge,
+                      lateRoundMetrics?.explosive_rounds_per_map?.edge,
                     ]}
                     homeLabel={hl}
                     awayLabel={al}
@@ -1824,40 +1874,45 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
 
                 {lateRoundHasData ? (
                   <div className="space-y-2.5 rounded-lg border border-border/25 bg-surface/40 p-2.5">
-                    {/* These are edge values only — no per-team absolute rates available from BL API */}
-                    {Number.isFinite(post.late_round_conversion.indicators.clutch_edge_per_map) && post.late_round_conversion.indicators.clutch_edge_per_map !== 0 && (
+                    {lateRoundMetrics?.clutch_wins_per_map && (
                       <MetricBar
-                        label="Clutch-runder"
-                        tooltip="Vunne 1vX-situasjoner per kart. Høy varians ved ≤3 kart — bruk som tendensindikator."
-                        value={post.late_round_conversion.indicators.clutch_edge_per_map ?? 0}
+                        label="Clutch Wins"
+                        tooltip="Won 1vX situations per map. Very high variance in short series, so treat as a signal rather than a verdict."
+                        value={lateRoundMetrics.clutch_wins_per_map.edge}
                         maxAbs={1.5}
-                        suffix="/kart"
+                        suffix="/map edge"
+                        homeVal={lateRoundMetrics.clutch_wins_per_map.home > 0 ? `${lateRoundMetrics.clutch_wins_per_map.home.toFixed(2)}/map` : undefined}
+                        awayVal={lateRoundMetrics.clutch_wins_per_map.away > 0 ? `${lateRoundMetrics.clutch_wins_per_map.away.toFixed(2)}/map` : undefined}
                         homeLogo={homeLogo}
                         awayLogo={awayLogo}
                         homeLabel={hl}
                         awayLabel={al}
                       />
                     )}
-                    {Number.isFinite(post.late_round_conversion.indicators.one_v_x_edge) && post.late_round_conversion.indicators.one_v_x_edge !== 0 && (
+                    {lateRoundMetrics?.one_v_x_wins_per_map && (
                       <MetricBar
-                        label="1vX-situasjoner"
-                        tooltip="Antall 1vX-forsøk per kart. Sier noe om kaosberedskap og press under pistolrunder."
-                        value={post.late_round_conversion.indicators.one_v_x_edge ?? 0}
+                        label="1vX Wins"
+                        tooltip="Won 1vX clutches per map. This is clutch outcome, not attempt volume."
+                        value={lateRoundMetrics.one_v_x_wins_per_map.edge}
                         maxAbs={2}
-                        suffix="/kart"
+                        suffix="/map edge"
+                        homeVal={lateRoundMetrics.one_v_x_wins_per_map.home > 0 ? `${lateRoundMetrics.one_v_x_wins_per_map.home.toFixed(2)}/map` : undefined}
+                        awayVal={lateRoundMetrics.one_v_x_wins_per_map.away > 0 ? `${lateRoundMetrics.one_v_x_wins_per_map.away.toFixed(2)}/map` : undefined}
                         homeLogo={homeLogo}
                         awayLogo={awayLogo}
                         homeLabel={hl}
                         awayLabel={al}
                       />
                     )}
-                    {Number.isFinite(post.late_round_conversion.indicators.explosive_round_edge) && post.late_round_conversion.indicators.explosive_round_edge !== 0 && (
+                    {lateRoundMetrics?.explosive_rounds_per_map && (
                       <MetricBar
-                        label="Eksplosive runder"
-                        tooltip="Runder med 3+ raske kills per kart — proxy for aggresjonstempo og entry-evne."
-                        value={post.late_round_conversion.indicators.explosive_round_edge ?? 0}
+                        label="Explosive Rounds"
+                        tooltip="Rounds with 3+ fast kills per map. A proxy for aggression tempo and round-closing power."
+                        value={lateRoundMetrics.explosive_rounds_per_map.edge}
                         maxAbs={2}
-                        suffix="/kart"
+                        suffix="/map edge"
+                        homeVal={lateRoundMetrics.explosive_rounds_per_map.home > 0 ? `${lateRoundMetrics.explosive_rounds_per_map.home.toFixed(2)}/map` : undefined}
+                        awayVal={lateRoundMetrics.explosive_rounds_per_map.away > 0 ? `${lateRoundMetrics.explosive_rounds_per_map.away.toFixed(2)}/map` : undefined}
                         homeLogo={homeLogo}
                         awayLogo={awayLogo}
                         homeLabel={hl}
@@ -1865,19 +1920,18 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                       />
                     )}
                     <p className="font-mono text-[9px] text-muted/50 border-t border-border/20 pt-1.5">
-                      Høy varians ved ≤3 kart — tendenser, ikke fasit.
+                      Values by the team logos show the level for each team. The center bar shows the edge between them.
                     </p>
                   </div>
                 ) : (
-                  <DataQualityNotice message="BL-API mangler clutch/explosive-telemetri for denne kampen." />
+                  <DataQualityNotice message="BL API is missing clutch and explosive-round telemetry for this match." />
                 )}
-                <p className="font-mono text-[9px] text-muted/60 mt-3 bg-surface/35 rounded px-2 py-1.5 inline-block">{post.late_round_conversion.caveat}</p>
               </AnalysisSection>
             )}
 
-            {/* ── 6. Spillerutvikling ─────────────────────────────────────── */}
+            {/* ── 6. Player Development ──────────────────────────────────── */}
             <AnalysisSection
-              title="Spillerutvikling"
+              title="Player Development"
               className="break-inside-avoid mb-3"
               titleClassName="text-muted"
               headerClassName="mb-2"
@@ -1887,8 +1941,11 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                 </Badge>
               ) : undefined}
             >
+              {isRatingDev && !isRelativeDev && (
+                <p className="font-mono text-[9px] text-muted/60 mb-2.5">Shows BL R-rating against the historical BL baseline. No artificial 0-100 scale is used here.</p>
+              )}
               {isRelativeDev && (
-                <p className="font-mono text-[9px] text-muted/60 mb-2.5">Ingen historisk Leetify-baseline — viser relativ kampperformance.</p>
+                <p className="font-mono text-[9px] text-muted/60 mb-2.5">No historical baseline available, so this shows relative in-match performance.</p>
               )}
               {post.player_development.focus_players.length > 0 ? (
                 <div className="space-y-2">
@@ -1897,6 +1954,14 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                     const scoreVal = focus.score != null ? focus.score : player?.score
                     const scoreMax = focus.score_max ?? 1
                     const scorePct = scoreVal != null ? Math.round((scoreVal / scoreMax) * 100) : null
+                    const scoreDisplay = scoreVal != null ? (scoreVal * 10).toFixed(1) : null
+                    const showsValueComparison =
+                      focus.current_value != null &&
+                      focus.baseline_value != null &&
+                      focus.delta_value != null
+                    const currentValue = focus.current_value ?? 0
+                    const baselineValue = focus.baseline_value ?? 0
+                    const deltaValue = focus.delta_value ?? 0
                     return (
                       <div key={`${focus.player_name}-${idx}`} className="rounded-lg border border-border/25 px-2.5 py-2.5 bg-surface/30">
                         <div className="flex flex-wrap items-center gap-2 mb-1.5">
@@ -1927,16 +1992,51 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                               ? '▲ Over'
                               : focus.trend === 'underperforming'
                                 ? '▼ Under'
-                                : '— Stabil'}
+                                : '— Stable'}
                           </Badge>
                         </div>
 
-                        {/* Score bar */}
-                        {scorePct != null && (
+                        {showsValueComparison && (
+                          <div className="mb-2 grid grid-cols-3 gap-2">
+                            <div className="rounded border border-border/20 bg-surface/40 px-2 py-1.5">
+                              <p className="font-mono text-[8px] uppercase tracking-widest text-muted/70 mb-0.5">
+                                {focus.metric === 'bl_rating' ? 'R-rating' : 'Score /10'}
+                              </p>
+                              <p className="font-mono text-[11px] tabular-nums text-text">
+                                {currentValue.toFixed(2)}
+                              </p>
+                            </div>
+                            <div className="rounded border border-border/20 bg-surface/40 px-2 py-1.5">
+                              <p className="font-mono text-[8px] uppercase tracking-widest text-muted/70 mb-0.5">
+                                {focus.metric === 'bl_rating' ? 'Baseline' : 'Match Avg /10'}
+                              </p>
+                              <p className="font-mono text-[11px] tabular-nums text-text">
+                                {baselineValue.toFixed(2)}
+                              </p>
+                            </div>
+                            <div className="rounded border border-border/20 bg-surface/40 px-2 py-1.5">
+                              <p className="font-mono text-[8px] uppercase tracking-widest text-muted/70 mb-0.5">
+                                {focus.metric === 'bl_rating' ? 'Delta' : 'Delta /10'}
+                              </p>
+                              <p className={`font-mono text-[11px] tabular-nums ${
+                                deltaValue > 0
+                                  ? 'text-success'
+                                  : deltaValue < 0
+                                    ? 'text-danger'
+                                    : 'text-muted'
+                              }`}>
+                                {formatSigned(deltaValue)}
+                              </p>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Score bar fallback */}
+                        {!showsValueComparison && scorePct != null && (
                           <div className="mb-2">
                             <div className="flex justify-between items-baseline mb-0.5">
-                              <span className="font-mono text-[9px] text-muted/70">Score</span>
-                              <span className="font-mono text-[10px] tabular-nums text-muted">{scorePct}%</span>
+                              <span className="font-mono text-[9px] text-muted/70">Score /10</span>
+                              <span className="font-mono text-[10px] tabular-nums text-muted">{scoreDisplay}</span>
                             </div>
                             <Progress
                               value={scorePct}
@@ -1948,20 +2048,20 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
 
                         <p className="font-mono text-[10px] text-muted">{focus.note}</p>
                         <p className="font-mono text-[10px] text-muted/70 mt-1">
-                          <span className="text-muted/50">Tiltak: </span>{focus.action}
+                          <span className="text-muted/50">Action: </span>{focus.action}
                         </p>
                       </div>
                     )
                   })}
                 </div>
               ) : (
-                <p className="font-mono text-[11px] text-muted">Ingen spillerfokus tilgjengelig.</p>
+                <p className="font-mono text-[11px] text-muted">No player focus available.</p>
               )}
             </AnalysisSection>
 
-            {/* ── 7. Coach-anbefalinger ──────────────────────────────────── */}
+            {/* ── 7. Coach Notes ─────────────────────────────────────────── */}
             <AnalysisSection
-              title="Coach-anbefalinger"
+              title="Coach Notes"
               className="break-inside-avoid mb-3"
               titleClassName="text-muted"
               headerClassName="mb-2"
@@ -1978,9 +2078,10 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                   ))}
                 </ol>
               ) : (
-                <p className="font-mono text-[11px] text-muted">Ingen anbefalinger tilgjengelig.</p>
+                <p className="font-mono text-[11px] text-muted">No recommendations available.</p>
               )}
             </AnalysisSection>
+            </div>
 
           </div>
         )
@@ -2100,7 +2201,6 @@ export function AnalysisDisplay({
   result: AnalyzeResponse
   showCopyReport?: boolean
 }) {
-  const matchTime = result.meta.match_start_time ?? result.meta.match_finished_time
   const homeName = result.teams.home.name || 'Hjem'
   const awayName = result.teams.away.name || 'Borte'
   const isUpcoming = result.meta.match_status === 'upcoming'
@@ -2201,26 +2301,11 @@ export function AnalysisDisplay({
 
   return (
     <div>
-      <div className="mb-5 flex items-baseline justify-between gap-3">
-        <div className="flex items-baseline gap-3">
-          <span className="font-display text-[10px] tracking-widest uppercase text-muted">
-            Kamp
-          </span>
-          <div className="flex items-center gap-2 min-w-0">
-            <TeamLogo name={homeName} logoUrl={result.teams.home.logo_url} tone="home" size="sm" />
-            <span className="font-mono text-accent text-sm truncate">{homeName}</span>
-            <span className="font-mono text-muted/60 text-sm">vs</span>
-            <span className="font-mono text-accent2 text-sm truncate">{awayName}</span>
-            <TeamLogo name={awayName} logoUrl={result.teams.away.logo_url} tone="away" size="sm" />
-          </div>
-          {matchTime && (
-            <span className="font-mono text-[10px] text-muted tabular-nums">
-              {new Date(matchTime).toLocaleString('nb-NO')}
-            </span>
-          )}
+      {showCopyReport && (
+        <div className="mb-4 flex justify-end">
+          <CopyReportButton result={result} />
         </div>
-        {showCopyReport && <CopyReportButton result={result} />}
-      </div>
+      )}
 
       <MetaBar meta={result.meta} />
 

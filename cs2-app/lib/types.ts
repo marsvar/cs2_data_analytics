@@ -58,6 +58,8 @@ export type PlayerAnalysis = {
   leetify_prior?: number // prior composite proxy 0–1 (if Leetify exists)
   bl_weight?: number    // BL contribution weight used in final score (0–1)
   effective_rounds?: number // recency-weighted rounds used for Bayesian blend
+  bl_rating?: number    // BL R-rating (raw value)
+  bl_rating_baseline?: number // historical BL R-rating baseline
   ci: number            // 90% CI half-width
   rounds: number
   assists: number
@@ -342,10 +344,22 @@ export type AnalyzeResponse = {
     }
     late_round_conversion?: {
       summary: string
-      indicators: {
-        clutch_edge_per_map?: number
-        one_v_x_edge?: number
-        explosive_round_edge?: number
+      metrics: {
+        clutch_wins_per_map?: {
+          home: number
+          away: number
+          edge: number
+        }
+        one_v_x_wins_per_map?: {
+          home: number
+          away: number
+          edge: number
+        }
+        explosive_rounds_per_map?: {
+          home: number
+          away: number
+          edge: number
+        }
       }
       caveat: string
     }
@@ -354,8 +368,12 @@ export type AnalyzeResponse = {
         team: 'home' | 'away'
         player_name: string
         trend: 'overperforming' | 'underperforming' | 'stable'
+        metric: 'bl_rating' | 'score'
         note: string
         action: string
+        current_value?: number
+        baseline_value?: number
+        delta_value?: number
         score?: number        // composite 0–1, present in in-match fallback
         score_max?: number    // max score in the match (for progress bar scaling)
         is_relative?: boolean // true = in-match relative fallback (no Leetify baseline)
