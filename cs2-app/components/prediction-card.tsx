@@ -67,45 +67,44 @@ export function PredictionCard({ home, away }: { home: Team; away: Team }) {
         </div>
       )}
 
-      {/* Team names */}
-      <div className="flex justify-between mb-2">
-        <span className="inline-flex items-center gap-1.5 font-mono text-xs text-accent truncate max-w-[45%]" title={homeName}>
-          <TeamLogo name={homeName} logoUrl={home.logo_url} tone="home" size="sm" />
-          {homeName}
-        </span>
-        <span className="inline-flex items-center justify-end gap-1.5 font-mono text-xs text-accent2 truncate max-w-[45%] text-right" title={awayName}>
-          {awayName}
-          <TeamLogo name={awayName} logoUrl={away.logo_url} tone="away" size="sm" />
-        </span>
-      </div>
-
-      {/* Probability bar */}
-      <div className="relative h-4 bg-surface2 rounded-full overflow-hidden mb-2">
-        <div
-          className="absolute inset-y-0 left-0 rounded-l-full transition-all duration-700 ease-out"
-          style={{ width: `${homeWinPct}%`, background: 'var(--color-accent)' }}
-        />
-        {/* 50% marker */}
-        <div className="absolute inset-y-0 left-1/2 w-px bg-border/80" />
-      </div>
-
-      {/* Percentages */}
-      <div className="flex justify-between mb-5">
-        <span className="font-mono text-xl tabular-nums font-bold" style={{ color: 'var(--color-accent)' }}>
-          {homeWinPct}%
-        </span>
-        <span className="font-mono text-[10px] text-muted self-center">seierssannsynlighet</span>
-        <span className="font-mono text-xl tabular-nums font-bold" style={{ color: 'var(--color-accent2)' }}>
-          {awayWinPct}%
-        </span>
+      {/* Win probability — typografi-fokus */}
+      <div className="flex items-stretch mb-5">
+        <div className="flex-1 text-center py-3 border-r border-border/50">
+          <div
+            className="font-mono text-4xl font-bold tabular-nums leading-none"
+            style={{ color: 'var(--color-accent)' }}
+          >
+            {homeWinPct}%
+          </div>
+          <div className="inline-flex items-center justify-center gap-1.5 mt-2">
+            <TeamLogo name={homeName} logoUrl={home.logo_url} tone="home" size="sm" />
+            <span className="font-mono text-[9px] text-muted uppercase tracking-widest truncate max-w-[80px]" title={homeName}>
+              {homeName}
+            </span>
+          </div>
+          <div className="font-mono text-[8px] text-muted/50 mt-0.5">seier</div>
+        </div>
+        <div className="flex-1 text-center py-3">
+          <div
+            className="font-mono text-4xl font-bold tabular-nums leading-none"
+            style={{ color: 'var(--color-accent2)' }}
+          >
+            {awayWinPct}%
+          </div>
+          <div className="inline-flex items-center justify-center gap-1.5 mt-2">
+            <TeamLogo name={awayName} logoUrl={away.logo_url} tone="away" size="sm" />
+            <span className="font-mono text-[9px] text-muted uppercase tracking-widest truncate max-w-[80px]" title={awayName}>
+              {awayName}
+            </span>
+          </div>
+          <div className="font-mono text-[8px] text-muted/50 mt-0.5">seier</div>
+        </div>
       </div>
 
       {/* Key threats */}
-      <div className="grid grid-cols-2 gap-4 pt-4 border-t border-border/40">
-        <div>
-          <p className="text-[9px] font-mono uppercase tracking-widest text-muted mb-2">
-            Nøkkelspillere
-          </p>
+      <div className="pt-4 border-t border-border/40">
+        <p className="text-[9px] font-mono uppercase tracking-widest text-muted mb-2">Nøkkelspillere</p>
+        <div className="grid grid-cols-2 gap-4">
           <div className="space-y-1.5">
             {homeThreats.map((p) => (
               <div key={p.paradise_user_id} className="flex items-center justify-between gap-2">
@@ -113,20 +112,12 @@ export function PredictionCard({ home, away }: { home: Team; away: Team }) {
                   <PlayerAvatar name={p.name} imageUrl={p.avatar_url} tone="home" size="xs" />
                   <span className="font-mono text-xs text-text truncate">{p.name}</span>
                 </span>
-                <span
-                  className="font-mono text-xs tabular-nums shrink-0"
-                  style={{ color: scoreColor(p.score) }}
-                >
+                <span className="font-mono text-xs tabular-nums shrink-0" style={{ color: scoreColor(p.score) }}>
                   {(p.score * 10).toFixed(1)}
                 </span>
               </div>
             ))}
           </div>
-        </div>
-        <div>
-          <p className="text-[9px] font-mono uppercase tracking-widest text-muted mb-2">
-            Nøkkelspillere
-          </p>
           <div className="space-y-1.5">
             {awayThreats.map((p) => (
               <div key={p.paradise_user_id} className="flex items-center justify-between gap-2">
@@ -134,10 +125,7 @@ export function PredictionCard({ home, away }: { home: Team; away: Team }) {
                   <PlayerAvatar name={p.name} imageUrl={p.avatar_url} tone="away" size="xs" />
                   <span className="font-mono text-xs text-text truncate">{p.name}</span>
                 </span>
-                <span
-                  className="font-mono text-xs tabular-nums shrink-0"
-                  style={{ color: scoreColor(p.score) }}
-                >
+                <span className="font-mono text-xs tabular-nums shrink-0" style={{ color: scoreColor(p.score) }}>
                   {(p.score * 10).toFixed(1)}
                 </span>
               </div>
