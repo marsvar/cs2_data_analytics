@@ -70,6 +70,8 @@ type PlayerAccumulator = {
   weightedClutchesWon: number
   weightedOneVX: number
   weightedExplosiveRounds: number
+  weightedRatingSum: number
+  weightedRatingRounds: number
 }
 
 type PlayerCandidate = {
@@ -305,6 +307,8 @@ function addMatchToAccumulator(
       weightedClutchesWon: 0,
       weightedOneVX: 0,
       weightedExplosiveRounds: 0,
+      weightedRatingSum: 0,
+      weightedRatingRounds: 0,
     }
 
     const rounds = p.rounds
@@ -339,6 +343,10 @@ function addMatchToAccumulator(
       (p.bl_extended?.multi_kills?.rounds_with_4k ?? 0) +
       (p.bl_extended?.multi_kills?.rounds_with_5k ?? 0)
     )
+    if (p.bl_extended?.rating != null && Number.isFinite(p.bl_extended.rating) && rounds > 0) {
+      existing.weightedRatingSum += weight * rounds * p.bl_extended.rating
+      existing.weightedRatingRounds += weight * rounds
+    }
 
     accumulator.set(p.paradise_user_id, existing)
   }
@@ -399,6 +407,7 @@ function buildHistoricalExtended(
     clutches_won: historical.weightedClutchesWon > 0 ? round1(historical.weightedClutchesWon) : undefined,
     one_v_x_total: historical.weightedOneVX > 0 ? round1(historical.weightedOneVX) : undefined,
     explosive_rounds_total: historical.weightedExplosiveRounds > 0 ? round1(historical.weightedExplosiveRounds) : undefined,
+    rating: historical.weightedRatingRounds > 0 ? round3(historical.weightedRatingSum / historical.weightedRatingRounds) : undefined,
     multi_kills: historical.weightedExplosiveRounds > 0
       ? { rounds_with_3k: round1(historical.weightedExplosiveRounds) }
       : undefined,
@@ -706,6 +715,7 @@ export async function analyzeMatchup(matchupId: number): Promise<AnalyzeResponse
     )
 
     const playerAccumulator = new Map<number, PlayerAccumulator>()
+    const baselineAccumulator = new Map<number, PlayerAccumulator>()
     let roundsFetched = 0
     for (const result of historicalStats) {
       if (result.status !== 'fulfilled') continue
@@ -725,6 +735,15 @@ export async function analyzeMatchup(matchupId: number): Promise<AnalyzeResponse
         ageDays <= STRONG_WINDOW_DAYS,
         ageDays <= HISTORY_WINDOW_DAYS,
       )
+      if (!(matchStatus === 'played' && matchup.id === matchupId)) {
+        addMatchToAccumulator(
+          baselineAccumulator,
+          [...stats.home_players, ...stats.away_players],
+          weight,
+          ageDays <= STRONG_WINDOW_DAYS,
+          ageDays <= HISTORY_WINDOW_DAYS,
+        )
+      }
     }
 
     // ── Division-based active lineup resolution ───────────────────────────────
@@ -975,6 +994,7 @@ export async function analyzeMatchup(matchupId: number): Promise<AnalyzeResponse
 
   const analyzeCandidate = (candidate: PlayerCandidate): PlayerAnalysis | null => {
     const historical = playerAccumulator.get(candidate.userId)
+    const baselineHistorical = baselineAccumulator.get(candidate.userId)
     if (matchStatus === 'played' && !candidate.base) return null
     if (!candidate.base && !historical) return null
 
@@ -1068,6 +1088,10 @@ export async function analyzeMatchup(matchupId: number): Promise<AnalyzeResponse
         ? weightedOdTotal / Math.max(effectiveRounds / 20, 1)
         : 0
     const historicalExtended = buildHistoricalExtended(historical, effectiveRounds)
+    const baselineExtended = buildHistoricalExtended(
+      baselineHistorical,
+      baselineHistorical?.effectiveRounds ?? 0,
+    )
     const baseExtended = candidate.base?.bl_extended
     const mergedExtended = useHistorical
       ? (historicalExtended ?? baseExtended)
@@ -1110,6 +1134,8 @@ export async function analyzeMatchup(matchupId: number): Promise<AnalyzeResponse
       leetify_prior: leetifyPrior != null ? Math.round(leetifyPrior * 10000) / 10000 : undefined,
       bl_weight: Math.round(wBl * 10000) / 10000,
       effective_rounds: Math.round(effectiveRounds * 10) / 10,
+      bl_rating: candidate.base?.bl_extended?.rating ?? resolvedExtended?.rating,
+      bl_rating_baseline: baselineExtended?.rating,
       ci,
       rounds: rawRounds,
       assists: Math.round(weightedAssists * 10) / 10,

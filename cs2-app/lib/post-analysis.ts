@@ -121,25 +121,28 @@ function roleLabel(teamPlayer: Team['players'][number]): string {
   return ROLE_META[role].label
 }
 
-function trendCategory(delta: number): 'overperforming' | 'underperforming' | 'stable' {
-  if (delta >= 0.03) return 'overperforming'
-  if (delta <= -0.03) return 'underperforming'
+function trendCategory(
+  delta: number,
+  threshold = 0.03,
+): 'overperforming' | 'underperforming' | 'stable' {
+  if (delta >= threshold) return 'overperforming'
+  if (delta <= -threshold) return 'underperforming'
   return 'stable'
 }
 
 function buildPlayerAction(role: string, trend: 'overperforming' | 'underperforming' | 'stable'): string {
   if (trend === 'overperforming') {
     return role === 'ENTRY'
-      ? 'Bygg tidlige runder rundt spillerens entry-tempo og sikre tett trade-avstand.'
-      : 'Bygg flere mid-round kall rundt denne spilleren som primær impact-kilde.'
+      ? 'Build early rounds around this player’s entry tempo and keep close trade spacing.'
+      : 'Build more mid-round calls around this player as the primary impact source.'
   }
   if (trend === 'underperforming') {
-    if (role === 'ENTRY') return 'Reduser solo entries og øk støtteflash/trade-protokoll i åpningene.'
-    if (role === 'AWP') return 'Juster AWP-posisjoner og prioriter tryggere re-peek-rytme tidlig i rundene.'
-    if (role === 'SUPP') return 'Flytt utility-ansvar tidligere i runden for bedre tempo-kontroll.'
-    return 'Forenkle rolleoppgaver i åpningen og fokuser på høyprosent dueller.'
+    if (role === 'ENTRY') return 'Reduce solo entries and increase support flashes and trade structure in the opening phase.'
+    if (role === 'AWP') return 'Adjust AWP positions and prioritize safer early re-peek timing.'
+    if (role === 'SUPP') return 'Move utility responsibility earlier in the round to improve tempo control.'
+    return 'Simplify opening responsibilities and focus on higher-percentage fights.'
   }
-  return 'Hold nåværende rolleprofil, men finjuster kommunikasjon rundt første kontakt.'
+  return 'Keep the current role profile, but fine-tune communication around first contact.'
 }
 
 export function buildPostAnalysis(teams: { home: Team; away: Team }): PostAnalysis {
@@ -182,8 +185,8 @@ export function buildPostAnalysis(teams: { home: Team; away: Team }): PostAnalys
       : ((survivalEdge + stabilityEdge) >= 0 ? 'home' : 'away')
   const tacticalSummary =
     tacticalWinner === 'home'
-      ? `${teams.home.name || 'Hjem'} kontrollerte kampbildet best gjennom åpningstrykk, trade-struktur og stabil rundeutførelse.`
-      : `${teams.away.name || 'Borte'} kontrollerte kampbildet best gjennom åpningstrykk, trade-struktur og stabil rundeutførelse.`
+      ? `${teams.home.name || 'Home'} controlled the match best through opening pressure, trade structure, and stable round execution.`
+      : `${teams.away.name || 'Away'} controlled the match best through opening pressure, trade structure, and stable round execution.`
 
   const roleImpact: PostAnalysis['tactical_control']['role_impact'] = [
     ...teams.home.players
@@ -198,12 +201,12 @@ export function buildPostAnalysis(teams: { home: Team; away: Team }): PostAnalys
     const role = roleLabel(player)
     const impactNote =
       role === 'ENTRY'
-        ? 'Skapte første-kontakt press og tvang defensive rotasjoner.'
+        ? 'Created first-contact pressure and forced defensive rotations.'
         : role === 'AWP'
-          ? 'Skapte høy verdi i tidlige dueller og kontroll på nøkkelvinkler.'
+          ? 'Created high value in early duels and controlled key angles.'
           : role === 'SUPP'
-            ? 'Stabiliserte runder via høy overlevelse og tradekvalitet.'
-            : 'Leverte stabil impact i sentrale rifledueller.'
+            ? 'Stabilized rounds through strong survival and trade quality.'
+            : 'Delivered steady impact in key rifle duels.'
     return {
       team,
       player_name: player.name,
@@ -218,8 +221,8 @@ export function buildPostAnalysis(teams: { home: Team; away: Team }): PostAnalys
       : (survivalEdge >= 0 ? 'home' : 'away')
   const economySummary =
     economyLeader === 'home'
-      ? `${teams.home.name || 'Hjem'} vant flest signaler for økonomisk kontroll (åpning, skadepress, trades og overlevelse).`
-      : `${teams.away.name || 'Borte'} vant flest signaler for økonomisk kontroll (åpning, skadepress, trades og overlevelse).`
+      ? `${teams.home.name || 'Home'} won more signals for economy control through openings, damage pressure, trading, and survival.`
+      : `${teams.away.name || 'Away'} won more signals for economy control through openings, damage pressure, trading, and survival.`
 
   const teamplayWinner =
     Math.abs(tradeKillEdge) + Math.abs(assistEdge) >= Math.abs(tradeRecoveryEdge ?? 0)
@@ -227,8 +230,8 @@ export function buildPostAnalysis(teams: { home: Team; away: Team }): PostAnalys
       : ((tradeRecoveryEdge ?? 0) >= 0 ? 'home' : 'away')
   const teamplaySummary =
     teamplayWinner === 'home'
-      ? `${teams.home.name || 'Hjem'} hadde best teamplay-kontroll gjennom trades, refrags og støtteimpact.`
-      : `${teams.away.name || 'Borte'} hadde best teamplay-kontroll gjennom trades, refrags og støtteimpact.`
+      ? `${teams.home.name || 'Home'} had the better teamplay control through trades, refrags, and support impact.`
+      : `${teams.away.name || 'Away'} had the better teamplay control through trades, refrags, and support impact.`
 
   const stabilityWinner =
     Math.abs(survivalEdge) >= Math.abs(stabilityEdge)
@@ -236,22 +239,27 @@ export function buildPostAnalysis(teams: { home: Team; away: Team }): PostAnalys
       : (stabilityEdge >= 0 ? 'home' : 'away')
   const roundStabilitySummary =
     stabilityWinner === 'home'
-      ? `${teams.home.name || 'Hjem'} holdt flest runder levende via bedre survival-disciplin og stabil KAST-profil.`
-      : `${teams.away.name || 'Borte'} holdt flest runder levende via bedre survival-disciplin og stabil KAST-profil.`
+      ? `${teams.home.name || 'Home'} kept more rounds alive through stronger survival discipline and a steadier KAST profile.`
+      : `${teams.away.name || 'Away'} kept more rounds alive through stronger survival discipline and a steadier KAST profile.`
 
   const lateRoundSignals = [clutchEdge ?? 0, oneVXEdge ?? 0, explosiveEdge ?? 0]
   const lateRoundWinner = lateRoundSignals.reduce((sum, value) => sum + value, 0) >= 0 ? 'home' : 'away'
   const lateRoundSummary =
     clutchEdge == null && oneVXEdge == null && explosiveEdge == null
-      ? 'Late-round conversion mangler robuste BL-felt i denne kampen.'
+      ? 'Late-round impact is missing robust BL fields for this match.'
       : lateRoundWinner === 'home'
-        ? `${teams.home.name || 'Hjem'} hadde høyest late-round impact via clutch- og closer-signaler.`
-        : `${teams.away.name || 'Borte'} hadde høyest late-round impact via clutch- og closer-signaler.`
+        ? `${teams.home.name || 'Home'} was stronger in late-round phases through more clutch wins and better closer signals.`
+        : `${teams.away.name || 'Away'} was stronger in late-round phases through more clutch wins and better closer signals.`
 
-  const comparablePlayers = [
+  const comparablePlayersByRating = [
     ...teams.home.players.map((player) => ({ team: 'home' as const, player })),
     ...teams.away.players.map((player) => ({ team: 'away' as const, player })),
-  ].filter((entry) => entry.player.leetify_prior != null)
+  ].filter((entry) =>
+    entry.player.bl_rating != null &&
+    entry.player.bl_rating_baseline != null &&
+    Number.isFinite(entry.player.bl_rating) &&
+    Number.isFinite(entry.player.bl_rating_baseline),
+  )
 
   const allPlayersForDev = [
     ...teams.home.players.map((player) => ({ team: 'home' as const, player })),
@@ -260,27 +268,31 @@ export function buildPostAnalysis(teams: { home: Team; away: Team }): PostAnalys
 
   let focusPlayers: PostAnalysis['player_development']['focus_players']
 
-  if (comparablePlayers.length >= 2) {
-    const scoreMax = Math.max(...comparablePlayers.map((e) => e.player.score), 0.01)
-    focusPlayers = comparablePlayers
+  if (comparablePlayersByRating.length >= 2) {
+    focusPlayers = comparablePlayersByRating
       .map(({ team, player }) => {
-        const delta = player.score - (player.leetify_prior ?? player.score)
-        const trend = trendCategory(delta)
+        const currentRating = player.bl_rating ?? 0
+        const baselineRating = player.bl_rating_baseline ?? currentRating
+        const delta = currentRating - baselineRating
+        const trend = trendCategory(delta, 0.05)
         const role = roleLabel(player)
+        const sign = delta >= 0 ? '+' : ''
         const note =
           trend === 'overperforming'
-            ? `Leverte over baseline (${(delta * 10).toFixed(1)} poeng over forventning).`
+            ? `R-rating ${currentRating.toFixed(2)} versus historical BL baseline ${baselineRating.toFixed(2)} (${sign}${delta.toFixed(2)}).`
             : trend === 'underperforming'
-              ? `Leverte under baseline (${(delta * 10).toFixed(1)} poeng under forventning).`
-              : 'Lå nær baseline-nivå.'
+              ? `R-rating ${currentRating.toFixed(2)} versus historical BL baseline ${baselineRating.toFixed(2)} (${sign}${delta.toFixed(2)}).`
+              : `R-rating ${currentRating.toFixed(2)} stayed close to the historical BL baseline ${baselineRating.toFixed(2)} (${sign}${delta.toFixed(2)}).`
         return {
           team,
           player_name: player.name,
           trend,
+          metric: 'bl_rating' as const,
           note,
           action: buildPlayerAction(role, trend),
-          score: round2(player.score),
-          score_max: round2(scoreMax),
+          current_value: round2(currentRating),
+          baseline_value: round2(baselineRating),
+          delta_value: round2(delta),
           is_relative: false,
           absDelta: Math.abs(delta),
         }
@@ -300,13 +312,17 @@ export function buildPostAnalysis(teams: { home: Team; away: Team }): PostAnalys
         const trend = trendCategory(delta)
         const role = roleLabel(player)
         const sign = delta >= 0 ? '+' : ''
-        const note = `In-match relativ: ${sign}${(delta * 10).toFixed(1)} ift. kampsnitt (ingen historisk baseline).`
+        const note = `In-match relative: ${sign}${(delta * 10).toFixed(1)} on the 0-10 score scale versus match average (no historical baseline).`
         return {
           team,
           player_name: player.name,
           trend,
+          metric: 'score' as const,
           note,
           action: buildPlayerAction(role, trend),
+          current_value: round2(player.score * 10),
+          baseline_value: round2(avgScore * 10),
+          delta_value: round2(delta * 10),
           score: round2(player.score),
           score_max: round2(scoreMax),
           is_relative: true,
@@ -320,37 +336,37 @@ export function buildPostAnalysis(teams: { home: Team; away: Team }): PostAnalys
 
   const coachRecommendations: string[] = []
   if (Math.abs(openingEdge) >= 4) {
-    const side = openingEdge >= 0 ? teams.home.name || 'Hjem' : teams.away.name || 'Borte'
+    const side = openingEdge >= 0 ? teams.home.name || 'Home' : teams.away.name || 'Away'
     coachRecommendations.push(
-      `Prioriter å gjenskape åpningsoverlegenheten for ${side}; dagens OD-edge var ${Math.abs(round2(openingEdge))} pp.`,
+      `Prioritize recreating the opening-duel advantage for ${side}; today’s opening-duel edge was ${Math.abs(round2(openingEdge))} pp.`,
     )
   } else {
-    coachRecommendations.push('Åpningsduellene var jevne; fokuser på bedre trade-struktur i første 20 sekunder.')
+    coachRecommendations.push('Opening duels were close; focus on stronger trade structure in the first 20 seconds.')
   }
   if (Math.abs(pressureEdge) >= 5) {
-    const side = pressureEdge >= 0 ? teams.home.name || 'Hjem' : teams.away.name || 'Borte'
+    const side = pressureEdge >= 0 ? teams.home.name || 'Home' : teams.away.name || 'Away'
     coachRecommendations.push(
-      `${side} hadde tydelig skadepress (${Math.abs(round2(pressureEdge)).toFixed(1)} DPR-edge); bygg neste kampplan rundt dette tempoet.`,
+      `${side} had clear damage pressure (${Math.abs(round2(pressureEdge)).toFixed(1)} DPR edge); build the next game plan around that tempo.`,
     )
   } else {
-    coachRecommendations.push('Skadepresset var tett; neste forbedring ligger i utility-synk og refrag timing.')
+    coachRecommendations.push('Damage pressure was close; the next improvement is better utility sync and refrag timing.')
   }
   if (Math.abs(tradeKillEdge) >= 3) {
-    const side = tradeKillEdge >= 0 ? teams.home.name || 'Hjem' : teams.away.name || 'Borte'
+    const side = tradeKillEdge >= 0 ? teams.home.name || 'Home' : teams.away.name || 'Away'
     coachRecommendations.push(
-      `${side} vant trade-spillet tydelig (${Math.abs(round2(tradeKillEdge)).toFixed(1)} trade-kills per 100 runder); behold spacing og refrag-protokoller.`,
+      `${side} clearly won the trade game (${Math.abs(round2(tradeKillEdge)).toFixed(1)} trade kills per 100 rounds); keep the spacing and refrag protocols.`,
     )
   } else {
-    coachRecommendations.push('Trade-spillet var jevnt; fokuser på kortere avstand til første kontakt og raskere refrag-kall.')
+    coachRecommendations.push('Trading was close; focus on shorter distance to first contact and faster refrag calls.')
   }
   if (Math.abs(survivalEdge) >= 4) {
-    const side = survivalEdge >= 0 ? teams.home.name || 'Hjem' : teams.away.name || 'Borte'
+    const side = survivalEdge >= 0 ? teams.home.name || 'Home' : teams.away.name || 'Away'
     coachRecommendations.push(
-      `${side} hadde bedre survival-disciplin (${Math.abs(round2(survivalEdge)).toFixed(1)} pp); bruk dette som modell for mid-round og post-plant-posisjonering.`,
+      `${side} had better survival discipline (${Math.abs(round2(survivalEdge)).toFixed(1)} pp); use that as the model for mid-round and post-plant positioning.`,
     )
   }
   coachRecommendations.push(
-    'Tolk clutch og explosive rounds konservativt; de er høyimpact, men mer volatile enn survival-, trade- og opening-signaler.',
+    'Read clutch and explosive rounds conservatively; they are high-impact, but more volatile than survival, trade, and opening signals.',
   )
 
   return {
@@ -370,7 +386,7 @@ export function buildPostAnalysis(teams: { home: Team; away: Team }): PostAnalys
         trade_structure_pp: round2(tradeKillEdge),
         survival_edge_pp: round2(survivalEdge),
       },
-      caveat: 'BL-signal styrer når tilgjengelig; uten full buy/utility-telemetri brukes fortsatt OD/KAST/DPR som økonomisk proxy.',
+      caveat: 'BL signals lead when available. Without full buy and utility telemetry, OD, KAST, and DPR still act as economy proxies.',
     },
     teamplay_control: {
       summary: teamplaySummary,
@@ -379,7 +395,7 @@ export function buildPostAnalysis(teams: { home: Team; away: Team }): PostAnalys
         trade_recovery_edge_pp: tradeRecoveryEdge != null ? round2(tradeRecoveryEdge) : undefined,
         assist_edge_per_round: round2(assistEdge),
       },
-      caveat: 'Trade-struktur er sterkest når både trade_kills og traded_deaths finnes; ellers må signalet leses mer forsiktig.',
+      caveat: 'Trade structure is strongest when both trade_kills and traded_deaths are available; otherwise read the signal more cautiously.',
     },
     round_stability: {
       summary: roundStabilitySummary,
@@ -388,16 +404,37 @@ export function buildPostAnalysis(teams: { home: Team; away: Team }): PostAnalys
         kast_edge_pp: round2(stabilityEdge),
         survival_minus_kast_edge_pp: survivalMinusKastEdge != null ? round2(survivalMinusKastEdge) : undefined,
       },
-      caveat: 'Survival brukes som støtteindikator til KAST, ikke som erstatning; gapet mellom dem sier noe om hvordan rundene ble overlevd.',
+      caveat: 'Survival is a support signal for KAST, not a replacement. The gap between them says something about how rounds were survived.',
     },
     late_round_conversion: {
       summary: lateRoundSummary,
-      indicators: {
-        clutch_edge_per_map: clutchEdge != null ? round2(clutchEdge) : undefined,
-        one_v_x_edge: oneVXEdge != null ? round2(oneVXEdge) : undefined,
-        explosive_round_edge: explosiveEdge != null ? round2(explosiveEdge) : undefined,
+      metrics: {
+        clutch_wins_per_map:
+          clutchEdge != null && homeStats.avg_clutches_per_map != null && awayStats.avg_clutches_per_map != null
+            ? {
+              home: round2(homeStats.avg_clutches_per_map),
+              away: round2(awayStats.avg_clutches_per_map),
+              edge: round2(clutchEdge),
+            }
+            : undefined,
+        one_v_x_wins_per_map:
+          oneVXEdge != null && homeStats.avg_one_v_x_per_map != null && awayStats.avg_one_v_x_per_map != null
+            ? {
+              home: round2(homeStats.avg_one_v_x_per_map),
+              away: round2(awayStats.avg_one_v_x_per_map),
+              edge: round2(oneVXEdge),
+            }
+            : undefined,
+        explosive_rounds_per_map:
+          explosiveEdge != null && homeStats.avg_explosive_rounds_per_map != null && awayStats.avg_explosive_rounds_per_map != null
+            ? {
+              home: round2(homeStats.avg_explosive_rounds_per_map),
+              away: round2(awayStats.avg_explosive_rounds_per_map),
+              edge: round2(explosiveEdge),
+            }
+            : undefined,
       },
-      caveat: 'Clutch- og explosive-signaler er forklarende i etteranalyse, men skal ikke overtolkes som stabile prediktive inputs alene.',
+      caveat: 'Shows per-team level and edge in the same card. Clutch and explosive signals are useful in post-analysis, but should not be overread as stable predictive inputs on their own.',
     },
     player_development: {
       focus_players: focusPlayers,
