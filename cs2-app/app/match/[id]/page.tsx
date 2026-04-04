@@ -121,20 +121,27 @@ function MatchHeadlineCard({ result }: { result: AnalyzeResponse }) {
         </p>
       )}
 
-      {/* Win probability bar — only for upcoming */}
+      {/* Win probability — only for upcoming */}
       {!isPlayed && tactical && (
-        <div className="mb-4">
-          <div className="relative h-2.5 rounded-full bg-surface2 overflow-hidden mb-1.5">
-            <div
-              className="absolute inset-y-0 left-0 rounded-l-full transition-all duration-700"
-              style={{ width: `${tactical.home_win_pct}%`, background: 'var(--color-accent)' }}
-            />
-            <div className="absolute inset-y-0 left-1/2 w-px bg-border/60" />
+        <div className="flex items-stretch mb-4 border border-border/30 rounded-lg overflow-hidden">
+          <div className="flex-1 text-center py-3 border-r border-border/30">
+            <div className="font-mono text-2xl font-bold tabular-nums leading-none text-accent">
+              {tactical.home_win_pct}%
+            </div>
+            <div className="font-mono text-[9px] text-muted uppercase tracking-widest mt-1">
+              {home.name || 'Hjem'} seier
+            </div>
           </div>
-          <div className="flex items-center justify-between font-mono text-xs">
-            <span className="text-accent tabular-nums">{home.name || 'Hjem'} {tactical.home_win_pct}%</span>
-            <span className="text-muted/50 text-[9px]">{tactical.confidence_note}</span>
-            <span className="text-accent2 tabular-nums">{tactical.away_win_pct}% {away.name || 'Borte'}</span>
+          <div className="flex items-center px-3">
+            <span className="font-mono text-[9px] text-muted/50">{tactical.confidence_note}</span>
+          </div>
+          <div className="flex-1 text-center py-3 border-l border-border/30">
+            <div className="font-mono text-2xl font-bold tabular-nums leading-none text-accent2">
+              {tactical.away_win_pct}%
+            </div>
+            <div className="font-mono text-[9px] text-muted uppercase tracking-widest mt-1">
+              {away.name || 'Borte'} seier
+            </div>
           </div>
         </div>
       )}
