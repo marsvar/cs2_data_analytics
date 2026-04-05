@@ -6,6 +6,7 @@ export const dynamic = 'force-dynamic'
 
 type PlayerPageProps = {
   params: Promise<{ id: string }>
+  searchParams: Promise<{ team_id?: string }>
 }
 
 function ErrorCard({ title, detail }: { title: string; detail: string }) {
@@ -25,9 +26,11 @@ function ErrorCard({ title, detail }: { title: string; detail: string }) {
   )
 }
 
-export default async function PlayerPage({ params }: PlayerPageProps) {
-  const { id } = await params
+export default async function PlayerPage({ params, searchParams }: PlayerPageProps) {
+  const [{ id }, { team_id }] = await Promise.all([params, searchParams])
   const userId = Number(id)
+  const teamId = team_id ? Number(team_id) : undefined
+  const hintTeamId = teamId && Number.isInteger(teamId) && teamId > 0 ? teamId : undefined
 
   if (!Number.isInteger(userId) || userId <= 0) {
     return (
@@ -39,7 +42,7 @@ export default async function PlayerPage({ params }: PlayerPageProps) {
   }
 
   try {
-    const profile = await buildPlayerProfile(userId)
+    const profile = await buildPlayerProfile(userId, hintTeamId)
 
     return (
       <section className="atlas-shell min-h-dvh">
