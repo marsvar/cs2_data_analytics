@@ -76,13 +76,8 @@ function StatRow({
         </span>
         <div className="w-20 h-1.5 bg-surface2 rounded-full overflow-hidden flex justify-end">
           <div
-            className="h-full rounded-full"
-            style={{
-              width: `${homeNorm * 100}%`,
-              background: 'var(--color-accent)',
-              opacity: homeLeads ? 1 : 0.5,
-              transition: 'width 500ms ease',
-            }}
+            className={`h-full rounded-full bg-accent ${homeLeads ? 'opacity-100' : 'opacity-50'}`}
+            style={{ width: `${homeNorm * 100}%`, transition: 'width 500ms ease' }}
           />
         </div>
       </div>
@@ -96,13 +91,8 @@ function StatRow({
       <div className="flex items-center gap-2">
         <div className="w-20 h-1.5 bg-surface2 rounded-full overflow-hidden">
           <div
-            className="h-full rounded-full"
-            style={{
-              width: `${awayNorm * 100}%`,
-              background: 'var(--color-accent2)',
-              opacity: !homeLeads ? 1 : 0.5,
-              transition: 'width 500ms ease',
-            }}
+            className={`h-full rounded-full bg-accent2 ${!homeLeads ? 'opacity-100' : 'opacity-50'}`}
+            style={{ width: `${awayNorm * 100}%`, transition: 'width 500ms ease' }}
           />
         </div>
         <span
@@ -147,7 +137,7 @@ export function TeamComparisonBars({ home, away }: { home: Team; away: Team }) {
   }
 
   return (
-    <div className="bg-surface border border-border/50 rounded-lg p-5 mb-6">
+    <div className="card-1 p-5 mb-6">
       <div className="flex items-center justify-between mb-4">
         <h2 className="font-display text-[11px] tracking-widest uppercase text-muted">
           Lagsammenligning
@@ -185,9 +175,9 @@ export function TeamComparisonBars({ home, away }: { home: Team; away: Team }) {
       {showSideSplit && (
         <>
           <div className="flex items-center gap-2 mt-4 mb-2">
-            <div className="h-px flex-1 bg-border/30" />
+            <div className="h-px flex-1 bg-border/20" />
             <span className="font-mono text-[8px] uppercase tracking-widest text-muted/60">Side-split (Leetify matchmaking)</span>
-            <div className="h-px flex-1 bg-border/30" />
+            <div className="h-px flex-1 bg-border/20" />
           </div>
           <div className="space-y-3">
             <StatRow def={CT_STAT} homeVal={hs.avg_ct_od!} awayVal={as_.avg_ct_od!} />

@@ -16,11 +16,6 @@ function WarnIcon() {
   )
 }
 
-function scoreColor(score: number): string {
-  if (score >= 0.7) return 'var(--color-success)'
-  if (score >= 0.5) return 'var(--color-warning)'
-  return 'var(--color-danger)'
-}
 
 export function PredictionCard({ home, away }: { home: Team; away: Team }) {
   const homeStats = useMemo(() => deriveTeamStats(home.players), [home.players])
@@ -48,7 +43,7 @@ export function PredictionCard({ home, away }: { home: Team; away: Team }) {
   const awayName = away.name || 'Bortelag'
 
   return (
-    <div className="bg-surface border border-border rounded-lg p-5 mb-6">
+    <div className="card-1 p-5 mb-6">
       {/* Header */}
       <div className="flex items-center justify-between mb-5">
         <h2 className="font-display text-[11px] tracking-widest uppercase text-muted">
@@ -69,11 +64,8 @@ export function PredictionCard({ home, away }: { home: Team; away: Team }) {
 
       {/* Win probability — typografi-fokus */}
       <div className="flex items-stretch mb-5">
-        <div className="flex-1 text-center py-3 border-r border-border/50">
-          <div
-            className="font-mono text-4xl font-bold tabular-nums leading-none"
-            style={{ color: 'var(--color-accent)' }}
-          >
+        <div className="flex-1 text-center py-3 border-r border-border/20">
+          <div className="font-mono text-4xl font-bold tabular-nums leading-none text-accent">
             {homeWinPct}%
           </div>
           <div className="inline-flex items-center justify-center gap-1.5 mt-2">
@@ -85,10 +77,7 @@ export function PredictionCard({ home, away }: { home: Team; away: Team }) {
           <div className="font-mono text-[8px] text-muted/50 mt-0.5">seier</div>
         </div>
         <div className="flex-1 text-center py-3">
-          <div
-            className="font-mono text-4xl font-bold tabular-nums leading-none"
-            style={{ color: 'var(--color-accent2)' }}
-          >
+          <div className="font-mono text-4xl font-bold tabular-nums leading-none text-accent2">
             {awayWinPct}%
           </div>
           <div className="inline-flex items-center justify-center gap-1.5 mt-2">
@@ -102,7 +91,7 @@ export function PredictionCard({ home, away }: { home: Team; away: Team }) {
       </div>
 
       {/* Key threats */}
-      <div className="pt-4 border-t border-border/40">
+      <div className="pt-4 border-t border-border/20">
         <p className="text-[9px] font-mono uppercase tracking-widest text-muted mb-2">Nøkkelspillere</p>
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-1.5">
@@ -112,7 +101,7 @@ export function PredictionCard({ home, away }: { home: Team; away: Team }) {
                   <PlayerAvatar name={p.name} imageUrl={p.avatar_url} tone="home" size="xs" />
                   <span className="font-mono text-xs text-text truncate">{p.name}</span>
                 </span>
-                <span className="font-mono text-xs tabular-nums shrink-0" style={{ color: scoreColor(p.score) }}>
+                <span className={`font-mono text-xs tabular-nums shrink-0 ${p.score >= 0.7 ? 'text-success' : p.score >= 0.5 ? 'text-warning' : 'text-danger'}`}>
                   {(p.score * 10).toFixed(1)}
                 </span>
               </div>
@@ -125,7 +114,7 @@ export function PredictionCard({ home, away }: { home: Team; away: Team }) {
                   <PlayerAvatar name={p.name} imageUrl={p.avatar_url} tone="away" size="xs" />
                   <span className="font-mono text-xs text-text truncate">{p.name}</span>
                 </span>
-                <span className="font-mono text-xs tabular-nums shrink-0" style={{ color: scoreColor(p.score) }}>
+                <span className={`font-mono text-xs tabular-nums shrink-0 ${p.score >= 0.7 ? 'text-success' : p.score >= 0.5 ? 'text-warning' : 'text-danger'}`}>
                   {(p.score * 10).toFixed(1)}
                 </span>
               </div>
