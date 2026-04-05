@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import {
   type CSSProperties,
   useEffect,
@@ -652,7 +653,13 @@ function PlayerRow({
               tone={tone}
               size="xs"
             />
-            <span className="font-mono text-xs text-text truncate">{player.name}</span>
+            <Link
+              href={`/player/${player.paradise_user_id}`}
+              className="font-mono text-xs text-text hover:text-accent hover:underline underline-offset-2 truncate transition-colors"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {player.name}
+            </Link>
             <TrendBadge player={player} />
           </div>
           <div className="flex items-center gap-1.5 mt-0.5">

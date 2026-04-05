@@ -3,10 +3,10 @@
   "configurations": [
     {
       "name": "cs2-app",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
-      "cwd": "${workspaceFolder}/cs2-app",
-      "port": 3000
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "export PATH=/opt/homebrew/bin:$PATH && cd /Users/msvarlia/Developer/cs2_analytics/cs2_data_analytics/.claude/worktrees/affectionate-mestorf/cs2-app && npm run dev"],
+      "port": 3000,
+      "autoPort": true
     },
     {
       "name": "Static HTML Server (Python)",

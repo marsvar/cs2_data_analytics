@@ -445,6 +445,126 @@ export type MatchSearchResponse = {
   fetched_at: string
 }
 
+// ── Player Profile ────────────────────────────────────────────────────────────
+
+export type PlayerRole = 'entry' | 'support' | 'lurker' | 'awper' | 'igl' | 'hybrid'
+
+export type PerformanceTrendPoint = {
+  matchup_id: number
+  date: string | null
+  score: number
+  kd: number
+  dpr: number
+  map?: string
+  won: boolean | null
+}
+
+export type PlayerMapRecord = {
+  map: string
+  played: number
+  wins: number
+  losses: number
+  win_rate: number
+  avg_kd: number
+  avg_dpr: number
+  avg_kast: number
+  confidence: 'low' | 'medium' | 'high'
+}
+
+export type PlayerProfileResponse = {
+  paradise_user_id: number
+  name: string
+  avatar_url?: string
+  steam64?: string
+  total_rounds: number
+  total_matches: number
+  kd: number
+  kast: number
+  dpr: number
+  hs: number
+  od_rate: number
+  flash_assists_per_round: number | null
+  utility_dmg_per_round: number | null
+  clutch_win_pct: number | null
+  first_death_rate: number | null
+  multi_kills: {
+    k3: number
+    k4: number
+    k5: number
+    k3_per_map: number
+    k4_per_map: number
+    k5_per_map: number
+  } | null
+  side_split: { ct_od: number; t_od: number; verdict: string } | null
+  score: number
+  ci: number
+  role: PlayerRole
+  role_confidence: 'low' | 'medium' | 'high'
+  role_signals: string[]
+  trend: {
+    last5: PerformanceTrendPoint[]
+    last10: PerformanceTrendPoint[]
+    last20: PerformanceTrendPoint[]
+  }
+  map_records: PlayerMapRecord[]
+  leetify?: LeetifyData
+  recent_matches?: LeetifyRecentMatch[]
+  data_source: DataSource
+  fetched_at: string
+}
+
+export type RosterMember = {
+  paradise_user_id: number
+  name: string
+  avatar_url?: string
+  steam64?: string
+  role: PlayerRole | null
+  score: number | null
+  rounds: number
+}
+
+export type TeamMapPoolEntry = {
+  map: string
+  played: number
+  wins: number
+  losses: number
+  win_rate: number
+  ct_rounds: number | null
+  t_rounds: number | null
+  confidence: 'low' | 'medium' | 'high'
+}
+
+export type TeamMatchResult = {
+  matchup_id: number
+  date: string | null
+  opponent_name: string
+  opponent_id: number
+  home_or_away: 'home' | 'away'
+  won: boolean | null
+  home_score: number | null
+  away_score: number | null
+  map?: string
+}
+
+export type TeamProfileResponse = {
+  team_id: number
+  team_name: string
+  logo_url?: string
+  total_matches: number
+  wins: number
+  losses: number
+  win_rate: number
+  map_pool: TeamMapPoolEntry[]
+  roster: RosterMember[]
+  role_distribution: Partial<Record<PlayerRole, number>>
+  composition_notes: string[]
+  playstyle_summary: string
+  match_history: TeamMatchResult[]
+  economy_notes: string[]
+  veto_patterns: null
+  fetched_at: string
+}
+
 // BL API raw types
 export type BLPlayerStats = {
   paradise_user_id: number
