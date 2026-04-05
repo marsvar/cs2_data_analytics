@@ -250,7 +250,7 @@ export function PlayerProfileDisplay({ profile }: { profile: PlayerProfileRespon
               <div className="flex items-center gap-2 flex-wrap">
                 {profile.leetify?.premier && (
                   <span className="font-mono text-[9px] text-accent/80 border border-accent/20 bg-accent/5 px-1.5 py-0.5 rounded">
-                    Premier {profile.leetify.premier.toLocaleString()}
+                    Premier {profile.leetify.premier.toLocaleString('nb-NO')}
                   </span>
                 )}
                 {profile.leetify?.faceit_level && (

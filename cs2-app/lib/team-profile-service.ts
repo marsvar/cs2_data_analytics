@@ -42,6 +42,19 @@ const teamCache = new Map<number, CachedEntry>()
 const BL_TOKEN = process.env.BL_TOKEN ?? ''
 const LEETIFY_TOKEN = process.env.LEETIFY_TOKEN ?? ''
 
+function resolveIsHome(
+  teamId: number,
+  stats: import('@/lib/types').BLMatchupStats,
+  meta: import('@/lib/bl-api').MatchupMeta | null,
+): boolean {
+  if (meta && meta.home.id > 0 && meta.away.id > 0) return meta.home.id === teamId
+  if (stats.home_team.id > 0 || stats.away_team.id > 0) return stats.home_team.id === teamId
+  if (meta && meta.playerTeams.size > 0) {
+    return stats.home_players.some((p) => meta.playerTeams.get(p.paradise_user_id) === teamId)
+  }
+  return true
+}
+
 export async function buildTeamProfile(
   teamId: number,
 ): Promise<TeamProfileResponse> {
@@ -117,9 +130,9 @@ export async function buildTeamProfile(
 
   for (const r of matchResults) {
     if (r.status !== 'fulfilled') continue
-    const { stats } = r.value
-    const isHome = stats.home_team.id === teamId ||
-      (stats.home_team.id === 0 && stats.home_players.length > 0)
+    const { stats, meta } = r.value
+
+    const isHome = resolveIsHome(teamId, stats, meta)
     const teamPlayers = isHome ? stats.home_players : stats.away_players
 
     for (const p of teamPlayers) {
@@ -154,9 +167,16 @@ export async function buildTeamProfile(
   }
 
   // 6. Build roster member list with role inference
+  // Only include players on the current registered roster.
+  // If roster is empty (e.g. getTeamPlayers returned []), fall back to all players seen in matchups.
+  const rosterUserIds = roster.length > 0
+    ? new Set(roster.map((r) => r.userId))
+    : null
+
   const rosterMembers: RosterMember[] = []
 
   for (const [userId, acc] of playerAccs) {
+    if (rosterUserIds && !rosterUserIds.has(userId)) continue
     const kd = acc.deaths > 0 ? acc.kills / acc.deaths : acc.kills
     const dpr = acc.rounds > 0 ? acc.damage / acc.rounds : 0
     const kast = acc.rounds > 0 ? acc.weightedKast / acc.rounds : 0
@@ -232,8 +252,7 @@ export async function buildTeamProfile(
     if (r.status !== 'fulfilled') continue
     const { matchupId, stats, meta, finishedAt } = r.value
 
-    const isHome = stats.home_team.id === teamId ||
-      (stats.home_team.id === 0 && stats.home_players.length > 0)
+    const isHome = resolveIsHome(teamId, stats, meta)
 
     let won: boolean | null = null
     let opponentName = ''
