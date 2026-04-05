@@ -330,6 +330,7 @@ export function PlayerDetail({
               <StatItem label="FK/R" value={perRound(player.bl_extended.firstkills, player.rounds)} />
               <StatItem label="Clutch/Map" value={perMap(player.bl_extended.clutches_won, player.rounds)} />
               <StatItem label="1vX/Map" value={perMap(player.bl_extended.one_v_x_total, player.rounds)} />
+              <StatItem label="R-rating" value={player.bl_extended.rating != null ? player.bl_extended.rating.toFixed(2) : '—'} />
             </div>
           </div>
         )}

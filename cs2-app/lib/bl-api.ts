@@ -18,16 +18,90 @@ import type { BLMatchupStats, BLPlayerStats } from './types'
 import { normalizeBlImageUrl } from './bl-image-url'
 
 const BL_BASE = 'https://app.bedriftsligaen.no/api/paradise/v2'
+const MATCHUP_STATS_TTL_MS = 5 * 60 * 1000
+const MATCHUP_META_TTL_MS = 5 * 60 * 1000
+const DIVISION_MATCHUPS_TTL_MS = 2 * 60 * 1000
+const TEAM_MATCHUPS_TTL_MS = 5 * 60 * 1000
+const TEAM_PLAYERS_TTL_MS = 15 * 60 * 1000
+const USER_PROFILE_TTL_MS = 6 * 60 * 60 * 1000
+const COMPETITIONS_TTL_MS = 30 * 60 * 1000
+const COMPETITION_SIGNUPS_TTL_MS = 30 * 60 * 1000
+const COMPETITION_DIVISIONS_TTL_MS = 30 * 60 * 1000
+const blResponseCache = new Map<string, { value: unknown; expiresAt: number }>()
+const blInflight = new Map<string, Promise<unknown>>()
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function blGet<T>(endpoint: string, token: string): Promise<T> {
-  const res = await fetch(`${BL_BASE}${endpoint}`, {
-    headers: { Authorization: `Bearer ${token}` },
-    signal: AbortSignal.timeout(15000),
-    cache: 'no-store',
-  })
-  if (!res.ok) throw new Error(`BL API ${res.status}: ${endpoint}`)
-  return res.json() as Promise<T>
+async function blGet<T>(
+  endpoint: string,
+  token: string,
+  options?: { ttlMs?: number },
+): Promise<T> {
+  const ttlMs = options?.ttlMs ?? 0
+  const cacheKey = `${token}:${endpoint}`
+  const now = Date.now()
+
+  if (ttlMs > 0) {
+    const cached = blResponseCache.get(cacheKey)
+    if (cached && cached.expiresAt > now) {
+      return cached.value as T
+    }
+
+    const inflight = blInflight.get(cacheKey)
+    if (inflight) {
+      return inflight as Promise<T>
+    }
+  }
+
+  const request = (async () => {
+    const res = await fetch(`${BL_BASE}${endpoint}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(15000),
+      cache: 'no-store',
+    })
+    if (!res.ok) throw new Error(`BL API ${res.status}: ${endpoint}`)
+    const data = await res.json() as T
+
+    if (ttlMs > 0) {
+      blResponseCache.set(cacheKey, {
+        value: data,
+        expiresAt: Date.now() + ttlMs,
+      })
+    }
+
+    return data
+  })()
+
+  if (ttlMs <= 0) {
+    return request
+  }
+
+  blInflight.set(cacheKey, request as Promise<unknown>)
+  try {
+    return await request
+  } finally {
+    blInflight.delete(cacheKey)
+  }
+}
+
+async function getRawMatchup(matchupId: number, token: string): Promise<any> {
+  return blGet<any>(`/matchup/${matchupId}`, token, { ttlMs: MATCHUP_META_TTL_MS })
+}
+
+async function getRawUser(userId: number, token: string): Promise<any> {
+  return blGet<any>(`/user/${userId}`, token, { ttlMs: USER_PROFILE_TTL_MS })
+}
+
+async function getRawDivisionMatchups(
+  divisionId: number,
+  token: string,
+): Promise<unknown[]> {
+  type Raw = { data?: unknown[] } | unknown[]
+  const data = await blGet<Raw>(
+    `/matchup?division_id=${divisionId}&limit=100`,
+    token,
+    { ttlMs: DIVISION_MATCHUPS_TTL_MS },
+  )
+  return Array.isArray(data) ? data : ((data as { data?: unknown[] }).data ?? [])
 }
 
 // Raw shape returned by /matchup/{id}/stats (flat player array)
@@ -286,6 +360,7 @@ export async function getMatchupStats(
   const raw = await blGet<RawMatchupStats>(
     `/matchup/${matchupId}/stats`,
     token,
+    { ttlMs: MATCHUP_STATS_TTL_MS },
   )
 
   // If the endpoint returns an object with home/away_players already split
@@ -376,8 +451,7 @@ export async function getMatchupMeta(
   token: string,
 ): Promise<MatchupMeta | null> {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const raw = await blGet<any>(`/matchup/${matchupId}`, token)
+    const raw = await getRawMatchup(matchupId, token)
 
     const homeTeam = raw?.home_signup?.team ?? {}
     const awayTeam = raw?.away_signup?.team ?? {}
@@ -455,8 +529,7 @@ export async function getUserSteamId(
   token: string,
 ): Promise<string | null> {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const raw = await blGet<any>(`/user/${userId}`, token)
+    const raw = await getRawUser(userId, token)
     const accounts: { provider?: string; account_id?: string }[] =
       raw?.accounts ?? []
     const steam = accounts.find(
@@ -484,7 +557,7 @@ export async function getTeamPlayers(
 ): Promise<TeamPlayerRef[]> {
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const raw = await blGet<any>(`/team/${teamId}/players`, token)
+    const raw = await blGet<any>(`/team/${teamId}/players`, token, { ttlMs: TEAM_PLAYERS_TTL_MS })
     const rows: any[] = Array.isArray(raw) ? raw : []
     return rows
       .map((row) => {
@@ -582,14 +655,8 @@ export async function getDivisionMatchups(
   divisionId: number,
   token: string,
 ): Promise<{ id: number; round_number?: number; finished_at?: string; signups?: unknown[] }[]> {
-  type Raw = { data?: unknown[] } | unknown[]
-  const data = await blGet<Raw>(
-    `/matchup?division_id=${divisionId}&limit=100`,
-    token,
-  )
-  const arr = Array.isArray(data) ? data : ((data as { data?: unknown[] }).data ?? [])
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return arr as any[]
+  return (await getRawDivisionMatchups(divisionId, token)) as any[]
 }
 
 export type CompetitionDivision = {
@@ -617,7 +684,7 @@ export async function getCompetitions(
 ): Promise<CompetitionSummary[]> {
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const raw = await blGet<any>('/competition?limit=100&game_id=1', token)
+    const raw = await blGet<any>('/competition?limit=100&game_id=1', token, { ttlMs: COMPETITIONS_TTL_MS })
     const arr: any[] = Array.isArray(raw) ? raw : (raw?.data ?? [])
     return arr
       .filter((competition) => competition?.id != null)
@@ -647,7 +714,11 @@ export async function getCompetitionSignupTeams(
 ): Promise<CompetitionSignupTeam[]> {
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const raw = await blGet<any>(`/competition/${competitionId}/signups?limit=200`, token)
+    const raw = await blGet<any>(
+      `/competition/${competitionId}/signups?limit=200`,
+      token,
+      { ttlMs: COMPETITION_SIGNUPS_TTL_MS },
+    )
     const arr: any[] = Array.isArray(raw) ? raw : (raw?.data ?? [])
     return arr
       .map((signup) => {
@@ -686,7 +757,11 @@ export async function getCompetitionDivisions(
 ): Promise<CompetitionDivision[]> {
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const raw = await blGet<any>(`/competition/${competitionId}/divisions`, token)
+    const raw = await blGet<any>(
+      `/competition/${competitionId}/divisions`,
+      token,
+      { ttlMs: COMPETITION_DIVISIONS_TTL_MS },
+    )
     const arr: any[] = Array.isArray(raw) ? raw : (raw?.data ?? [])
     return arr
       .filter((d) => d?.id != null)
@@ -714,11 +789,8 @@ export async function getDivisionMatchupsWithTeamSides(
   awayTeamId?: number
   finishedAt?: string | null
 }>> {
-  type Raw = { data?: unknown[] } | unknown[]
-  const data = await blGet<Raw>(`/matchup?division_id=${divisionId}&limit=100`, token)
-  const arr = Array.isArray(data) ? data : ((data as { data?: unknown[] }).data ?? [])
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (arr as any[])
+  return ((await getRawDivisionMatchups(divisionId, token)) as any[])
     .filter((m) => Number.isInteger(m?.id) && (m?.id ?? 0) > 0)
     .map((m) => ({
       id: m.id as number,
@@ -737,11 +809,88 @@ export async function getUserImageUrl(
   token: string,
 ): Promise<string | undefined> {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const raw = await blGet<any>(`/user/${userId}`, token)
+    const raw = await getRawUser(userId, token)
     return normalizeBlImageUrl(raw?.image?.url, raw?.image?.relative_url) ?? undefined
   } catch {
     return undefined
+  }
+}
+
+/**
+ * Fetch the team ID for a BL user from their active signup.
+ * Returns null if the user has no team or on any error.
+ */
+export async function getUserTeamId(
+  userId: number,
+  token: string,
+): Promise<number | null> {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const raw = await blGet<any>(`/user/${userId}`, token)
+    const teamId =
+      raw?.signup?.team?.id ??
+      raw?.team?.id ??
+      raw?.signups?.[0]?.team?.id ??
+      null
+    return typeof teamId === 'number' ? teamId : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Fetch basic team metadata (name, logo).
+ * Returns null on any error — the caller falls back to data extracted from matchup metadata.
+ */
+export async function getTeamInfo(
+  teamId: number,
+  token: string,
+): Promise<{ name: string; logoUrl?: string } | null> {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const raw = await blGet<any>(`/team/${teamId}`, token)
+    const name = raw?.name ?? raw?.team_name ?? ''
+    if (!name) return null
+    const logoUrl = normalizeBlImageUrl(raw?.logo?.url, raw?.logo?.relative_url) ?? undefined
+    return { name, logoUrl }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Fetch map pick/ban veto data for a matchup.
+ * Returns null on any error — veto data is optional enrichment.
+ */
+export async function getMatchupVeto(
+  matchupId: number,
+  token: string,
+): Promise<{ picks?: Array<{ map: string; team_id: number }>; bans?: Array<{ map: string; team_id: number }> } | null> {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const raw = await blGet<any>(`/matchup/${matchupId}/veto`, token)
+    if (!raw) return null
+    return {
+      picks: Array.isArray(raw.picks) ? raw.picks : undefined,
+      bans: Array.isArray(raw.bans) ? raw.bans : undefined,
+    }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Fetch division standings/table.
+ * Returns null on any error — table data is optional enrichment.
+ */
+export async function getDivisionTable(
+  divisionId: number,
+  token: string,
+): Promise<unknown | null> {
+  try {
+    return await blGet<unknown>(`/division/${divisionId}/tables`, token)
+  } catch {
+    return null
   }
 }
 
@@ -755,8 +904,7 @@ export async function getMatchupTeamPlayers(
   token: string,
 ): Promise<Array<{ userId: number; teamId: number; userName?: string; avatarUrl?: string }>> {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const raw = await blGet<any>(`/matchup/${matchupId}`, token)
+    const raw = await getRawMatchup(matchupId, token)
     const users: Array<{
       user_id?: number
       team_id?: number
@@ -792,6 +940,7 @@ export async function getTeamMatchups(
   const data = await blGet<Raw>(
     `/matchup?team_id=${teamId}&limit=100`,
     token,
+    { ttlMs: TEAM_MATCHUPS_TTL_MS },
   )
   const arr = Array.isArray(data) ? data : ((data as { data?: unknown[] }).data ?? [])
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

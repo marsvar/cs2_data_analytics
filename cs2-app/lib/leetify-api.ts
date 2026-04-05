@@ -18,6 +18,7 @@ import type {
 const LEETIFY_BASE = 'https://api-public.cs-prod.leetify.com'
 const PROFILE_CACHE_TTL_MS = 6 * 60 * 60 * 1000
 const PROFILE_NOT_FOUND_TTL_MS = 60 * 60 * 1000
+const PROFILE_FETCH_CONCURRENCY = 3
 
 type CachedProfileEntry = {
   value: LeetifyProfileWithRecent | null
@@ -25,7 +26,14 @@ type CachedProfileEntry = {
   expiresAt: number
 }
 
+type ProfileFetchOutcome = {
+  value: LeetifyProfileWithRecent | null
+  notFound: boolean
+  throttled: boolean
+}
+
 const profileCache = new Map<string, CachedProfileEntry>()
+const profileInflight = new Map<string, Promise<ProfileFetchOutcome>>()
 
 function normaliseRatio(v: number | null | undefined): number {
   if (v == null || Number.isNaN(v)) return 0
@@ -205,67 +213,94 @@ export async function fetchProfiles(
 ): Promise<Map<string, LeetifyProfileWithRecent>> {
   const results = new Map<string, LeetifyProfileWithRecent>()
   const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+  const uniqueSteamIds = Array.from(new Set(steamIds))
+  let cursor = 0
+  let completed = 0
 
-  for (let i = 0; i < steamIds.length; i++) {
-    const steam64 = steamIds[i]
+  const processProfile = async (steam64: string): Promise<void> => {
     const now = Date.now()
     const cached = profileCache.get(steam64)
     if (cached && cached.expiresAt > now) {
       if (cached.value) results.set(steam64, cached.value)
-      onProgress?.(i + 1, steamIds.length)
-      continue
+      completed += 1
+      onProgress?.(completed, uniqueSteamIds.length)
+      return
     }
 
-    let notFound = false
-    let throttled = false
-    let attempts = 0
-    try {
-      // Retry a few times on rate limit to avoid dropping late-batch players.
-      while (attempts < 3) {
-        const result = await getProfile(steam64, token)
-        notFound = result.notFound
+    const existingInflight = profileInflight.get(steam64)
+    const profileTask = existingInflight ?? (async () => {
+      let notFound = false
+      let throttled = false
+      let attempts = 0
 
-        if (result.data) {
-          const parsed = {
-            summary: toLeetifyData(result.data),
-            recent_matches: parseRecentMatches(result.data),
-          } satisfies LeetifyProfileWithRecent
-          results.set(steam64, parsed)
-          profileCache.set(steam64, {
-            value: parsed,
-            notFound: false,
-            expiresAt: now + PROFILE_CACHE_TTL_MS,
-          })
-          break
+      try {
+        // Retry a few times on rate limit and let Retry-After drive the pacing.
+        while (attempts < 3) {
+          const result = await getProfile(steam64, token)
+          notFound = result.notFound
+
+          if (result.data) {
+            const parsed = {
+              summary: toLeetifyData(result.data),
+              recent_matches: parseRecentMatches(result.data),
+            } satisfies LeetifyProfileWithRecent
+            profileCache.set(steam64, {
+              value: parsed,
+              notFound: false,
+              expiresAt: now + PROFILE_CACHE_TTL_MS,
+            })
+            return { value: parsed, notFound: false, throttled }
+          }
+          if (result.notFound) {
+            profileCache.set(steam64, {
+              value: null,
+              notFound: true,
+              expiresAt: now + PROFILE_NOT_FOUND_TTL_MS,
+            })
+            return { value: null, notFound: true, throttled }
+          }
+          if (result.status === 429) {
+            throttled = true
+            attempts += 1
+            const waitSeconds = result.retryAfterSeconds ?? 10
+            await sleep(waitSeconds * 1000)
+            continue
+          }
+          return { value: null, notFound, throttled }
         }
-        if (result.notFound) {
-          profileCache.set(steam64, {
-            value: null,
-            notFound: true,
-            expiresAt: now + PROFILE_NOT_FOUND_TTL_MS,
-          })
-        }
-        if (result.status === 429) {
-          throttled = true
-          attempts += 1
-          const waitSeconds = result.retryAfterSeconds ?? 10
-          await sleep(waitSeconds * 1000)
-          continue
-        }
-        break
+      } catch {
+        // Skip failed profiles — caller gets a partial map
       }
-    } catch {
-      // Skip failed profiles — caller gets a partial map
+
+      return { value: null, notFound, throttled }
+    })()
+
+    if (!existingInflight) {
+      profileInflight.set(steam64, profileTask)
     }
 
-    onProgress?.(i + 1, steamIds.length)
-
-    // Respect Leetify rate limit (~5 req/min) — skip delay after last item,
-    // and skip delay on 404 (profile doesn't exist — no quota consumed).
-    if (!notFound && i < steamIds.length - 1) {
-      await sleep(throttled ? 5000 : 3000)
+    try {
+      const outcome = await profileTask
+      if (outcome.value) results.set(steam64, outcome.value)
+    } finally {
+      if (!existingInflight) {
+        profileInflight.delete(steam64)
+      }
+      completed += 1
+      onProgress?.(completed, uniqueSteamIds.length)
     }
   }
+
+  const workerCount = Math.min(PROFILE_FETCH_CONCURRENCY, uniqueSteamIds.length)
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (cursor < uniqueSteamIds.length) {
+        const current = uniqueSteamIds[cursor]
+        cursor += 1
+        await processProfile(current)
+      }
+    }),
+  )
 
   return results
 }

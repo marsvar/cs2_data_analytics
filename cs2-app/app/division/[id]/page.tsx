@@ -1,8 +1,11 @@
 import Link from 'next/link'
 import { TeamLogo } from '@/components/identity-badge'
+import { UpcomingPreviewPanel } from '@/components/upcoming-preview-panel'
 import { resolveDivisionReference } from '@/lib/divisions'
 import { DivisionServiceError, getDivisionOverview } from '@/lib/division-service'
 import type { DivisionMatchSummary, DivisionResponse } from '@/lib/types'
+
+const MAX_UPCOMING_PREVIEWS = 4
 
 // ── Standings computation ─────────────────────────────────────────────────────
 
@@ -90,7 +93,12 @@ function StandingsTable({ result }: { result: DivisionResponse }) {
             <span className="font-mono text-[10px] tabular-nums text-muted/50">{i + 1}</span>
             <div className="flex items-center gap-2 min-w-0">
               <TeamLogo name={row.name} logoUrl={row.logoUrl} tone="neutral" size="sm" />
-              <span className="font-mono text-xs text-text truncate">{row.name}</span>
+              <Link
+                href={`/team/${row.teamId}`}
+                className="font-mono text-xs text-text hover:text-accent hover:underline underline-offset-2 truncate transition-colors"
+              >
+                {row.name}
+              </Link>
             </div>
             <span className="font-mono text-[10px] tabular-nums text-muted text-center">{row.played}</span>
             <span className="font-mono text-[11px] tabular-nums text-success text-center font-medium">
@@ -110,6 +118,11 @@ export const dynamic = 'force-dynamic'
 
 type DivisionPageProps = {
   params: Promise<{ id: string }>
+  searchParams?: Promise<{ division?: string }>
+}
+
+function buildHomeHref(divisionId?: string | number): string {
+  return divisionId != null ? `/?division=${encodeURIComponent(String(divisionId))}` : '/'
 }
 
 function statusPill(status: DivisionMatchSummary['status']): { text: string; cls: string } {
@@ -136,10 +149,14 @@ function MatchCard({
   match,
   index,
   section,
+  showPreview,
+  divisionId,
 }: {
   match: DivisionMatchSummary
   index: number
   section: 'upcoming' | 'played'
+  showPreview?: boolean
+  divisionId?: number
 }) {
   const pill = statusPill(match.status)
   const hasScore = match.home_score != null && match.away_score != null
@@ -163,9 +180,18 @@ function MatchCard({
       <div className="flex items-center gap-3">
         {/* Home team */}
         <div className="flex-1 flex items-center gap-2 min-w-0 justify-end">
-          <span className={`font-mono text-xs truncate text-right ${homewon ? 'text-text font-medium' : 'text-text/75'}`}>
-            {match.home_team}
-          </span>
+          {match.home_team_id ? (
+            <Link
+              href={`/team/${match.home_team_id}`}
+              className={`font-mono text-xs truncate text-right hover:underline underline-offset-2 transition-colors ${homewon ? 'text-text font-medium hover:text-accent' : 'text-text/75 hover:text-accent/80'}`}
+            >
+              {match.home_team}
+            </Link>
+          ) : (
+            <span className={`font-mono text-xs truncate text-right ${homewon ? 'text-text font-medium' : 'text-text/75'}`}>
+              {match.home_team}
+            </span>
+          )}
           <TeamLogo name={match.home_team} logoUrl={match.home_logo_url} tone="home" size="md" />
         </div>
 
@@ -185,29 +211,52 @@ function MatchCard({
         {/* Away team */}
         <div className="flex-1 flex items-center gap-2 min-w-0">
           <TeamLogo name={match.away_team} logoUrl={match.away_logo_url} tone="away" size="md" />
-          <span className={`font-mono text-xs truncate ${awaywon ? 'text-text font-medium' : 'text-text/75'}`}>
-            {match.away_team}
-          </span>
+          {match.away_team_id ? (
+            <Link
+              href={`/team/${match.away_team_id}`}
+              className={`font-mono text-xs truncate hover:underline underline-offset-2 transition-colors ${awaywon ? 'text-text font-medium hover:text-accent' : 'text-text/75 hover:text-accent/80'}`}
+            >
+              {match.away_team}
+            </Link>
+          ) : (
+            <span className={`font-mono text-xs truncate ${awaywon ? 'text-text font-medium' : 'text-text/75'}`}>
+              {match.away_team}
+            </span>
+          )}
         </div>
 
         {/* Action link */}
         <Link
-          href={`/match/${match.matchup_id}`}
+          href={
+            divisionId != null
+              ? `/match/${match.matchup_id}?division=${divisionId}`
+              : `/match/${match.matchup_id}`
+          }
           className="shrink-0 font-mono text-[10px] uppercase tracking-widest text-accent/80 hover:text-accent border border-accent/20 hover:border-accent/50 bg-accent/5 hover:bg-accent/10 px-2.5 py-1.5 rounded transition-colors"
         >
           {section === 'played' ? 'Analyse' : 'Forhåndsvis'} →
         </Link>
       </div>
+
+      {section === 'upcoming' && showPreview && <UpcomingPreviewPanel matchupId={match.matchup_id} />}
     </div>
   )
 }
 
-function ErrorCard({ title, detail }: { title: string; detail: string }) {
+function ErrorCard({
+  title,
+  detail,
+  divisionId,
+}: {
+  title: string
+  detail: string
+  divisionId?: string | number
+}) {
   return (
     <section className="atlas-shell min-h-dvh">
       <div className="atlas-topline" />
       <div className="max-w-5xl mx-auto px-6 md:px-10 py-12">
-        <Link href="/" className="font-mono text-[11px] uppercase tracking-widest text-muted hover:text-text">
+        <Link href={buildHomeHref(divisionId)} className="font-mono text-[11px] uppercase tracking-widest text-muted hover:text-text">
           ← Til søk
         </Link>
         <div className="mt-5 bg-surface border border-danger/40 rounded-lg p-5">
@@ -219,15 +268,18 @@ function ErrorCard({ title, detail }: { title: string; detail: string }) {
   )
 }
 
-export default async function DivisionPage({ params }: DivisionPageProps) {
+export default async function DivisionPage({ params, searchParams }: DivisionPageProps) {
   const { id } = await params
+  const resolvedSearchParams = searchParams ? await searchParams : undefined
   const divisionRef = resolveDivisionReference(id)
+  const selectedDivisionId = resolvedSearchParams?.division ?? divisionRef?.id
 
   if (!divisionRef) {
     return (
       <ErrorCard
         title="Ugyldig divisjon"
         detail="Fant ikke divisjonen. Gå tilbake til forsiden og velg en kjent divisjon."
+        divisionId={resolvedSearchParams?.division}
       />
     )
   }
@@ -246,7 +298,7 @@ export default async function DivisionPage({ params }: DivisionPageProps) {
           {/* Page header */}
           <div className="mb-7 fx-rise">
             <div className="flex items-center justify-between gap-3 mb-5">
-              <Link href="/" className="font-mono text-[11px] uppercase tracking-widest text-muted hover:text-text">
+              <Link href={buildHomeHref(selectedDivisionId)} className="font-mono text-[11px] uppercase tracking-widest text-muted hover:text-text">
                 ← Til søk
               </Link>
               <span className="font-mono text-[10px] uppercase tracking-widest text-muted/70">Kampoversikt</span>
@@ -275,7 +327,14 @@ export default async function DivisionPage({ params }: DivisionPageProps) {
               </div>
               <div className="bg-surface/92 border border-border/40 rounded-xl overflow-hidden">
                 {notPlayedMatches.map((match, i) => (
-                  <MatchCard key={match.matchup_id} match={match} index={i} section="upcoming" />
+                  <MatchCard
+                    key={match.matchup_id}
+                    match={match}
+                    index={i}
+                    section="upcoming"
+                    showPreview={i < MAX_UPCOMING_PREVIEWS}
+                    divisionId={divisionRef.id}
+                  />
                 ))}
               </div>
             </div>
@@ -289,7 +348,7 @@ export default async function DivisionPage({ params }: DivisionPageProps) {
               </div>
               <div className="bg-surface/92 border border-border/40 rounded-xl overflow-hidden">
                 {playedMatches.map((match, i) => (
-                  <MatchCard key={match.matchup_id} match={match} index={i} section="played" />
+                  <MatchCard key={match.matchup_id} match={match} index={i} section="played" divisionId={divisionRef.id} />
                 ))}
               </div>
             </div>
@@ -300,12 +359,13 @@ export default async function DivisionPage({ params }: DivisionPageProps) {
     )
   } catch (err) {
     if (err instanceof DivisionServiceError) {
-      return <ErrorCard title="Kunne ikke hente divisjon" detail={err.message} />
+      return <ErrorCard title="Kunne ikke hente divisjon" detail={err.message} divisionId={selectedDivisionId} />
     }
     return (
       <ErrorCard
         title="Uventet feil"
         detail="Det oppstod en feil ved lasting av divisjonen. Prøv igjen om litt."
+        divisionId={selectedDivisionId}
       />
     )
   }

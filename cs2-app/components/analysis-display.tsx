@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import {
   type CSSProperties,
   useEffect,
@@ -11,13 +12,15 @@ import {
 import type { AnalyzeResponse, PlayerAnalysis, Team } from '@/lib/types'
 import { deriveTeamStats } from '@/lib/derive-team-stats'
 import { formatReport } from '@/lib/format-report'
+import { deriveLandingAnalytics } from '@/lib/landing-analytics'
 import { localMapImageForName } from '@/lib/map-images'
 import { detectRole, ROLE_META } from '@/lib/detect-role'
+import { AnalysisSection } from '@/components/analysis-section'
+import { HeadToHeadBar } from '@/components/head-to-head-bar'
 import { PlayerAvatar, TeamLogo } from './identity-badge'
-import { MapPoolDebugPanel, MapPoolInsights } from './map-pool-insights'
+import { MapPoolDebugPanel } from './map-pool-insights'
 import { PlayerDetail } from './player-detail'
-import { PredictionCard } from './prediction-card'
-import { TeamComparisonBars } from './team-comparison-bars'
+import { UpcomingMatchModules } from './upcoming-match-modules'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import {
@@ -53,6 +56,26 @@ function confidenceFromSample(sampleSize: number): 'low' | 'medium' | 'high' {
   if (sampleSize >= 20) return 'high'
   if (sampleSize >= 8) return 'medium'
   return 'low'
+}
+
+function formatSigned(value: number, digits = 2): string {
+  return `${value >= 0 ? '+' : ''}${value.toFixed(digits)}`
+}
+
+const osloDateTimeFormatter = new Intl.DateTimeFormat('nb-NO', {
+  timeZone: 'Europe/Oslo',
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+})
+
+function formatOsloDateTime(value: string): string {
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return value
+  return osloDateTimeFormatter.format(parsed)
 }
 
 type LandingMapPool = NonNullable<NonNullable<AnalyzeResponse['landing']>['map_pool']>
@@ -242,6 +265,15 @@ function toScaledDelta(value: number): string {
   return `${scaled >= 0 ? '+' : ''}${scaled.toFixed(2)}`
 }
 
+function relativeShareBand(homeValue: number, awayValue: number): { home: number; away: number } {
+  const safeHome = Math.max(homeValue, 0)
+  const safeAway = Math.max(awayValue, 0)
+  const total = safeHome + safeAway
+  if (total <= 0) return { home: 50, away: 50 }
+  const home = (safeHome / total) * 100
+  return { home, away: 100 - home }
+}
+
 function computePlayerEarlyInsights(players: PlayerAnalysis[]): PlayerEarlyInsight[] {
   const insights: PlayerEarlyInsight[] = []
   for (const player of players) {
@@ -323,6 +355,10 @@ function EarlyStrengthCard({
   players: PlayerEarlyInsight[]
 }) {
   const { strengths, weaknesses } = useMemo(() => strongestAndWeakest(players), [players])
+  const openingBand = (od: number) => {
+    const centered = Math.max(-1, Math.min(1, (od - 0.5) / 0.15))
+    return { positive: centered >= 0, width: Math.abs(centered) * 50 }
+  }
 
   return (
     <div className="rounded border border-border/35 bg-surface2/20 p-3">
@@ -335,11 +371,17 @@ function EarlyStrengthCard({
             <div className="space-y-1.5">
               {strengths.map((player) => {
                 const od = player.blended_od
+                const band = openingBand(od)
                 return (
                   <div key={`strength-${player.paradise_user_id}`} className="flex items-center gap-2">
                     <span className="font-mono text-[11px] text-text truncate flex-1">{player.name}</span>
-                    <div className="w-16 h-1.5 bg-surface rounded-full overflow-hidden shrink-0">
-                      <div className="h-full rounded-full bg-success/70" style={{ width: `${od * 100}%` }} />
+                    <div className="relative h-2 w-16 overflow-hidden rounded-full bg-surface shrink-0">
+                      <div className="absolute inset-y-0 left-1/2 w-px bg-border/80" />
+                      {band.positive ? (
+                        <div className="absolute inset-y-0 left-1/2 rounded-r-full bg-success/70" style={{ width: `${band.width}%` }} />
+                      ) : (
+                        <div className="absolute inset-y-0 right-1/2 rounded-l-full bg-danger/70" style={{ width: `${band.width}%` }} />
+                      )}
                     </div>
                     <span className="font-mono text-[10px] tabular-nums text-success w-9 text-right shrink-0">{toPercent(od)}</span>
                   </div>
@@ -357,11 +399,17 @@ function EarlyStrengthCard({
             <div className="space-y-1.5">
               {weaknesses.map((player) => {
                 const od = player.blended_od
+                const band = openingBand(od)
                 return (
                   <div key={`weakness-${player.paradise_user_id}`} className="flex items-center gap-2">
                     <span className="font-mono text-[11px] text-text truncate flex-1">{player.name}</span>
-                    <div className="w-16 h-1.5 bg-surface rounded-full overflow-hidden shrink-0">
-                      <div className="h-full rounded-full bg-danger/70" style={{ width: `${od * 100}%` }} />
+                    <div className="relative h-2 w-16 overflow-hidden rounded-full bg-surface shrink-0">
+                      <div className="absolute inset-y-0 left-1/2 w-px bg-border/80" />
+                      {band.positive ? (
+                        <div className="absolute inset-y-0 left-1/2 rounded-r-full bg-success/70" style={{ width: `${band.width}%` }} />
+                      ) : (
+                        <div className="absolute inset-y-0 right-1/2 rounded-l-full bg-danger/70" style={{ width: `${band.width}%` }} />
+                      )}
                     </div>
                     <span className="font-mono text-[10px] tabular-nums text-danger w-9 text-right shrink-0">{toPercent(od)}</span>
                   </div>
@@ -386,10 +434,7 @@ function FormGraph({
   accentClass: string
   data: PlayerFormInsight[]
 }) {
-  const maxAbs = useMemo(() => {
-    const base = data.reduce((acc, player) => Math.max(acc, Math.abs(player.delta)), 0)
-    return Math.max(base, 0.05)
-  }, [data])
+  const maxAbs = 0.12
 
   const teamAvg = useMemo(() => {
     if (data.length === 0) return 0
@@ -466,17 +511,11 @@ function EarlyRoundAndFormPanel({
       : 'BL'
 
   return (
-    <section className="mt-6 mb-6 bg-surface rounded-xl border border-border/45 p-4">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-3 mb-4">
-        <div>
-          <h3 className="font-display text-[10px] uppercase tracking-widest text-accent mb-1">
-            Åpningsdueller &amp; Form
-          </h3>
-          <p className="font-mono text-[9px] text-muted/60 leading-relaxed max-w-sm">
-            Åpningsduel-win% avgjør ~70% av alle runder. Formgrafen viser avvik fra Leetify karrieresnitt — positiv = bedre form enn normalt.
-          </p>
-        </div>
+    <AnalysisSection
+      title="Åpningsdueller & Form"
+      description="Denne seksjonen går ned på spillernivå. Den viser hvem som oftest vinner første kontakt, og hvem som spiller over eller under sin egen baseline akkurat nå."
+      className="mt-6 mb-6 border-border/45 bg-surface p-4"
+      headerRight={(
         <div className="flex items-center gap-2 shrink-0">
           {usingLiveLineup && (
             <span className="font-mono text-[9px] uppercase tracking-widest rounded border border-accent/40 bg-accent/10 text-accent px-2 py-1">
@@ -487,96 +526,60 @@ function EarlyRoundAndFormPanel({
             {sourceLabel}
           </span>
         </div>
-      </div>
+      )}
+    >
 
-      {/* Team OD comparison bar */}
       <div className="rounded-lg border border-border/30 bg-surface2/15 p-3 mb-4">
-        <p className="font-mono text-[9px] uppercase tracking-widest text-muted/50 mb-2">
-          Lagveid åpningsduel-rate
-        </p>
-        <div className="relative h-2.5 rounded-full bg-surface overflow-hidden mb-2">
-          <div
-            className="absolute inset-y-0 left-0 rounded-l-full bg-accent transition-all duration-700"
-            style={{ width: `${Math.max(0, Math.min(100, homeTeamOd * 100))}%` }}
-          />
-          <div className="absolute inset-y-0 left-1/2 w-px bg-border/60" />
-        </div>
-        <div className="flex items-center justify-between font-mono text-[11px]">
-          <span className="text-accent tabular-nums">{home.name || 'Hjem'}: {toPercent(homeTeamOd)}</span>
-          <span className={`text-[9px] ${Math.abs(edgeDelta) < 0.03 ? 'text-muted' : edgeDelta > 0 ? 'text-accent' : 'text-accent2'}`}>
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <p className="font-mono text-[9px] uppercase tracking-widest text-muted/50">
+            Lagveid åpningsduell-rate
+          </p>
+          <span className={`font-mono text-[9px] ${
+            Math.abs(edgeDelta) < 0.03 ? 'text-muted' : edgeDelta > 0 ? 'text-accent' : 'text-accent2'
+          }`}>
             {Math.abs(edgeDelta * 100) < 3
               ? 'Likt fordelt'
-              : `${edgeDelta > 0 ? home.name || 'Hjem' : away.name || 'Borte'} +${Math.abs(edgeDelta * 100).toFixed(1)} pp`
-            }
+              : `${edgeDelta > 0 ? home.name || 'Hjem' : away.name || 'Borte'} +${Math.abs(edgeDelta * 100).toFixed(1)} pp`}
           </span>
-          <span className="text-accent2 tabular-nums">{toPercent(awayTeamOd)}: {away.name || 'Borte'}</span>
         </div>
+        <HeadToHeadBar
+          homeShare={homeTeamOd * 100}
+          awayShare={awayTeamOd * 100}
+          homeLabel={`${home.name || 'Hjem'} ${toPercent(homeTeamOd)}`}
+          awayLabel={`${toPercent(awayTeamOd)} ${away.name || 'Borte'}`}
+          centerLabel="weighted opening"
+        />
       </div>
 
-      {landing && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
-          <div className="rounded-lg border border-border/30 bg-surface2/15 p-3">
-            <p className="font-mono text-[9px] uppercase tracking-widest text-muted/50 mb-2">Trade-struktur</p>
-            <p className="font-mono text-[11px] text-text">
-              {landing.trade_structure_edge?.source === 'bl'
-                ? `${edgeDirection(landing.trade_structure_edge.trade_kill_delta, home.name || 'Hjem', away.name || 'Borte')} har best trade-kill-rate`
-                : 'Mangler robuste BL-trade-felt'}
-            </p>
-            <p className="font-mono text-[10px] text-muted mt-2">
-              Trade K/R: {landing.trade_structure_edge?.home_trade_kill_rate?.toFixed(2) ?? '0.00'} vs {landing.trade_structure_edge?.away_trade_kill_rate?.toFixed(2) ?? '0.00'}
-            </p>
-            {landing.trade_structure_edge?.trade_recovery_delta != null && (
-              <p className="font-mono text-[10px] text-muted mt-1">
-                Death-trade recovery: {signed(landing.trade_structure_edge.trade_recovery_delta * 100, ' pp')}
-              </p>
-            )}
-          </div>
-
-          <div className="rounded-lg border border-border/30 bg-surface2/15 p-3">
-            <p className="font-mono text-[9px] uppercase tracking-widest text-muted/50 mb-2">Survival-disciplin</p>
-            <p className="font-mono text-[11px] text-text">
-              {landing.survival_discipline_edge?.source === 'bl'
-                ? `${edgeDirection(landing.survival_discipline_edge.survival_delta, home.name || 'Hjem', away.name || 'Borte')} overlever bedre uten å lene seg kun på KAST`
-                : 'Viser KAST-only fallback når survival mangler'}
-            </p>
-            <p className="font-mono text-[10px] text-muted mt-2">
-              Survival: {toPercent(landing.survival_discipline_edge?.home_survival ?? 0)} vs {toPercent(landing.survival_discipline_edge?.away_survival ?? 0)}
-            </p>
-            <p className="font-mono text-[10px] text-muted mt-1">
-              KAST: {toPercent(landing.survival_discipline_edge?.home_kast ?? 0)} vs {toPercent(landing.survival_discipline_edge?.away_kast ?? 0)}
-            </p>
-          </div>
-
-          <div className="rounded-lg border border-border/30 bg-surface2/15 p-3">
-            <p className="font-mono text-[9px] uppercase tracking-widest text-muted/50 mb-2">Entry-press</p>
-            <p className="font-mono text-[11px] text-text">
-              {landing.entry_pressure_edge?.source !== 'insufficient'
-                ? `${edgeDirection(landing.entry_pressure_edge?.firstkill_delta ?? 0, home.name || 'Hjem', away.name || 'Borte')} skaper oftest første kontakt`
-                : 'Mangler firstkill-volum i BL-data'}
-            </p>
-            <p className="font-mono text-[10px] text-muted mt-2">
-              FK/R: {(landing.entry_pressure_edge?.home_firstkill_rate ?? 0).toFixed(2)} vs {(landing.entry_pressure_edge?.away_firstkill_rate ?? 0).toFixed(2)}
-            </p>
-            <p className="font-mono text-[10px] text-muted mt-1">
-              OD: {toPercent(landing.entry_pressure_edge?.home_od ?? homeTeamOd)} vs {toPercent(landing.entry_pressure_edge?.away_od ?? awayTeamOd)}
-            </p>
-          </div>
+      <div className="mb-4 grid gap-2 md:grid-cols-2">
+        <div className="rounded-lg border border-border/30 bg-surface2/15 p-3">
+          <p className="font-mono text-[9px] uppercase tracking-widest text-muted/50 mb-1.5">Hva du ser her</p>
+          <p className="font-mono text-[11px] text-text/90">
+            Opening-delen er spillerfokusert og viser hvem som setter første kontakt oftest. Den supplerer
+            <span className="text-text"> Pre-match Control</span>, som allerede dekker trade, survival og entry-press på lagnivå.
+          </p>
         </div>
-      )}
+        <div className="rounded-lg border border-border/30 bg-surface2/15 p-3">
+          <p className="font-mono text-[9px] uppercase tracking-widest text-muted/50 mb-1.5">Formlesning</p>
+          <p className="font-mono text-[11px] text-text/90">
+            Formgrafen viser avvik mot Leetify-baseline. Positiv verdi betyr at spilleren kommer inn i kampen over sitt normale nivå, negativ verdi betyr at profilen er kaldere enn vanlig.
+          </p>
+        </div>
+      </div>
 
       {/* Per-player opening duel breakdown */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-4">
         <div>
           <p className="font-mono text-[9px] uppercase tracking-widest text-muted/50 mb-2 px-0.5">
-            Åpningsdueller per spiller
+            {home.name || 'Hjem'} · Åpningsdueller per spiller
           </p>
-          <EarlyStrengthCard title={home.name || 'Hjem'} accentClass="text-accent" players={homeEarly} />
+            <EarlyStrengthCard title={home.name || 'Hjem'} accentClass="text-accent" players={homeEarly} />
         </div>
         <div>
           <p className="font-mono text-[9px] uppercase tracking-widest text-muted/50 mb-2 px-0.5">
-            Åpningsdueller per spiller
+            {away.name || 'Borte'} · Åpningsdueller per spiller
           </p>
-          <EarlyStrengthCard title={away.name || 'Borte'} accentClass="text-accent2" players={awayEarly} />
+            <EarlyStrengthCard title={away.name || 'Borte'} accentClass="text-accent2" players={awayEarly} />
         </div>
       </div>
 
@@ -590,7 +593,7 @@ function EarlyRoundAndFormPanel({
           <FormGraph title={away.name || 'Borte'} accentClass="text-accent2" data={awayForm} />
         </div>
       </div>
-    </section>
+    </AnalysisSection>
   )
 }
 
@@ -650,7 +653,13 @@ function PlayerRow({
               tone={tone}
               size="xs"
             />
-            <span className="font-mono text-xs text-text truncate">{player.name}</span>
+            <Link
+              href={`/player/${player.paradise_user_id}`}
+              className="font-mono text-xs text-text hover:text-accent hover:underline underline-offset-2 truncate transition-colors"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {player.name}
+            </Link>
             <TrendBadge player={player} />
           </div>
           <div className="flex items-center gap-1.5 mt-0.5">
@@ -752,16 +761,16 @@ function TeamCard({
 
       <div className="flex items-center gap-2 mb-1 px-5">
         <span className="w-36 shrink-0 text-[9px] font-mono text-muted uppercase tracking-widest">
-          Spiller
+          Player
         </span>
         <span className="flex-1 mx-2 text-[9px] font-mono text-muted uppercase tracking-widest">
-          Ranking
+          Rating
         </span>
         <span className="w-20 shrink-0 text-[9px] font-mono text-muted uppercase tracking-widest text-right">
           Score ±CI
         </span>
         <span className="w-12 shrink-0 text-[9px] font-mono text-muted uppercase tracking-widest text-right">
-          Kilde
+          Source
         </span>
       </div>
 
@@ -1179,7 +1188,7 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
     ? `${resultSummary.home_score}-${resultSummary.away_score}`
     : 'Ukjent'
   const finishedLabel = resultSummary?.finished_at
-    ? new Date(resultSummary.finished_at).toLocaleString('nb-NO')
+    ? formatOsloDateTime(resultSummary.finished_at)
     : 'Ukjent tidspunkt'
 
   return (
@@ -1230,14 +1239,9 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
             />
           </div>
         </div>
-        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px]">
-          <p className="font-mono text-[10px] text-muted">
-            Vinner: <span className="text-text">{winnerLabel(result)}</span>
-          </p>
-          <p className="font-mono text-[10px] text-muted tabular-nums">
-            Ferdig: {finishedLabel}
-          </p>
-        </div>
+        <p className="mt-3 font-mono text-[10px] text-muted tabular-nums">
+          Finished: {finishedLabel}
+        </p>
       </div>
 
       <div className="rounded-xl border border-border/35 bg-surface2/20 p-3 mb-4">
@@ -1424,23 +1428,60 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
           }] : []),
         ] : []
 
-        // BL API returns 0 instead of null for missing clutch/explosive data,
-        // so we require at least one indicator to be non-zero and finite.
+        type LegacyLateRound = NonNullable<AnalyzeResponse['post_analysis']>['late_round_conversion'] & {
+          indicators?: {
+            clutch_edge_per_map?: number
+            one_v_x_edge?: number
+            explosive_round_edge?: number
+          }
+        }
+        const rawLateRound = post.late_round_conversion
+        const legacyLateRound = post.late_round_conversion as LegacyLateRound | undefined
+        const lateRoundMetrics = rawLateRound?.metrics ?? (
+          legacyLateRound?.indicators
+            ? {
+              clutch_wins_per_map: legacyLateRound.indicators.clutch_edge_per_map != null
+                ? {
+                  home: 0,
+                  away: 0,
+                  edge: legacyLateRound.indicators.clutch_edge_per_map,
+                }
+                : undefined,
+              one_v_x_wins_per_map: legacyLateRound.indicators.one_v_x_edge != null
+                ? {
+                  home: 0,
+                  away: 0,
+                  edge: legacyLateRound.indicators.one_v_x_edge,
+                }
+                : undefined,
+              explosive_rounds_per_map: legacyLateRound.indicators.explosive_round_edge != null
+                ? {
+                  home: 0,
+                  away: 0,
+                  edge: legacyLateRound.indicators.explosive_round_edge,
+                }
+                : undefined,
+            }
+            : undefined
+        )
+
+        // Support both the new `metrics` shape and older cached `indicators` responses.
         const lateRoundHasData = [
-          post.late_round_conversion?.indicators.clutch_edge_per_map,
-          post.late_round_conversion?.indicators.one_v_x_edge,
-          post.late_round_conversion?.indicators.explosive_round_edge,
-        ].some((v) => v != null && Number.isFinite(v) && v !== 0)
+          lateRoundMetrics?.clutch_wins_per_map,
+          lateRoundMetrics?.one_v_x_wins_per_map,
+          lateRoundMetrics?.explosive_rounds_per_map,
+        ].some((metric) => metric != null)
 
         const isRelativeDev = post.player_development.focus_players[0]?.is_relative ?? false
+        const isRatingDev = post.player_development.focus_players[0]?.metric === 'bl_rating'
 
         return (
-          <div className="columns-1 lg:columns-2 gap-3">
+          <div className="space-y-3">
 
-            {/* ── 1. Taktisk kontroll ─────────────────────────────────────── */}
-            <div className="break-inside-avoid mb-3 rounded-xl border border-border/35 bg-surface2/20 p-3.5">
+            {/* ── 1. Tactical Control ────────────────────────────────────── */}
+            <div className="rounded-xl border border-border/35 bg-surface2/20 p-3.5">
               <div className="flex items-center justify-between gap-2 mb-2">
-                <p className="font-mono text-[10px] uppercase tracking-widest text-muted">Taktisk kontroll</p>
+                <p className="font-mono text-[10px] uppercase tracking-widest text-muted">Tactical Control</p>
                 <SectionWinner
                   values={[
                     post.tactical_control.opening_duel_edge_pp,
@@ -1498,8 +1539,8 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
               {/* Metric bars under chart */}
               <div className="space-y-2.5 rounded-lg border border-border/25 bg-surface/40 p-2.5">
                 <MetricBar
-                  label="Opening duel"
-                  tooltip="Åpningsduell-vinnrate. Vinner av første kill kontrollerer 70–80% av runder."
+                  label="Opening Duel"
+                  tooltip="Opening duel win rate. Winning first kill usually controls 70-80% of rounds."
                   value={post.tactical_control.opening_duel_edge_pp}
                   maxAbs={15}
                   homeVal={`${homeODpct.toFixed(1)}%`}
@@ -1509,7 +1550,7 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                 />
                 <MetricBar
                   label="KAST"
-                  tooltip="Kill/Assist/Survived/Traded per runde — mer stabilt enn K/D ved få runder."
+                  tooltip="Kill/Assist/Survived/Traded per round. More stable than K/D in small samples."
                   value={post.tactical_control.stability_edge_kast_pp}
                   maxAbs={20}
                   homeVal={`${homeKASTpct.toFixed(1)}%`}
@@ -1518,8 +1559,8 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                   awayLogo={awayLogo}
                 />
                 <MetricBar
-                  label="Damage per round"
-                  tooltip="DPR-edge. Høyt DPR presser motstander til force-buys og eco-runder."
+                  label="Damage Per Round"
+                  tooltip="DPR edge. High DPR pushes opponents into force-buys and weaker economy rounds."
                   value={post.tactical_control.pressure_edge_dpr}
                   maxAbs={20}
                   homeVal={homeDPRraw.toFixed(1)}
@@ -1533,7 +1574,8 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                 <div className="mt-3 pt-2.5 border-t border-border/25 space-y-2">
                   {post.tactical_control.role_impact.map((impact, idx) => {
                     const player = playerByTeamAndName(impact.team, impact.player_name)
-                    const scorePct = player ? Math.round(player.score * 100) : null
+                    const scoreProgress = player ? Math.round(player.score * 100) : null
+                    const scoreDisplay = player ? (player.score * 10).toFixed(1) : null
                     return (
                       <div key={`${impact.player_name}-${idx}`} className="flex items-start gap-2.5">
                         <PlayerAvatar
@@ -1551,13 +1593,13 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                             <Badge variant="outline" className="font-mono text-[8px] uppercase tracking-widest px-1 py-0 h-auto border-border/50 text-muted rounded">
                               {impact.role}
                             </Badge>
-                            {scorePct != null && (
-                              <span className="font-mono text-[9px] text-muted tabular-nums ml-auto">{scorePct}%</span>
+                            {scoreDisplay != null && (
+                              <span className="font-mono text-[9px] text-muted tabular-nums ml-auto">{scoreDisplay}</span>
                             )}
                           </div>
-                          {scorePct != null && (
+                          {scoreProgress != null && (
                             <Progress
-                              value={scorePct}
+                              value={scoreProgress}
                               className="h-1 mb-1 bg-surface"
                               style={{ '--color-primary': `var(--color-${impact.team === 'home' ? 'accent' : 'accent2'})` } as React.CSSProperties}
                             />
@@ -1571,10 +1613,14 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
               )}
             </div>
 
-            {/* ── 2. Økonomi ──────────────────────────────────────────────── */}
-            <div className="break-inside-avoid mb-3 rounded-xl border border-border/35 bg-surface2/20 p-3.5">
-              <div className="flex items-center justify-between gap-2 mb-2">
-                <p className="font-mono text-[10px] uppercase tracking-widest text-muted">Økonomi</p>
+            <div className="columns-1 lg:columns-2 gap-3">
+            {/* ── 2. Economy ─────────────────────────────────────────────── */}
+            <AnalysisSection
+              title="Economy"
+              className="break-inside-avoid mb-3"
+              titleClassName="text-muted"
+              headerClassName="mb-2"
+              headerRight={(
                 <SectionWinner
                   values={[
                     post.economy_proxies.indicators.opening_control_pp,
@@ -1586,15 +1632,16 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                   homeLabel={hl}
                   awayLabel={al}
                 />
-              </div>
+              )}
+            >
               <p className="font-mono text-[11px] text-text mb-3">{post.economy_proxies.summary}</p>
 
               {/* Primary signals */}
               <div className="space-y-2.5 rounded-lg border border-border/25 bg-surface/40 p-2.5 mb-2">
-                <p className="font-mono text-[9px] uppercase tracking-widest text-muted/60 pb-1 border-b border-border/20">Primærsignaler</p>
+                <p className="font-mono text-[9px] uppercase tracking-widest text-muted/60 pb-1 border-b border-border/20">Primary Signals</p>
                 <MetricBar
-                  label="Åpningskontroll"
-                  tooltip="Opening duel win% som proxy for hvem som setter økonomisk tempo første halvdel av runden."
+                  label="Opening Duel"
+                  tooltip="Opening duel win% as a proxy for who sets the economy tempo early in the round."
                   value={post.economy_proxies.indicators.opening_control_pp}
                   maxAbs={15}
                   homeVal={`${homeODpct.toFixed(1)}%`}
@@ -1604,7 +1651,7 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                 />
                 <MetricBar
                   label="KAST"
-                  tooltip="KAST-edge: høy KAST = flere runder med weapons i hånden neste runde."
+                  tooltip="KAST edge. Higher KAST usually means more weapons carried into the next round."
                   value={post.economy_proxies.indicators.survival_edge_kast_pp}
                   maxAbs={20}
                   homeVal={`${homeKASTpct.toFixed(1)}%`}
@@ -1613,8 +1660,8 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                   awayLogo={awayLogo}
                 />
                 <MetricBar
-                  label="Damage per round"
-                  tooltip="DPR-edge. Skadepress → motstander sparer mer og kjøper dårligere neste runde."
+                  label="Damage Per Round"
+                  tooltip="DPR edge. Damage pressure forces more saves and weaker buys next round."
                   value={post.economy_proxies.indicators.damage_pressure_edge_dpr}
                   maxAbs={20}
                   homeVal={homeDPRraw.toFixed(1)}
@@ -1628,11 +1675,11 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
               {(post.economy_proxies.indicators.trade_structure_pp != null ||
                 post.economy_proxies.indicators.survival_edge_pp != null) && (
                 <div className="space-y-2 rounded-lg border border-border/20 bg-surface/25 p-2.5 mb-3">
-                  <p className="font-mono text-[9px] uppercase tracking-widest text-muted/50 pb-1 border-b border-border/15">Støttesignaler</p>
+                  <p className="font-mono text-[9px] uppercase tracking-widest text-muted/50 pb-1 border-b border-border/15">Support Signals</p>
                   {post.economy_proxies.indicators.trade_structure_pp != null && (
                     <MetricBar
-                      label="Trade kills"
-                      tooltip="Trade kills per 100 runder som økonomiproxy — gode trades = neste runde med full weaponset."
+                      label="Trade Kills"
+                      tooltip="Trade kills per 100 rounds as an economy proxy. Strong trading preserves full-weapon rounds."
                       value={post.economy_proxies.indicators.trade_structure_pp}
                       maxAbs={12}
                       homeVal={homeTradeK100 != null ? `${homeTradeK100.toFixed(1)}/100r` : undefined}
@@ -1645,7 +1692,7 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                   {post.economy_proxies.indicators.survival_edge_pp != null && (
                     <MetricBar
                       label="Survival"
-                      tooltip="Overlevelsesrate per runde. Direkte korrelert med å beholde gun-round neste runde."
+                      tooltip="Survival rate per round. Directly tied to carrying weapons into the next round."
                       value={post.economy_proxies.indicators.survival_edge_pp}
                       maxAbs={20}
                       homeVal={homeSurvPct != null ? `${homeSurvPct.toFixed(1)}%` : undefined}
@@ -1658,17 +1705,18 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                 </div>
               )}
 
-              <p className="font-mono text-[9px] text-muted/60 bg-surface/35 rounded px-2 py-1.5 inline-block">{post.economy_proxies.caveat}</p>
-            </div>
+            </AnalysisSection>
 
-            {/* ── 3. Teamplay-kontroll ────────────────────────────────────── */}
+            {/* ── 3. Teamplay Control ────────────────────────────────────── */}
             {post.teamplay_control && (() => {
               const tradeEdge = post.teamplay_control!.indicators.trade_kill_edge_per_100_rounds
-              const tradePct = Math.max(0, Math.min(100, 50 + (tradeEdge / 12) * 50))
               return (
-                <div className="break-inside-avoid mb-3 rounded-xl border border-border/35 bg-surface2/20 p-3.5">
-                  <div className="flex items-center justify-between gap-2 mb-2">
-                    <p className="font-mono text-[10px] uppercase tracking-widest text-muted">Teamplay-kontroll</p>
+                <AnalysisSection
+                  title="Teamplay Control"
+                  className="break-inside-avoid mb-3"
+                  titleClassName="text-muted"
+                  headerClassName="mb-2"
+                  headerRight={(
                     <SectionWinner
                       values={[
                         tradeEdge,
@@ -1678,13 +1726,14 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                       homeLabel={hl}
                       awayLabel={al}
                     />
-                  </div>
+                  )}
+                >
                   <p className="font-mono text-[11px] text-text mb-3">{post.teamplay_control!.summary}</p>
 
                   <div className="space-y-2.5 rounded-lg border border-border/25 bg-surface/40 p-2.5">
                     <MetricBar
-                      label="Trade kills"
-                      tooltip="Trade kills per 100 runder. Trade = kill innen 5 sek etter lagkamerat ble drept."
+                      label="Trade Kills"
+                      tooltip="Trade kills per 100 rounds. A trade is a kill within 5 seconds after a teammate dies."
                       value={tradeEdge}
                       maxAbs={12}
                       homeVal={homeTradeK100 != null ? `${homeTradeK100.toFixed(1)}/100r` : undefined}
@@ -1694,8 +1743,8 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                     />
                     {post.teamplay_control!.indicators.trade_recovery_edge_pp != null && (
                       <MetricBar
-                        label="Death-trade recovery"
-                        tooltip="Andel dødsfall som ble traded. Høy recovery = laget mister sjelden gunround av ett tap."
+                        label="Death-Trade Recovery"
+                        tooltip="Share of deaths that were immediately traded. High recovery means fewer rounds lost off one pick."
                         value={post.teamplay_control!.indicators.trade_recovery_edge_pp}
                         maxAbs={20}
                         homeVal={homeTradeD100 != null ? `${homeTradeD100.toFixed(1)}/100r` : undefined}
@@ -1706,7 +1755,7 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                     )}
                     <MetricBar
                       label="Assists"
-                      tooltip="Assists per runde som proxy for utility-synk og koordinerte pushes."
+                      tooltip="Assists per round as a proxy for utility sync and coordinated fights."
                       value={post.teamplay_control!.indicators.assist_edge_per_round}
                       maxAbs={0.12}
                       homeVal={`${homeAssistPR.toFixed(2)}/r`}
@@ -1715,16 +1764,18 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                       awayLogo={awayLogo}
                     />
                   </div>
-                  <p className="font-mono text-[9px] text-muted/60 mt-3 bg-surface/35 rounded px-2 py-1.5 inline-block">{post.teamplay_control!.caveat}</p>
-                </div>
+                </AnalysisSection>
               )
             })()}
 
             {/* ── 4. Round Stability ──────────────────────────────────────── */}
             {post.round_stability && (
-              <div className="break-inside-avoid mb-3 rounded-xl border border-border/35 bg-surface2/20 p-3.5">
-                <div className="flex items-center justify-between gap-2 mb-2">
-                  <p className="font-mono text-[10px] uppercase tracking-widest text-muted">Round stability</p>
+              <AnalysisSection
+                title="Round Stability"
+                className="break-inside-avoid mb-3"
+                titleClassName="text-muted"
+                headerClassName="mb-2"
+                headerRight={(
                   <SectionWinner
                     values={[
                       post.round_stability.indicators.kast_edge_pp,
@@ -1734,7 +1785,8 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                     homeLabel={hl}
                     awayLabel={al}
                   />
-                </div>
+                )}
+              >
                 <p className="font-mono text-[11px] text-text mb-3">{post.round_stability.summary}</p>
 
                 {/* Radar chart when ≥2 axes */}
@@ -1771,7 +1823,7 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                   {post.round_stability.indicators.survival_edge_pp != null && (
                     <MetricBar
                       label="Survival"
-                      tooltip="Andel spillere som overlever runden. Høy survival → beholder utstyr og setter press."
+                      tooltip="Share of players who survive the round. Higher survival helps preserve weapons and maintain pressure."
                       value={post.round_stability.indicators.survival_edge_pp}
                       maxAbs={20}
                       homeVal={homeSurvPct != null ? `${homeSurvPct.toFixed(1)}%` : undefined}
@@ -1782,7 +1834,7 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                   )}
                   <MetricBar
                     label="KAST"
-                    tooltip="KAST stabiliserer seg ved ~150 runder (vs K/D ~400). Mest pålitelig stabilitetsindikator."
+                    tooltip="KAST stabilizes around 150 rounds, much sooner than K/D. Strongest stability indicator here."
                     value={post.round_stability.indicators.kast_edge_pp}
                     maxAbs={20}
                     homeVal={`${homeKASTpct.toFixed(1)}%`}
@@ -1792,8 +1844,8 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                   />
                   {post.round_stability.indicators.survival_minus_kast_edge_pp != null && (
                     <MetricBar
-                      label="Surv − KAST gap"
-                      tooltip="Per lag: survival% minus KAST%. Positiv = overlever uten å bidra (passivt). Negativt = bidrar selv om man dør (aggressivt)."
+                      label="Survival − KAST Gap"
+                      tooltip="Per team: survival% minus KAST%. Positive means passive survivability; negative means impact despite deaths."
                       value={post.round_stability.indicators.survival_minus_kast_edge_pp}
                       maxAbs={12}
                       homeVal={homeKASTSurvGap != null ? `${homeKASTSurvGap >= 0 ? '+' : ''}${homeKASTSurvGap.toFixed(1)}%` : undefined}
@@ -1803,65 +1855,71 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                     />
                   )}
                 </div>
-                <p className="font-mono text-[9px] text-muted/60 mt-3 bg-surface/35 rounded px-2 py-1.5 inline-block">{post.round_stability.caveat}</p>
-              </div>
+              </AnalysisSection>
             )}
 
-            {/* ── 5. Late-round conversion ────────────────────────────────── */}
+            {/* ── 5. Late-round impact ────────────────────────────────────── */}
             {post.late_round_conversion && (
-              <div className="break-inside-avoid mb-3 rounded-xl border border-border/35 bg-surface2/20 p-3.5">
-                <div className="flex items-center justify-between gap-2 mb-2">
-                  <p className="font-mono text-[10px] uppercase tracking-widest text-muted">Late-round conversion</p>
-                  {lateRoundHasData && (
-                    <SectionWinner
-                      values={[
-                        post.late_round_conversion.indicators.clutch_edge_per_map,
-                        post.late_round_conversion.indicators.one_v_x_edge,
-                        post.late_round_conversion.indicators.explosive_round_edge,
-                      ]}
-                      homeLabel={hl}
-                      awayLabel={al}
-                    />
-                  )}
-                </div>
+              <AnalysisSection
+                title="Late-round Impact"
+                className="break-inside-avoid mb-3"
+                titleClassName="text-muted"
+                headerClassName="mb-2"
+                headerRight={lateRoundHasData ? (
+                  <SectionWinner
+                    values={[
+                      lateRoundMetrics?.clutch_wins_per_map?.edge,
+                      lateRoundMetrics?.one_v_x_wins_per_map?.edge,
+                      lateRoundMetrics?.explosive_rounds_per_map?.edge,
+                    ]}
+                    homeLabel={hl}
+                    awayLabel={al}
+                  />
+                ) : undefined}
+              >
                 <p className="font-mono text-[11px] text-text mb-3">{post.late_round_conversion.summary}</p>
 
                 {lateRoundHasData ? (
                   <div className="space-y-2.5 rounded-lg border border-border/25 bg-surface/40 p-2.5">
-                    {/* These are edge values only — no per-team absolute rates available from BL API */}
-                    {Number.isFinite(post.late_round_conversion.indicators.clutch_edge_per_map) && post.late_round_conversion.indicators.clutch_edge_per_map !== 0 && (
+                    {lateRoundMetrics?.clutch_wins_per_map && (
                       <MetricBar
-                        label="Clutch-runder"
-                        tooltip="Vunne 1vX-situasjoner per kart. Høy varians ved ≤3 kart — bruk som tendensindikator."
-                        value={post.late_round_conversion.indicators.clutch_edge_per_map ?? 0}
+                        label="Clutch Wins"
+                        tooltip="Won 1vX situations per map. Very high variance in short series, so treat as a signal rather than a verdict."
+                        value={lateRoundMetrics.clutch_wins_per_map.edge}
                         maxAbs={1.5}
-                        suffix="/kart"
+                        suffix="/map edge"
+                        homeVal={lateRoundMetrics.clutch_wins_per_map.home > 0 ? `${lateRoundMetrics.clutch_wins_per_map.home.toFixed(2)}/map` : undefined}
+                        awayVal={lateRoundMetrics.clutch_wins_per_map.away > 0 ? `${lateRoundMetrics.clutch_wins_per_map.away.toFixed(2)}/map` : undefined}
                         homeLogo={homeLogo}
                         awayLogo={awayLogo}
                         homeLabel={hl}
                         awayLabel={al}
                       />
                     )}
-                    {Number.isFinite(post.late_round_conversion.indicators.one_v_x_edge) && post.late_round_conversion.indicators.one_v_x_edge !== 0 && (
+                    {lateRoundMetrics?.one_v_x_wins_per_map && (
                       <MetricBar
-                        label="1vX-situasjoner"
-                        tooltip="Antall 1vX-forsøk per kart. Sier noe om kaosberedskap og press under pistolrunder."
-                        value={post.late_round_conversion.indicators.one_v_x_edge ?? 0}
+                        label="1vX Wins"
+                        tooltip="Won 1vX clutches per map. This is clutch outcome, not attempt volume."
+                        value={lateRoundMetrics.one_v_x_wins_per_map.edge}
                         maxAbs={2}
-                        suffix="/kart"
+                        suffix="/map edge"
+                        homeVal={lateRoundMetrics.one_v_x_wins_per_map.home > 0 ? `${lateRoundMetrics.one_v_x_wins_per_map.home.toFixed(2)}/map` : undefined}
+                        awayVal={lateRoundMetrics.one_v_x_wins_per_map.away > 0 ? `${lateRoundMetrics.one_v_x_wins_per_map.away.toFixed(2)}/map` : undefined}
                         homeLogo={homeLogo}
                         awayLogo={awayLogo}
                         homeLabel={hl}
                         awayLabel={al}
                       />
                     )}
-                    {Number.isFinite(post.late_round_conversion.indicators.explosive_round_edge) && post.late_round_conversion.indicators.explosive_round_edge !== 0 && (
+                    {lateRoundMetrics?.explosive_rounds_per_map && (
                       <MetricBar
-                        label="Eksplosive runder"
-                        tooltip="Runder med 3+ raske kills per kart — proxy for aggresjonstempo og entry-evne."
-                        value={post.late_round_conversion.indicators.explosive_round_edge ?? 0}
+                        label="Explosive Rounds"
+                        tooltip="Rounds with 3+ fast kills per map. A proxy for aggression tempo and round-closing power."
+                        value={lateRoundMetrics.explosive_rounds_per_map.edge}
                         maxAbs={2}
-                        suffix="/kart"
+                        suffix="/map edge"
+                        homeVal={lateRoundMetrics.explosive_rounds_per_map.home > 0 ? `${lateRoundMetrics.explosive_rounds_per_map.home.toFixed(2)}/map` : undefined}
+                        awayVal={lateRoundMetrics.explosive_rounds_per_map.away > 0 ? `${lateRoundMetrics.explosive_rounds_per_map.away.toFixed(2)}/map` : undefined}
                         homeLogo={homeLogo}
                         awayLogo={awayLogo}
                         homeLabel={hl}
@@ -1869,28 +1927,32 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                       />
                     )}
                     <p className="font-mono text-[9px] text-muted/50 border-t border-border/20 pt-1.5">
-                      Høy varians ved ≤3 kart — tendenser, ikke fasit.
+                      Values by the team logos show the level for each team. The center bar shows the edge between them.
                     </p>
                   </div>
                 ) : (
-                  <DataQualityNotice message="BL-API mangler clutch/explosive-telemetri for denne kampen." />
+                  <DataQualityNotice message="BL API is missing clutch and explosive-round telemetry for this match." />
                 )}
-                <p className="font-mono text-[9px] text-muted/60 mt-3 bg-surface/35 rounded px-2 py-1.5 inline-block">{post.late_round_conversion.caveat}</p>
-              </div>
+              </AnalysisSection>
             )}
 
-            {/* ── 6. Spillerutvikling ─────────────────────────────────────── */}
-            <div className="break-inside-avoid mb-3 rounded-xl border border-border/35 bg-surface2/20 p-3.5">
-              <div className="flex items-center justify-between gap-2 mb-2">
-                <p className="font-mono text-[10px] uppercase tracking-widest text-muted">Spillerutvikling</p>
-                {isRelativeDev && (
-                  <Badge variant="outline" className="font-mono text-[8px] uppercase tracking-widest px-1.5 py-0.5 h-auto rounded border-warning/40 text-warning/80 bg-warning/5">
-                    In-match
-                  </Badge>
-                )}
-              </div>
+            {/* ── 6. Player Development ──────────────────────────────────── */}
+            <AnalysisSection
+              title="Player Development"
+              className="break-inside-avoid mb-3"
+              titleClassName="text-muted"
+              headerClassName="mb-2"
+              headerRight={isRelativeDev ? (
+                <Badge variant="outline" className="font-mono text-[8px] uppercase tracking-widest px-1.5 py-0.5 h-auto rounded border-warning/40 text-warning/80 bg-warning/5">
+                  In-match
+                </Badge>
+              ) : undefined}
+            >
+              {isRatingDev && !isRelativeDev && (
+                <p className="font-mono text-[9px] text-muted/60 mb-2.5">Shows BL R-rating against the historical BL baseline. No artificial 0-100 scale is used here.</p>
+              )}
               {isRelativeDev && (
-                <p className="font-mono text-[9px] text-muted/60 mb-2.5">Ingen historisk Leetify-baseline — viser relativ kampperformance.</p>
+                <p className="font-mono text-[9px] text-muted/60 mb-2.5">No historical baseline available, so this shows relative in-match performance.</p>
               )}
               {post.player_development.focus_players.length > 0 ? (
                 <div className="space-y-2">
@@ -1899,6 +1961,14 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                     const scoreVal = focus.score != null ? focus.score : player?.score
                     const scoreMax = focus.score_max ?? 1
                     const scorePct = scoreVal != null ? Math.round((scoreVal / scoreMax) * 100) : null
+                    const scoreDisplay = scoreVal != null ? (scoreVal * 10).toFixed(1) : null
+                    const showsValueComparison =
+                      focus.current_value != null &&
+                      focus.baseline_value != null &&
+                      focus.delta_value != null
+                    const currentValue = focus.current_value ?? 0
+                    const baselineValue = focus.baseline_value ?? 0
+                    const deltaValue = focus.delta_value ?? 0
                     return (
                       <div key={`${focus.player_name}-${idx}`} className="rounded-lg border border-border/25 px-2.5 py-2.5 bg-surface/30">
                         <div className="flex flex-wrap items-center gap-2 mb-1.5">
@@ -1929,16 +1999,51 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                               ? '▲ Over'
                               : focus.trend === 'underperforming'
                                 ? '▼ Under'
-                                : '— Stabil'}
+                                : '— Stable'}
                           </Badge>
                         </div>
 
-                        {/* Score bar */}
-                        {scorePct != null && (
+                        {showsValueComparison && (
+                          <div className="mb-2 grid grid-cols-3 gap-2">
+                            <div className="rounded border border-border/20 bg-surface/40 px-2 py-1.5">
+                              <p className="font-mono text-[8px] uppercase tracking-widest text-muted/70 mb-0.5">
+                                {focus.metric === 'bl_rating' ? 'R-rating' : 'Score /10'}
+                              </p>
+                              <p className="font-mono text-[11px] tabular-nums text-text">
+                                {currentValue.toFixed(2)}
+                              </p>
+                            </div>
+                            <div className="rounded border border-border/20 bg-surface/40 px-2 py-1.5">
+                              <p className="font-mono text-[8px] uppercase tracking-widest text-muted/70 mb-0.5">
+                                {focus.metric === 'bl_rating' ? 'Baseline' : 'Match Avg /10'}
+                              </p>
+                              <p className="font-mono text-[11px] tabular-nums text-text">
+                                {baselineValue.toFixed(2)}
+                              </p>
+                            </div>
+                            <div className="rounded border border-border/20 bg-surface/40 px-2 py-1.5">
+                              <p className="font-mono text-[8px] uppercase tracking-widest text-muted/70 mb-0.5">
+                                {focus.metric === 'bl_rating' ? 'Delta' : 'Delta /10'}
+                              </p>
+                              <p className={`font-mono text-[11px] tabular-nums ${
+                                deltaValue > 0
+                                  ? 'text-success'
+                                  : deltaValue < 0
+                                    ? 'text-danger'
+                                    : 'text-muted'
+                              }`}>
+                                {formatSigned(deltaValue)}
+                              </p>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Score bar fallback */}
+                        {!showsValueComparison && scorePct != null && (
                           <div className="mb-2">
                             <div className="flex justify-between items-baseline mb-0.5">
-                              <span className="font-mono text-[9px] text-muted/70">Score</span>
-                              <span className="font-mono text-[10px] tabular-nums text-muted">{scorePct}%</span>
+                              <span className="font-mono text-[9px] text-muted/70">Score /10</span>
+                              <span className="font-mono text-[10px] tabular-nums text-muted">{scoreDisplay}</span>
                             </div>
                             <Progress
                               value={scorePct}
@@ -1950,20 +2055,24 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
 
                         <p className="font-mono text-[10px] text-muted">{focus.note}</p>
                         <p className="font-mono text-[10px] text-muted/70 mt-1">
-                          <span className="text-muted/50">Tiltak: </span>{focus.action}
+                          <span className="text-muted/50">Action: </span>{focus.action}
                         </p>
                       </div>
                     )
                   })}
                 </div>
               ) : (
-                <p className="font-mono text-[11px] text-muted">Ingen spillerfokus tilgjengelig.</p>
+                <p className="font-mono text-[11px] text-muted">No player focus available.</p>
               )}
-            </div>
+            </AnalysisSection>
 
-            {/* ── 7. Coach-anbefalinger ──────────────────────────────────── */}
-            <div className="break-inside-avoid mb-3 rounded-xl border border-border/35 bg-surface2/20 p-3.5">
-              <p className="font-mono text-[10px] uppercase tracking-widest text-muted mb-2">Coach-anbefalinger</p>
+            {/* ── 7. Coach Notes ─────────────────────────────────────────── */}
+            <AnalysisSection
+              title="Coach Notes"
+              className="break-inside-avoid mb-3"
+              titleClassName="text-muted"
+              headerClassName="mb-2"
+            >
               {post.coach_recommendations.length > 0 ? (
                 <ol className="space-y-1.5">
                   {post.coach_recommendations.map((recommendation, idx) => (
@@ -1976,8 +2085,9 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                   ))}
                 </ol>
               ) : (
-                <p className="font-mono text-[11px] text-muted">Ingen anbefalinger tilgjengelig.</p>
+                <p className="font-mono text-[11px] text-muted">No recommendations available.</p>
               )}
+            </AnalysisSection>
             </div>
 
           </div>
@@ -2098,7 +2208,6 @@ export function AnalysisDisplay({
   result: AnalyzeResponse
   showCopyReport?: boolean
 }) {
-  const matchTime = result.meta.match_start_time ?? result.meta.match_finished_time
   const homeName = result.teams.home.name || 'Hjem'
   const awayName = result.teams.away.name || 'Borte'
   const isUpcoming = result.meta.match_status === 'upcoming'
@@ -2168,69 +2277,86 @@ export function AnalysisDisplay({
     }
   }, [hasExactLineups, isUpcoming, result.teams, selectedAwayPlayers, selectedHomePlayers])
 
+  const defaultTeams = useMemo(() => {
+    if (!isUpcoming) return result.teams
+    return {
+      home: {
+        ...result.teams.home,
+        players: homePool.filter((player) => getDefaultIds(homePool).has(player.paradise_user_id)),
+      },
+      away: {
+        ...result.teams.away,
+        players: awayPool.filter((player) => getDefaultIds(awayPool).has(player.paradise_user_id)),
+      },
+    }
+  }, [awayPool, homePool, isUpcoming, result.teams])
+
   const liveMapPool = useMemo<LandingMapPool | undefined>(() => {
     if (!isUpcoming) return undefined
     return result.landing?.map_pool
   }, [isUpcoming, result.landing?.map_pool])
 
+  const displayLanding = useMemo(() => {
+    if (!isUpcoming) return result.landing
+    return deriveLandingAnalytics(displayTeams, { mapPool: liveMapPool })
+  }, [displayTeams, isUpcoming, liveMapPool, result.landing])
+
+  const defaultLanding = useMemo(() => {
+    if (!isUpcoming) return result.landing
+    return deriveLandingAnalytics(defaultTeams, { mapPool: liveMapPool })
+  }, [defaultTeams, isUpcoming, liveMapPool, result.landing])
+
   return (
     <div>
-      <div className="mb-5 flex items-baseline justify-between gap-3">
-        <div className="flex items-baseline gap-3">
-          <span className="font-display text-[10px] tracking-widest uppercase text-muted">
-            Kamp
-          </span>
-          <div className="flex items-center gap-2 min-w-0">
-            <TeamLogo name={homeName} logoUrl={result.teams.home.logo_url} tone="home" size="sm" />
-            <span className="font-mono text-accent text-sm truncate">{homeName}</span>
-            <span className="font-mono text-muted/60 text-sm">vs</span>
-            <span className="font-mono text-accent2 text-sm truncate">{awayName}</span>
-            <TeamLogo name={awayName} logoUrl={result.teams.away.logo_url} tone="away" size="sm" />
-          </div>
-          {matchTime && (
-            <span className="font-mono text-[10px] text-muted tabular-nums">
-              {new Date(matchTime).toLocaleString('nb-NO')}
-            </span>
-          )}
+      {showCopyReport && (
+        <div className="mb-4 flex justify-end">
+          <CopyReportButton result={result} />
         </div>
-        {showCopyReport && <CopyReportButton result={result} />}
-      </div>
+      )}
 
       <MetaBar meta={result.meta} />
 
       {isUpcoming ? (
         <>
-          <LineupPicker
-            homeTeamName={homeName}
-            awayTeamName={awayName}
-            homeTeamLogoUrl={result.teams.home.logo_url}
-            awayTeamLogoUrl={result.teams.away.logo_url}
-            homePool={homePool}
-            awayPool={awayPool}
-            selectedHomeIds={selectedHomeIds}
-            selectedAwayIds={selectedAwayIds}
-            lineupSize={lineupSize}
-            onToggleHome={(id) => toggleSelection(setSelectedHomeIds, id)}
-            onToggleAway={(id) => toggleSelection(setSelectedAwayIds, id)}
-          />
-
-          {!hasExactLineups && (
-            <div className="mb-6 rounded border border-warning/40 bg-warning/10 px-3 py-2 font-mono text-[11px] text-warning">
-              Velg nøyaktig {lineupSize} spillere på begge lag for live 5v5-simulering.
-            </div>
+          {displayLanding && defaultLanding && (
+            <UpcomingMatchModules
+              home={displayTeams.home}
+              away={displayTeams.away}
+              defaultHome={defaultTeams.home}
+              defaultAway={defaultTeams.away}
+              landing={displayLanding}
+              defaultLanding={defaultLanding}
+              usingLiveLineup={usingLiveLineup}
+            />
           )}
 
-          <PredictionCard home={displayTeams.home} away={displayTeams.away} />
-          <TeamComparisonBars home={displayTeams.home} away={displayTeams.away} />
-          <div className="mt-6">
-            <MapPoolInsights
-              mapPool={liveMapPool}
-              homeName={homeName}
-              awayName={awayName}
-              homePlayers={result.teams.home.players}
-              awayPlayers={result.teams.away.players}
-            />
-          </div>
+          <details className="mb-6 rounded-xl border border-border/45 bg-surface px-4 py-3">
+            <summary className="cursor-pointer select-none font-display text-[10px] uppercase tracking-[0.2em] text-accent">
+              Lineup simulator
+            </summary>
+            <div className="mt-4">
+              <LineupPicker
+                homeTeamName={homeName}
+                awayTeamName={awayName}
+                homeTeamLogoUrl={result.teams.home.logo_url}
+                awayTeamLogoUrl={result.teams.away.logo_url}
+                homePool={homePool}
+                awayPool={awayPool}
+                selectedHomeIds={selectedHomeIds}
+                selectedAwayIds={selectedAwayIds}
+                lineupSize={lineupSize}
+                onToggleHome={(id) => toggleSelection(setSelectedHomeIds, id)}
+                onToggleAway={(id) => toggleSelection(setSelectedAwayIds, id)}
+              />
+
+              {!hasExactLineups && (
+                <div className="mt-4 rounded border border-warning/40 bg-warning/10 px-3 py-2 font-mono text-[11px] text-warning">
+                  Velg nøyaktig {lineupSize} spillere på begge lag for live 5v5-simulering.
+                </div>
+              )}
+            </div>
+          </details>
+
           <MapPoolDebugPanel
             className="mt-3"
             matchupId={result.matchup_id}

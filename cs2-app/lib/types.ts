@@ -58,6 +58,8 @@ export type PlayerAnalysis = {
   leetify_prior?: number // prior composite proxy 0–1 (if Leetify exists)
   bl_weight?: number    // BL contribution weight used in final score (0–1)
   effective_rounds?: number // recency-weighted rounds used for Bayesian blend
+  bl_rating?: number    // BL R-rating (raw value)
+  bl_rating_baseline?: number // historical BL R-rating baseline
   ci: number            // 90% CI half-width
   rounds: number
   assists: number
@@ -155,6 +157,96 @@ export type LandingAnalytics = {
       avoid_for_away?: string
     }
   }
+  matchup_axes?: Array<{
+    key: 'opening_duel' | 'trade_structure' | 'survival_discipline' | 'entry_pressure' | 'map_leverage'
+    label: string
+    home_value: number
+    away_value: number
+    home_display: string
+    away_display: string
+    confidence: 'low' | 'medium' | 'high'
+    source: 'bl' | 'leetify' | 'combined' | 'derived' | 'insufficient'
+    note?: string
+  }>
+  map_battlefield?: {
+    maps: Array<{
+      map: string
+      home_win_rate?: number
+      away_win_rate?: number
+      home_sample_size: number
+      away_sample_size: number
+      favored: 'home' | 'away' | 'even'
+      confidence: 'low' | 'medium' | 'high'
+      home_display: string
+      away_display: string
+    }>
+    strongest_for_home: string[]
+    weakest_for_home: string[]
+    strongest_for_away: string[]
+    weakest_for_away: string[]
+    veto_flow: Array<{
+      step: 'ban' | 'pick' | 'decider'
+      team: 'home' | 'away' | 'neutral'
+      label: string
+      map: string
+    }>
+  }
+  watchlist?: {
+    home: {
+      initiators: Array<{
+        paradise_user_id: number
+        name: string
+        avatar_url?: string
+        reason: string
+        display_value: string
+      }>
+      form_players: Array<{
+        paradise_user_id: number
+        name: string
+        avatar_url?: string
+        reason: string
+        display_value: string
+      }>
+      risk_players: Array<{
+        paradise_user_id: number
+        name: string
+        avatar_url?: string
+        reason: string
+        display_value: string
+      }>
+    }
+    away: {
+      initiators: Array<{
+        paradise_user_id: number
+        name: string
+        avatar_url?: string
+        reason: string
+        display_value: string
+      }>
+      form_players: Array<{
+        paradise_user_id: number
+        name: string
+        avatar_url?: string
+        reason: string
+        display_value: string
+      }>
+      risk_players: Array<{
+        paradise_user_id: number
+        name: string
+        avatar_url?: string
+        reason: string
+        display_value: string
+      }>
+    }
+  }
+  lineup_delta?: {
+    home_win_pct_delta: number
+    away_win_pct_delta: number
+    opening_edge_delta: number
+    map_leverage_delta: number
+    changed: boolean
+  }
+  game_plan?: string[]
 }
 
 export type MapInsight = {
@@ -252,10 +344,22 @@ export type AnalyzeResponse = {
     }
     late_round_conversion?: {
       summary: string
-      indicators: {
-        clutch_edge_per_map?: number
-        one_v_x_edge?: number
-        explosive_round_edge?: number
+      metrics: {
+        clutch_wins_per_map?: {
+          home: number
+          away: number
+          edge: number
+        }
+        one_v_x_wins_per_map?: {
+          home: number
+          away: number
+          edge: number
+        }
+        explosive_rounds_per_map?: {
+          home: number
+          away: number
+          edge: number
+        }
       }
       caveat: string
     }
@@ -264,8 +368,12 @@ export type AnalyzeResponse = {
         team: 'home' | 'away'
         player_name: string
         trend: 'overperforming' | 'underperforming' | 'stable'
+        metric: 'bl_rating' | 'score'
         note: string
         action: string
+        current_value?: number
+        baseline_value?: number
+        delta_value?: number
         score?: number        // composite 0–1, present in in-match fallback
         score_max?: number    // max score in the match (for progress bar scaling)
         is_relative?: boolean // true = in-match relative fallback (no Leetify baseline)
@@ -304,6 +412,7 @@ export type AnalyzeError = {
 
 export type DivisionMatchSummary = {
   matchup_id: number
+  round_number?: number
   home_team: string
   away_team: string
   home_team_id?: number
@@ -333,6 +442,126 @@ export type MatchSearchResponse = {
   division_id: number
   division_name: string
   matches: MatchSearchHit[]
+  fetched_at: string
+}
+
+// ── Player Profile ────────────────────────────────────────────────────────────
+
+export type PlayerRole = 'entry' | 'support' | 'lurker' | 'awper' | 'igl' | 'hybrid'
+
+export type PerformanceTrendPoint = {
+  matchup_id: number
+  date: string | null
+  score: number
+  kd: number
+  dpr: number
+  map?: string
+  won: boolean | null
+}
+
+export type PlayerMapRecord = {
+  map: string
+  played: number
+  wins: number
+  losses: number
+  win_rate: number
+  avg_kd: number
+  avg_dpr: number
+  avg_kast: number
+  confidence: 'low' | 'medium' | 'high'
+}
+
+export type PlayerProfileResponse = {
+  paradise_user_id: number
+  name: string
+  avatar_url?: string
+  steam64?: string
+  total_rounds: number
+  total_matches: number
+  kd: number
+  kast: number
+  dpr: number
+  hs: number
+  od_rate: number
+  flash_assists_per_round: number | null
+  utility_dmg_per_round: number | null
+  clutch_win_pct: number | null
+  first_death_rate: number | null
+  multi_kills: {
+    k3: number
+    k4: number
+    k5: number
+    k3_per_map: number
+    k4_per_map: number
+    k5_per_map: number
+  } | null
+  side_split: { ct_od: number; t_od: number; verdict: string } | null
+  score: number
+  ci: number
+  role: PlayerRole
+  role_confidence: 'low' | 'medium' | 'high'
+  role_signals: string[]
+  trend: {
+    last5: PerformanceTrendPoint[]
+    last10: PerformanceTrendPoint[]
+    last20: PerformanceTrendPoint[]
+  }
+  map_records: PlayerMapRecord[]
+  leetify?: LeetifyData
+  recent_matches?: LeetifyRecentMatch[]
+  data_source: DataSource
+  fetched_at: string
+}
+
+export type RosterMember = {
+  paradise_user_id: number
+  name: string
+  avatar_url?: string
+  steam64?: string
+  role: PlayerRole | null
+  score: number | null
+  rounds: number
+}
+
+export type TeamMapPoolEntry = {
+  map: string
+  played: number
+  wins: number
+  losses: number
+  win_rate: number
+  ct_rounds: number | null
+  t_rounds: number | null
+  confidence: 'low' | 'medium' | 'high'
+}
+
+export type TeamMatchResult = {
+  matchup_id: number
+  date: string | null
+  opponent_name: string
+  opponent_id: number
+  home_or_away: 'home' | 'away'
+  won: boolean | null
+  home_score: number | null
+  away_score: number | null
+  map?: string
+}
+
+export type TeamProfileResponse = {
+  team_id: number
+  team_name: string
+  logo_url?: string
+  total_matches: number
+  wins: number
+  losses: number
+  win_rate: number
+  map_pool: TeamMapPoolEntry[]
+  roster: RosterMember[]
+  role_distribution: Partial<Record<PlayerRole, number>>
+  composition_notes: string[]
+  playstyle_summary: string
+  match_history: TeamMatchResult[]
+  economy_notes: string[]
+  veto_patterns: null
   fetched_at: string
 }
 
