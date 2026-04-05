@@ -1,52 +1,88 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# cs2-app
 
-## Getting Started
+Next.js-applikasjonen for CS2-analyse. Appen støtter både upcoming-match analyse og post-match etteranalyse basert på Bedriftsligaen-data og Leetify-data.
 
-First, run the development server:
+## Kom i gang
+
+Kjør utviklingsserveren:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Åpne [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## CS2 Map Pool Config
-
-Map/veto analytics only include maps from the configured active-duty pool.
-
-Set this in `.env.local`:
+Nyttige kommandoer:
 
 ```bash
+npx tsc --noEmit
+npm run build
+```
+
+## Miljøvariabler
+
+Sett disse i `.env.local`:
+
+```bash
+BL_TOKEN=...
+LEETIFY_TOKEN=...
 CS2_ACTIVE_DUTY_MAPS=de_anubis,de_ancient,de_dust2,de_inferno,de_mirage,de_nuke,de_overpass
 ```
 
-Notes:
-- Comma-separated list.
-- Supports canonical names (`de_mirage`) and aliases (`mirage`, `dust2`, `dust ii`).
-- You can include new rotation maps directly (for example `de_train`) without code changes.
-- If unset or invalid, the default pool above is used.
+`CS2_ACTIVE_DUTY_MAPS` brukes av map/veto-analysen.
 
-## Learn More
+Notater:
+- kommaseparert liste
+- støtter både canonical names (`de_mirage`) og aliaser (`mirage`, `dust2`)
+- hvis variabelen mangler eller er ugyldig, brukes standard pool
 
-To learn more about Next.js, take a look at the following resources:
+## Viktige konsepter
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### Intern score
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+`player.score` er appens komposittscore på `0–1`, men skal vises som `0–10` i UI.
 
-## Deploy on Vercel
+Formel:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```text
+0.30 × DPR/100
++ 0.25 × KAST
++ 0.20 × Opening duel win rate
++ 0.15 × min(K/D / 2, 1.0)
++ 0.10 × HS rate
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Ved upcoming-kamper kan scoren blandes med Leetify-prior avhengig av hvor mye BL-data vi har.
+
+### Post-match analyse
+
+Post-match-visningen inneholder:
+- `Tactical Control`
+- `Economy`
+- `Teamplay Control`
+- `Round Stability`
+- `Late-round Impact`
+- `Player Development`
+- `Coach Notes`
+
+Notater:
+- `Tactical Control` er fullbredde øverst
+- de øvrige kortene bruker kolonne-layout for tettere pakking
+- `Late-round Impact` viser både per-lag verdi og edge
+- `Player Development` bruker BL `R-rating` mot historisk BL-baseline når det er tilgjengelig
+
+### R-rating vs score
+
+Det finnes nå to ulike signaler i appen:
+- `Score /10`: intern komposittscore brukt for rangering og lagstyrke
+- `R-rating`: råverdi fra BL API, brukt i post-match spillerutvikling når historisk BL-baseline finnes
+
+`R-rating` skal ikke vises som en kunstig prosent eller `0–100`.
+
+## Filområder
+
+- [app](/Users/msvarlia/Developer/cs2_analytics/cs2_data_analytics/cs2-app/app): routes og sider
+- [components](/Users/msvarlia/Developer/cs2_analytics/cs2_data_analytics/cs2-app/components): UI-komponenter
+- [lib/analyze-service.ts](/Users/msvarlia/Developer/cs2_analytics/cs2_data_analytics/cs2-app/lib/analyze-service.ts): hovedpipeline for analyse
+- [lib/post-analysis.ts](/Users/msvarlia/Developer/cs2_analytics/cs2_data_analytics/cs2-app/lib/post-analysis.ts): etteranalyse og tekst/copy
+- [lib/aggregation.ts](/Users/msvarlia/Developer/cs2_analytics/cs2_data_analytics/cs2-app/lib/aggregation.ts): scoringsmodell

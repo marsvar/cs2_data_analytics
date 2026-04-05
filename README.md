@@ -1,39 +1,48 @@
 # CS2 Data Analytics — Sopra Steria aSync
 
-Analyse- og visualiseringsverktøy for CS2-kamper i [Bedriftsligaen](https://app.bedriftsligaen.no), med støtte for datainnhenting fra Bedriftsligaen-APIet og Leetify.
+Analyse- og visualiseringsverktøy for CS2-kamper i [Bedriftsligaen](https://app.bedriftsligaen.no), bygget rundt en Next.js-app som kombinerer BL-data og Leetify-data for pre-match og post-match innsikt.
 
----
+## Prosjektstruktur
 
-## Hva er dette?
+- [cs2-app](/Users/msvarlia/Developer/cs2_analytics/cs2_data_analytics/cs2-app): hovedapplikasjonen i Next.js
+- `scripts/` og øvrige hjelpefiler: datainnhenting, gamle eksperimenter og støtteverktøy
 
-Et verktøy som kombinerer data fra to kilder for å analysere kampprestasjoner:
+For lokal utvikling og miljøvariabler, se [cs2-app/README.md](/Users/msvarlia/Developer/cs2_analytics/cs2_data_analytics/cs2-app/README.md).
+
+## Datakilder
 
 | Kilde | Hva | Bruk |
 |-------|-----|------|
-| **Bedriftsligaen API** | Matchstats per spiller: kills, deaths, KAST, DPR, opening duels, clutches | Kontekst-spesifikke data fra BL-kamper |
-| **Leetify API** | Percentile-ratings (aim, positioning, utility, clutch, opening), CT/T-side split | Statistisk prior fra lang matchmaking-historikk |
+| **Bedriftsligaen API** | Matchstats per spiller: kills, deaths, KAST, DPR, opening duels, clutches, survival, trade | Kampkontekst og historisk BL-baseline |
+| **Leetify API** | Aim, positioning, utility, opening, CT/T-opening split, matchmaking-historikk | Prior og formsignal, særlig for upcoming-kamper |
 
----
+## Scoringsmodell
 
-## Metodikk
+### Komposittscore
 
-### Sammensatt score (0–10)
-```
+Intern spillerscore lagres som `0–1`, men vises normalt som `0–10` i UI.
+
+```text
 Score = 0.30 × DPR/100
-      + 0.25 × KAST%
-      + 0.20 × Opening duel win%
+      + 0.25 × KAST
+      + 0.20 × Opening duel win rate
       + 0.15 × min(K/D / 2, 1.0)
-      + 0.10 × HS%
+      + 0.10 × HS rate
 ```
 
-### Bayesiansk vekting (BL vs Leetify)
-```
+### Bayesiansk vekting
+
+Ved upcoming-kamper blends BL-signalet med Leetify-prior:
+
+```text
 BL_weight = min(effective_rounds × 1.5 / (effective_rounds × 1.5 + 150), 0.75)
-posterior  = BL_weight × BL_stat + (1 − BL_weight) × Leetify_prior
+final_score = BL_weight × BL_score + (1 − BL_weight) × Leetify_prior
 ```
-Leetify fungerer som *prior belief* (hva vi forventer fra lang historikk), mens BL-data er *evidens* fra rett kontekstnivå. Vekten capper på 75 % — aldri rent BL.
+
+Det betyr at Leetify fungerer som prior, mens BL-data fungerer som kontekstnær evidens. BL kan aldri utgjøre mer enn 75 % alene.
 
 ### Rekency-vekting
+
 | Kilde | Vekt |
 |-------|------|
 | Kvalifisering R1 | 0.5 |
@@ -43,83 +52,49 @@ Leetify fungerer som *prior belief* (hva vi forventer fra lang historikk), mens 
 | BL Runde 2 | 1.0 |
 | BL Runde 3 | 1.5 |
 
-### Konfidensintervall (90 %)
-Bootstrapped CI basert på rundeutvalg per metrikk. Typisk ±0.70–0.90 med 150+ runder; ±1.0–1.5 med under 80 runder.
+## Analyseflater
 
----
+### Pre-match
 
-## Nåværende innhold
+- lineup-simulering
+- map pool og veto-hint
+- team comparison og spillerkort
+- early-round og formmoduler
 
-### `match-analysis.html`
-Statisk HTML-rapport for **Runde 4 · aSync vs NAS — Boarding Group A** (29. mars 2026).
+### Post-match
 
-Inneholder:
-- Power-ranking med konfidensintervall-visualisering for alle 8+8 spillere
-- Bayesiansk kombinert score (BL + Leetify) med rundekilde-badges
-- CT vs T-side opening duel split (Leetify, 5 aSync-spillere)
-- Full spillertabell med 6 kamper per lag (3 kvalifisering + 3 BL)
-- Lag-sammenligningsbars og radar-chart (Chart.js)
-- Taktiske innsikter basert på aggregerte data
+- resultatsammendrag og map story
+- `Tactical Control` som fullbredde toppseksjon
+- `Economy`, `Teamplay Control`, `Round Stability`, `Late-round Impact`, `Player Development` og `Coach Notes`
+- `Player Development` bruker nå BL `R-rating` mot historisk BL-baseline når data finnes
+- `Late-round Impact` viser per-lag verdier og edge, i stedet for bare en løs differanse
 
-Åpnes direkte i nettleser, eller med `.claude/launch.json`-konfigurasjonen (Python HTTP-server, port 3000).
-
----
-
-## API-info
+## API-notater
 
 ### Bedriftsligaen
+
+```text
+Base URL: https://app.bedriftsligaen.no/api/paradise/v2
+Auth: Bearer <token>
 ```
-Base URL:  https://app.bedriftsligaen.no/api/paradise/v2
-Auth:      Bearer <token>
 
 Nyttige endepunkt:
-  GET /matchup?division_id={id}&limit=50          # Alle matchups i en divisjon
-  GET /matchup/{id}/stats                         # Spillerstatistikk for en kamp
-  GET /competition/{id}/divisions                 # Alle divisjoner i en sesong
-  GET /competition/{id}/signups?limit=200         # Lag påmeldt en sesong
-  GET /user/{id}                                  # Spillerprofil inkl. Steam ID
-```
-
-Nøkkeldata per spiller per matchup:
-`kills`, `deaths`, `kd_ratio`, `kast_ratio`, `damage_per_round`, `headshot_ratio`,
-`opening_duels_won`, `opening_duels_lost`, `firstkills`, `clutches_won`, `trade_kills`,
-`rounds_played`, `survival_ratio`
+- `GET /matchup?division_id={id}&limit=50`
+- `GET /matchup/{id}/stats`
+- `GET /competition/{id}/divisions`
+- `GET /competition/{id}/signups?limit=200`
+- `GET /user/{id}`
 
 ### Leetify
-```
-Base URL:  https://api-public.cs-prod.leetify.com
-Auth:      Bearer <token>
 
-  GET /v3/profile?steam64_id={steam64_id}    # Spillerprofil med ratings og stats
+```text
+Base URL: https://api-public.cs-prod.leetify.com
+Auth: Bearer <token>
 ```
 
-Nøkkeldata:
-- `rating.aim`, `rating.positioning`, `rating.utility` — percentiler (0–100)
+Nyttige data:
+- `rating.aim`, `rating.positioning`, `rating.utility`
 - `stats.ct_opening_duel_success_percentage`, `stats.t_opening_duel_success_percentage`
-- `recent_matches[]` — siste kamper med leetify_rating, reaction_time_ms, osv.
+- `recent_matches[]`
 
-**NB:** Leetify rate-limiter aggressivt (~5 req/min uten registered app key). Bruk `sleep 3` mellom kall.
-
----
-
-## Kjent kontekst (Vår 2026)
-
-| | Verdi |
-|---|---|
-| Sesong | Bedriftsligaen i CS2 — Vår 2026 |
-| Competition ID | 1220 |
-| Divisjon (aSync) | 1138 — 2. divisjon avd. A |
-| Kvalifisering (aSync) | 1031 — 2. Divisjon |
-| Team ID (aSync) | 21374 |
-| Team ID (NAS) | 23104 |
-
----
-
-## Neste steg
-
-- [ ] Backend (Node/Python) som gjør live API-oppslag per kamp-ID
-- [ ] Søkegrensesnitt: slå opp en kamp og få analyse automatisk
-- [ ] Lagre historikk og bygge opp databasen over tid
-- [ ] Demo-parsing (`.dem`-filer via `awpy`) for posisjonell data og CT/T-split direkte fra BL
-- [ ] ELO-justert vekting (stats mot sterke lag teller mer)
-- [ ] Automatisk oppdatering av `match-analysis.html` før hver kamprunde
+Leetify rate-limiter aggressivt, så kall bør gjøres med forsiktighet.
