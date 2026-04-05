@@ -603,10 +603,12 @@ function PlayerRow({
   player,
   matchStatus,
   tone,
+  teamId,
 }: {
   player: PlayerAnalysis
   matchStatus: AnalyzeResponse['meta']['match_status']
   tone: 'home' | 'away'
+  teamId?: number
 }) {
   const [expanded, setExpanded] = useState(false)
   const displayScore = (player.score * 10).toFixed(2)
@@ -654,7 +656,7 @@ function PlayerRow({
               size="xs"
             />
             <Link
-              href={`/player/${player.paradise_user_id}`}
+              href={teamId ? `/player/${player.paradise_user_id}?team_id=${teamId}` : `/player/${player.paradise_user_id}`}
               className="font-mono text-xs text-text hover:text-accent hover:underline underline-offset-2 truncate transition-colors"
               onClick={(e) => e.stopPropagation()}
             >
@@ -781,6 +783,7 @@ function TeamCard({
             player={p}
             matchStatus={matchStatus}
             tone={tone}
+            teamId={team.id || undefined}
           />
         ))}
       </div>

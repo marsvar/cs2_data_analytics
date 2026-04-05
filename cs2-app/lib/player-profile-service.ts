@@ -9,9 +9,12 @@ import {
   getUserSteamId,
   getUserTeamId,
   getTeamMatchups,
+  getTeamPlayers,
   getMatchupStats,
   getMatchupMeta,
   getUserImageUrl,
+  getCompetitions,
+  getCompetitionSignupTeams,
 } from '@/lib/bl-api'
 import { fetchProfiles } from '@/lib/leetify-api'
 import { compositeScore, blWeight, ci90 } from '@/lib/aggregation'
@@ -42,29 +45,91 @@ const profileCache = new Map<number, CachedEntry>()
 const BL_TOKEN = process.env.BL_TOKEN ?? ''
 const LEETIFY_TOKEN = process.env.LEETIFY_TOKEN ?? ''
 
+/**
+ * Find a player's team ID by scanning competition signups.
+ * Uses COMPETITION_ID env var if set, otherwise scans recent CS2 competitions.
+ * Returns null if not found.
+ */
+async function discoverTeamId(
+  userId: number,
+  token: string,
+): Promise<number | null> {
+  // Build list of competition IDs to scan (env vars first, then dynamic)
+  const competitionIdsToScan: number[] = []
+
+  const envCompId = process.env.COMPETITION_ID ? parseInt(process.env.COMPETITION_ID) : NaN
+  if (!isNaN(envCompId) && envCompId > 0) {
+    competitionIdsToScan.push(envCompId)
+  }
+
+  if (competitionIdsToScan.length === 0) {
+    // Dynamically find recent CS2 competitions
+    const competitions = await getCompetitions(token)
+    const recentCs2 = competitions
+      .filter((c) => {
+        const n = c.name?.toLowerCase() ?? ''
+        return n.includes('bedriftsligaen') || n.includes('counter-strike') || n.includes('cs2')
+      })
+      .sort((a, b) => b.id - a.id)
+      .slice(0, 3)
+    competitionIdsToScan.push(...recentCs2.map((c) => c.id))
+  }
+
+  for (const compId of competitionIdsToScan) {
+    const signups = await getCompetitionSignupTeams(compId, token)
+    const teamIds = signups.map((s) => s.team_id)
+    if (teamIds.length === 0) continue
+
+    // Parallel-check all teams for the user
+    const results = await Promise.allSettled(
+      teamIds.map(async (teamId) => {
+        const players = await getTeamPlayers(teamId, token)
+        if (players.some((p) => p.userId === userId)) return teamId
+        return null
+      }),
+    )
+
+    for (const r of results) {
+      if (r.status === 'fulfilled' && r.value != null) return r.value
+    }
+  }
+  return null
+}
+
 export async function buildPlayerProfile(
   userId: number,
+  hintTeamId?: number,
 ): Promise<PlayerProfileResponse> {
   // Cache hit
   const cached = profileCache.get(userId)
   if (cached && cached.expiresAt > Date.now()) return cached.value
 
-  // 1. Get Steam64 and team ID from BL user record
-  const [steam64, teamId, avatarUrl] = await Promise.all([
+  // 1. Get Steam64 and avatar in parallel
+  const [steam64, avatarUrl] = await Promise.all([
     getUserSteamId(userId, BL_TOKEN),
-    getUserTeamId(userId, BL_TOKEN),
     getUserImageUrl(userId, BL_TOKEN),
   ])
 
-  if (!teamId) {
+  // 2. Resolve team ID (fast path → fallback chain)
+  let resolvedTeamId: number | null = hintTeamId ?? null
+
+  if (!resolvedTeamId) {
+    // Try /user/{id} fields first (usually returns null but free to try)
+    resolvedTeamId = await getUserTeamId(userId, BL_TOKEN)
+  }
+
+  if (!resolvedTeamId) {
+    // Try scanning recent competitions for the player
+    resolvedTeamId = await discoverTeamId(userId, BL_TOKEN)
+  }
+
+  if (!resolvedTeamId) {
     throw new PlayerProfileError('Spiller har ingen lagdata', 404)
   }
 
-  // 2. Fetch all team matchups
-  const allMatchups = await getTeamMatchups(teamId, BL_TOKEN)
-  const finishedMatchups = allMatchups.filter(
-    (m) => m.finished_at && m.id > 0,
-  )
+  // 3. Fetch all team matchups
+  const allMatchups = await getTeamMatchups(resolvedTeamId, BL_TOKEN)
+  const finishedMatchups = allMatchups.filter((m) => m.finished_at && m.id > 0)
 
   if (finishedMatchups.length === 0) {
     // Return a minimal profile when no matches have been played
