@@ -203,6 +203,11 @@ export async function buildTeamProfile(
       role: roleResult.role,
       score: Math.round(finalScore * 10000) / 10000,
       rounds: acc.rounds,
+      kd: Math.round(kd * 1000) / 1000,
+      dpr: Math.round(dpr * 10) / 10,
+      kast: Math.round(kast * 10000) / 10000,
+      hs: Math.round(hs * 10000) / 10000,
+      od_rate: Math.round(odRate * 10000) / 10000,
     })
   }
 
@@ -216,11 +221,11 @@ export async function buildTeamProfile(
   }
 
   const compositionNotes: string[] = []
-  if ((roleDist.entry ?? 0) >= 2) compositionNotes.push('2 entry-spillere — aggressiv åpningsstil')
-  if (!roleDist.awper) compositionNotes.push('Ingen dedikert AWPer identifisert')
-  if (!roleDist.support && rosterMembers.length >= 4) compositionNotes.push('Ingen tydelig support-rolle')
-  if ((roleDist.igl ?? 0) >= 1) compositionNotes.push('IGL-profil identifisert')
-  if (rosterMembers.length < 5) compositionNotes.push(`Kun ${rosterMembers.length} spillere med kampdata`)
+  if ((roleDist.entry ?? 0) >= 2) compositionNotes.push('2 entry fraggers — aggressive opening style')
+  if (!roleDist.awper) compositionNotes.push('No dedicated AWPer identified')
+  if (!roleDist.support && rosterMembers.length >= 4) compositionNotes.push('No clear support role')
+  if ((roleDist.igl ?? 0) >= 1) compositionNotes.push('IGL profile identified')
+  if (rosterMembers.length < 5) compositionNotes.push(`Only ${rosterMembers.length} players with match data`)
 
   // 8. Map pool from matchup metadata
   type MapGroup = { wins: number; losses: number; count: number }
@@ -310,24 +315,24 @@ export async function buildTeamProfile(
     const avgFirstkillRate = allPlayers.reduce((s, p) => s + (p.rounds > 0 ? p.firstkills / p.rounds : 0), 0) / allPlayers.length
     const avgKast = allPlayers.reduce((s, p) => s + (p.rounds > 0 ? p.weightedKast / p.rounds : 0), 0) / allPlayers.length
 
-    if (avgOdRate > 0.52) economyNotes.push(`Høy OD-rate (${(avgOdRate * 100).toFixed(0)}%) — aggressiv opening-økonomi`)
-    else if (avgOdRate < 0.44) economyNotes.push(`Lav OD-rate (${(avgOdRate * 100).toFixed(0)}%) — defensiv spillestil`)
+    if (avgOdRate > 0.52) economyNotes.push(`High OD rate (${(avgOdRate * 100).toFixed(0)}%) — aggressive opening economy`)
+    else if (avgOdRate < 0.44) economyNotes.push(`Low OD rate (${(avgOdRate * 100).toFixed(0)}%) — defensive playstyle`)
 
-    if (avgFirstkillRate > 0.08) economyNotes.push(`Høy first-kill rate (${(avgFirstkillRate * 100).toFixed(1)}%) — sterke eco-runder`)
-    if (avgKast > 0.74) economyNotes.push(`Høy KAST (${(avgKast * 100).toFixed(0)}%) — effektiv rounds utnyttelse`)
+    if (avgFirstkillRate > 0.08) economyNotes.push(`High first-kill rate (${(avgFirstkillRate * 100).toFixed(1)}%) — strong eco rounds`)
+    if (avgKast > 0.74) economyNotes.push(`High KAST (${(avgKast * 100).toFixed(0)}%) — efficient round utilisation`)
   }
 
   // 11. Playstyle summary
   const dominantRole = Object.entries(roleDist).sort(([, a], [, b]) => b - a)[0]?.[0] as PlayerRole | undefined
   let playstyleSummary = ''
-  if (winRate > 0.65) playstyleSummary = `Dominerende lag med ${(winRate * 100).toFixed(0)}% vinnprosent. `
-  else if (winRate > 0.5) playstyleSummary = `Konsistent lag over .500. `
-  else playstyleSummary = `Lag under utvikling. `
+  if (winRate > 0.65) playstyleSummary = `Dominant team at ${(winRate * 100).toFixed(0)}% win rate. `
+  else if (winRate > 0.5) playstyleSummary = `Consistent team above .500. `
+  else playstyleSummary = `Developing team. `
 
-  if (dominantRole === 'entry') playstyleSummary += 'Aggressiv, entry-fokusert spillestil.'
-  else if (dominantRole === 'support') playstyleSummary += 'Team-orientert spillestil med sterk utility-bruk.'
-  else if (dominantRole === 'awper') playstyleSummary += 'Presisjonsfokusert med AWP-spesialister.'
-  else playstyleSummary += 'Allsidig spillestil.'
+  if (dominantRole === 'entry') playstyleSummary += 'Aggressive, entry-focused playstyle.'
+  else if (dominantRole === 'support') playstyleSummary += 'Team-oriented playstyle with strong utility usage.'
+  else if (dominantRole === 'awper') playstyleSummary += 'Precision-focused with AWP specialists.'
+  else playstyleSummary += 'Versatile playstyle.'
 
   const profile: TeamProfileResponse = {
     team_id: teamId,

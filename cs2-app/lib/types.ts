@@ -521,6 +521,11 @@ export type RosterMember = {
   role: PlayerRole | null
   score: number | null
   rounds: number
+  kd: number | null
+  dpr: number | null
+  kast: number | null
+  hs: number | null
+  od_rate: number | null
 }
 
 export type TeamMapPoolEntry = {

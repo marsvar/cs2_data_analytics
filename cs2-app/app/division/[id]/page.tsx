@@ -71,17 +71,17 @@ function StandingsTable({ result }: { result: DivisionResponse }) {
   return (
     <div className="mb-6 fx-rise fx-rise-d1">
       <div className="flex items-center gap-2 mb-3 px-1">
-        <span className="font-display text-[10px] uppercase tracking-[0.2em] text-accent">Tabell</span>
+        <span className="font-display text-[10px] uppercase tracking-[0.2em] text-accent">Standings</span>
         {!hasScores && (
-          <span className="font-mono text-[9px] text-muted/50">· score ikke tilgjengelig</span>
+          <span className="font-mono text-[9px] text-muted/50">· scores not available</span>
         )}
       </div>
       <div className="bg-surface/92 border border-border/40 rounded-xl overflow-hidden">
         {/* Header */}
         <div className="grid grid-cols-[1.5rem_1fr_2.5rem_2.5rem_2.5rem] gap-3 px-4 py-2 border-b border-border/25 font-mono text-[9px] uppercase tracking-widest text-muted/60">
           <span>#</span>
-          <span>Lag</span>
-          <span className="text-center">K</span>
+          <span>Team</span>
+          <span className="text-center">P</span>
           <span className="text-center text-success/70">V</span>
           <span className="text-center text-danger/70">T</span>
         </div>
@@ -126,17 +126,17 @@ function buildHomeHref(divisionId?: string | number): string {
 }
 
 function statusPill(status: DivisionMatchSummary['status']): { text: string; cls: string } {
-  if (status === 'upcoming') return { text: 'Kommende', cls: 'text-accent border-accent/30 bg-accent/8' }
+  if (status === 'upcoming') return { text: 'Upcoming', cls: 'text-accent border-accent/30 bg-accent/8' }
   if (status === 'live') return { text: 'Live', cls: 'text-warning border-warning/30 bg-warning/8' }
-  if (status === 'completed') return { text: 'Ferdig', cls: 'text-success border-success/30 bg-success/8' }
-  return { text: 'Ukjent', cls: 'text-muted border-border/40 bg-surface2/40' }
+  if (status === 'completed') return { text: 'Finished', cls: 'text-success border-success/30 bg-success/8' }
+  return { text: 'Unknown', cls: 'text-muted border-border/40 bg-surface2/40' }
 }
 
 function dateLabel(value: string | null): string {
   if (!value) return '–'
   const d = new Date(value)
   if (Number.isNaN(d.getTime())) return '–'
-  return new Intl.DateTimeFormat('nb-NO', {
+  return new Intl.DateTimeFormat('en-GB', {
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
@@ -234,7 +234,7 @@ function MatchCard({
           }
           className="shrink-0 font-mono text-[10px] uppercase tracking-widest text-accent/80 hover:text-accent border border-accent/20 hover:border-accent/50 bg-accent/5 hover:bg-accent/10 px-2.5 py-1.5 rounded transition-colors"
         >
-          {section === 'played' ? 'Analyse' : 'Forhåndsvis'} →
+          {section === 'played' ? 'Analysis' : 'Preview'} →
         </Link>
       </div>
 
@@ -257,7 +257,7 @@ function ErrorCard({
       <div className="atlas-topline" />
       <div className="max-w-5xl mx-auto px-6 md:px-10 py-12">
         <Link href={buildHomeHref(divisionId)} className="font-mono text-[11px] uppercase tracking-widest text-muted hover:text-text">
-          ← Til søk
+          ← Back to search
         </Link>
         <div className="mt-5 bg-surface border border-danger/40 rounded-lg p-5">
           <h1 className="font-display text-sm tracking-widest uppercase text-danger mb-2">{title}</h1>
@@ -277,8 +277,8 @@ export default async function DivisionPage({ params, searchParams }: DivisionPag
   if (!divisionRef) {
     return (
       <ErrorCard
-        title="Ugyldig divisjon"
-        detail="Fant ikke divisjonen. Gå tilbake til forsiden og velg en kjent divisjon."
+        title="Invalid division"
+        detail="Division not found. Go back to the home page and select a known division."
         divisionId={resolvedSearchParams?.division}
       />
     )
@@ -299,12 +299,12 @@ export default async function DivisionPage({ params, searchParams }: DivisionPag
           <div className="mb-7 fx-rise">
             <div className="flex items-center justify-between gap-3 mb-5">
               <Link href={buildHomeHref(selectedDivisionId)} className="font-mono text-[11px] uppercase tracking-widest text-muted hover:text-text">
-                ← Til søk
+                ← Back to search
               </Link>
-              <span className="font-mono text-[10px] uppercase tracking-widest text-muted/70">Kampoversikt</span>
+              <span className="font-mono text-[10px] uppercase tracking-widest text-muted/70">Match Overview</span>
             </div>
             <div className="bg-surface/85 border border-border/45 rounded-xl px-5 py-4">
-              <p className="font-display text-[11px] uppercase tracking-[0.2em] text-accent mb-1.5">Divisjon</p>
+              <p className="font-display text-[11px] uppercase tracking-[0.2em] text-accent mb-1.5">Division</p>
               <h1 className="font-display text-2xl md:text-3xl leading-none tracking-tight">{title}</h1>
             </div>
           </div>
@@ -315,15 +315,15 @@ export default async function DivisionPage({ params, searchParams }: DivisionPag
           {/* Match lists */}
           {result.matches.length === 0 && (
             <div className="bg-surface/92 border border-border/40 rounded-xl px-4 py-5 font-mono text-xs text-muted">
-              Ingen kamper funnet.
+              No matches found.
             </div>
           )}
 
           {notPlayedMatches.length > 0 && (
             <div className="mb-6 fx-rise fx-rise-d2">
               <div className="flex items-center gap-2 mb-3 px-1">
-                <span className="font-display text-[10px] uppercase tracking-[0.2em] text-accent">Kommende kamper</span>
-                <span className="font-mono text-[9px] text-muted/50">· {notPlayedMatches.length} kamp{notPlayedMatches.length !== 1 ? 'er' : ''}</span>
+                <span className="font-display text-[10px] uppercase tracking-[0.2em] text-accent">Upcoming Matches</span>
+                <span className="font-mono text-[9px] text-muted/50">· {notPlayedMatches.length} match{notPlayedMatches.length !== 1 ? 'es' : ''}</span>
               </div>
               <div className="bg-surface/92 border border-border/40 rounded-xl overflow-hidden">
                 {notPlayedMatches.map((match, i) => (
@@ -343,8 +343,8 @@ export default async function DivisionPage({ params, searchParams }: DivisionPag
           {playedMatches.length > 0 && (
             <div className="fx-rise fx-rise-d3">
               <div className="flex items-center gap-2 mb-3 px-1">
-                <span className="font-display text-[10px] uppercase tracking-[0.2em] text-success/80">Ferdigspilte kamper</span>
-                <span className="font-mono text-[9px] text-muted/50">· {playedMatches.length} kamp{playedMatches.length !== 1 ? 'er' : ''}</span>
+                <span className="font-display text-[10px] uppercase tracking-[0.2em] text-success/80">Played Matches</span>
+                <span className="font-mono text-[9px] text-muted/50">· {playedMatches.length} match{playedMatches.length !== 1 ? 'es' : ''}</span>
               </div>
               <div className="bg-surface/92 border border-border/40 rounded-xl overflow-hidden">
                 {playedMatches.map((match, i) => (
@@ -359,12 +359,12 @@ export default async function DivisionPage({ params, searchParams }: DivisionPag
     )
   } catch (err) {
     if (err instanceof DivisionServiceError) {
-      return <ErrorCard title="Kunne ikke hente divisjon" detail={err.message} divisionId={selectedDivisionId} />
+      return <ErrorCard title="Could not load division" detail={err.message} divisionId={selectedDivisionId} />
     }
     return (
       <ErrorCard
-        title="Uventet feil"
-        detail="Det oppstod en feil ved lasting av divisjonen. Prøv igjen om litt."
+        title="Unexpected error"
+        detail="An error occurred while loading the division. Please try again."
         divisionId={selectedDivisionId}
       />
     )

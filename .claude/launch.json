@@ -4,7 +4,7 @@
     {
       "name": "cs2-app",
       "runtimeExecutable": "sh",
-      "runtimeArgs": ["-c", "export PATH=/opt/homebrew/bin:$PATH && cd /Users/msvarlia/Developer/cs2_analytics/cs2_data_analytics/.claude/worktrees/affectionate-mestorf/cs2-app && npm run dev"],
+      "runtimeArgs": ["-c", "export PATH=/opt/homebrew/bin:$PATH && cd /Users/msvarlia/Developer/cs2_analytics/cs2_data_analytics/cs2-app && npm run dev"],
       "port": 3000,
       "autoPort": true
     },

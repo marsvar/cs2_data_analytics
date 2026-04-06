@@ -14,7 +14,7 @@ function ErrorCard({ title, detail }: { title: string; detail: string }) {
       <div className="atlas-topline" />
       <div className="max-w-5xl mx-auto px-6 md:px-10 py-12">
         <Link href="/" className="font-mono text-[11px] uppercase tracking-widest text-muted hover:text-text transition-colors">
-          ← Til søk
+          ← Back to search
         </Link>
         <div className="mt-5 bg-surface border border-danger/40 rounded-lg p-5">
           <h1 className="font-display text-sm tracking-widest uppercase text-danger mb-2">{title}</h1>
@@ -32,8 +32,8 @@ export default async function TeamPage({ params }: TeamPageProps) {
   if (!Number.isInteger(teamId) || teamId <= 0) {
     return (
       <ErrorCard
-        title="Ugyldig lag-ID"
-        detail="Fant ikke laget. Sjekk URL-en og prøv igjen."
+        title="Invalid team ID"
+        detail="Team not found. Check the URL and try again."
       />
     )
   }
@@ -47,9 +47,9 @@ export default async function TeamPage({ params }: TeamPageProps) {
         <div className="max-w-5xl mx-auto px-6 md:px-10 py-10">
           <div className="flex items-center justify-between gap-3 mb-6 fx-rise">
             <Link href="/" className="font-mono text-[11px] uppercase tracking-widest text-muted hover:text-text transition-colors">
-              ← Til søk
+              ← Back to search
             </Link>
-            <span className="font-mono text-[10px] uppercase tracking-widest text-muted/60">Lagprofil</span>
+            <span className="font-mono text-[10px] uppercase tracking-widest text-muted/60">Team Profile</span>
           </div>
           <TeamProfileDisplay profile={profile} />
         </div>
@@ -60,7 +60,7 @@ export default async function TeamPage({ params }: TeamPageProps) {
       if (err.status === 404) {
         return (
           <ErrorCard
-            title="Lag ikke funnet"
+            title="Team not found"
             detail={err.message}
           />
         )
@@ -68,8 +68,8 @@ export default async function TeamPage({ params }: TeamPageProps) {
     }
     return (
       <ErrorCard
-        title="Uventet feil"
-        detail="Det oppstod en feil ved lasting av lagprofilen. Prøv igjen om litt."
+        title="Unexpected error"
+        detail="An error occurred while loading the team profile. Please try again."
       />
     )
   }

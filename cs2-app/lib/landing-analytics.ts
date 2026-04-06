@@ -256,30 +256,30 @@ function buildGamePlan(params: {
   const lines: string[] = []
 
   if (favored === 'even') {
-    lines.push(`Åpningen ser jevn ut. Første fem rifle-runder vil trolig bestemme tempoet mellom ${homeName} og ${awayName}.`)
+    lines.push(`The opening looks even. The first five rifle rounds will likely set the tempo between ${homeName} and ${awayName}.`)
   } else {
     const favoredName = favored === 'home' ? homeName : awayName
-    lines.push(`${favoredName} har den klareste pre-match edge akkurat nå, men ${confidenceNote.toLowerCase()}.`)
+    lines.push(`${favoredName} holds the clearest pre-match edge right now, but ${confidenceNote.toLowerCase()}.`)
   }
 
   const structuralSignals = [
-    { delta: tradeDelta, label: 'trade-strukturen' },
-    { delta: survivalDelta, label: 'survival-disiplinen' },
-    { delta: entryDelta, label: 'entry-trykket' },
+    { delta: tradeDelta, label: 'trade structure' },
+    { delta: survivalDelta, label: 'survival discipline' },
+    { delta: entryDelta, label: 'entry pressure' },
   ].sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))
   const strongestSignal = structuralSignals[0]
   if (Math.abs(strongestSignal.delta) >= 0.01) {
     const owner = strongestSignal.delta > 0 ? homeName : awayName
-    lines.push(`${owner} bør prøve å gjøre kampen om til et spørsmål om ${strongestSignal.label}, der de har den tydeligste fordelen.`)
+    lines.push(`${owner} should try to make the match a question of ${strongestSignal.label}, where they hold the clearest advantage.`)
   }
 
   const bestMap = mapBattlefield?.maps.find((map) => map.favored === 'home')
   const dangerMap = mapBattlefield?.maps.find((map) => map.favored === 'away')
   if (bestMap || dangerMap) {
     const parts: string[] = []
-    if (bestMap) parts.push(`${homeName} liker ${formatMapName(bestMap.map)}`)
-    if (dangerMap) parts.push(`${awayName} får oftest kampbildet sitt på ${formatMapName(dangerMap.map)}`)
-    lines.push(parts.join(' mens '))
+    if (bestMap) parts.push(`${homeName} favours ${formatMapName(bestMap.map)}`)
+    if (dangerMap) parts.push(`${awayName} most often gets their preferred map picture on ${formatMapName(dangerMap.map)}`)
+    lines.push(parts.join(' while '))
   }
 
   return lines.slice(0, 3)
@@ -308,11 +308,11 @@ export function deriveLandingAnalytics(
   const highUncertainty = allPlayers.some((player) => player.ci > (player.score * 10) / 2)
 
   const confidenceReasons: string[] = []
-  if (lowSample) confidenceReasons.push('<50 runder per spiller')
-  if (highUncertainty) confidenceReasons.push('høy CI på nøkkelspillere')
+  if (lowSample) confidenceReasons.push('<50 rounds per player')
+  if (highUncertainty) confidenceReasons.push('high CI on key players')
   const confidenceNote = confidenceReasons.length > 0
-    ? `Lav konfidans: ${confidenceReasons.join(', ')}`
-    : 'Moderat konfidans: stabilt datagrunnlag.'
+    ? `Low confidence: ${confidenceReasons.join(', ')}`
+    : 'Moderate confidence: stable data baseline.'
 
   const homeLeetifyOd = averageLeetifyOd(teams.home.players)
   const awayLeetifyOd = averageLeetifyOd(teams.away.players)
@@ -397,7 +397,7 @@ export function deriveLandingAnalytics(
       source: homeTradeKillRate != null && awayTradeKillRate != null ? 'bl' : 'insufficient',
       note: homeTradeRecovery != null && awayTradeRecovery != null
         ? `Recovery ${signedPercentPoints(homeTradeRecovery - awayTradeRecovery)}`
-        : 'Trade-kill-rate per runde',
+        : 'Trade-kill rate per round',
     },
     {
       key: 'survival_discipline',
@@ -438,8 +438,8 @@ export function deriveLandingAnalytics(
       label: 'Map leverage',
       home_value: clamp(50 + averageMapEdge * 100, 5, 95),
       away_value: clamp(50 - averageMapEdge * 100, 5, 95),
-      home_display: mapBattlefield?.strongest_for_home[0] ? formatMapName(mapBattlefield.strongest_for_home[0]) : 'Ingen tydelig kant',
-      away_display: mapBattlefield?.strongest_for_away[0] ? formatMapName(mapBattlefield.strongest_for_away[0]) : 'Ingen tydelig kant',
+      home_display: mapBattlefield?.strongest_for_home[0] ? formatMapName(mapBattlefield.strongest_for_home[0]) : 'No clear edge',
+      away_display: mapBattlefield?.strongest_for_away[0] ? formatMapName(mapBattlefield.strongest_for_away[0]) : 'No clear edge',
       confidence: confidenceFromSignals({
         source: mapBattlefield != null ? 'derived' : 'insufficient',
         coverage: mapBattlefield != null && mapBattlefield.maps.length > 0 ? 1 : 0,
@@ -538,8 +538,8 @@ export function deriveLandingAnalytics(
       away: buildWatchBuckets(teams.away.players),
     },
     game_plan: buildGamePlan({
-      homeName: teams.home.name || 'Hjem',
-      awayName: teams.away.name || 'Borte',
+      homeName: teams.home.name || 'Home',
+      awayName: teams.away.name || 'Away',
       favored,
       confidenceNote,
       mapBattlefield,

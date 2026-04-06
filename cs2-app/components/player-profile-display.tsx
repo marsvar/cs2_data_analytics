@@ -28,7 +28,7 @@ function dateShort(iso: string | null): string {
   if (!iso) return '—'
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return '—'
-  return new Intl.DateTimeFormat('nb-NO', { day: '2-digit', month: '2-digit' }).format(d)
+  return new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: '2-digit' }).format(d)
 }
 
 function mapColor(winRate: number) {
@@ -41,7 +41,7 @@ function ConfBadge({ conf }: { conf: 'low' | 'medium' | 'high' }) {
   const cls = conf === 'high' ? 'text-success/70 border-success/20' : conf === 'medium' ? 'text-warning/70 border-warning/20' : 'text-muted/60 border-border/30'
   return (
     <span className={`font-mono text-[8px] uppercase tracking-widest border px-1 py-0.5 rounded ${cls}`}>
-      {conf === 'high' ? 'god data' : conf === 'medium' ? 'ok data' : 'lite data'}
+      {conf === 'high' ? 'good data' : conf === 'medium' ? 'ok data' : 'low data'}
     </span>
   )
 }
@@ -95,14 +95,14 @@ function TrendSection({ trend }: { trend: PlayerProfileResponse['trend'] }) {
 
   if (chartData.length === 0) {
     return (
-      <div className="px-4 py-5 font-mono text-xs text-muted/60">Ingen trend-data tilgjengelig</div>
+      <div className="px-4 py-5 font-mono text-xs text-muted/60">No trend data available</div>
     )
   }
 
   return (
     <div>
       <div className="flex items-center justify-between gap-3 mb-3 px-4 pt-4">
-        <span className="font-display text-[10px] uppercase tracking-[0.2em] text-accent">Ytelsesutvikling</span>
+        <span className="font-display text-[10px] uppercase tracking-[0.2em] text-accent">Performance Trend</span>
         <div className="flex gap-1">
           {(['last5', 'last10', 'last20'] as TrendWindow[]).map((w) => (
             <button
@@ -176,7 +176,7 @@ function MapSection({ records }: { records: PlayerProfileResponse['map_records']
   return (
     <div className="px-1 pb-4 pt-4">
       <div className="px-3 mb-3">
-        <span className="font-display text-[10px] uppercase tracking-[0.2em] text-accent">Per-kart</span>
+        <span className="font-display text-[10px] uppercase tracking-[0.2em] text-accent">Per Map</span>
       </div>
       <ResponsiveContainer width="100%" height={Math.max(120, chartData.length * 28)}>
         <BarChart data={chartData} layout="vertical" margin={{ top: 0, right: 50, bottom: 0, left: 10 }}>
@@ -238,7 +238,7 @@ export function PlayerProfileDisplay({ profile }: { profile: PlayerProfileRespon
                 </span>
                 {profile.role_confidence !== 'high' && (
                   <span className="font-mono text-[8px] text-muted/50 border border-border/20 px-1.5 py-0.5 rounded">
-                    {profile.role_confidence === 'low' ? 'lite data' : 'medium konfidens'}
+                    {profile.role_confidence === 'low' ? 'low data' : 'medium confidence'}
                   </span>
                 )}
               </div>
@@ -259,7 +259,7 @@ export function PlayerProfileDisplay({ profile }: { profile: PlayerProfileRespon
                   </span>
                 )}
                 <span className="font-mono text-[9px] text-muted/50">
-                  {profile.total_matches} {profile.total_matches === 1 ? 'kamp' : 'kamper'} · {profile.total_rounds} runder
+                  {profile.total_matches} {profile.total_matches === 1 ? 'match' : 'matches'} · {profile.total_rounds} rounds
                 </span>
               </div>
             </div>
@@ -309,7 +309,7 @@ export function PlayerProfileDisplay({ profile }: { profile: PlayerProfileRespon
         {/* ── Section 4: Stat detail grid ── */}
         <div className="bg-surface/92 border border-border/40 rounded-xl overflow-hidden fx-rise fx-rise-d2">
           <div className="px-4 pt-4 pb-2">
-            <span className="font-display text-[10px] uppercase tracking-[0.2em] text-accent">Detaljerte stats</span>
+            <span className="font-display text-[10px] uppercase tracking-[0.2em] text-accent">Detailed Stats</span>
           </div>
           <div className="px-4 pb-4 space-y-3">
 
@@ -374,7 +374,7 @@ export function PlayerProfileDisplay({ profile }: { profile: PlayerProfileRespon
         {/* ── Section 5: Radar ── */}
         <div className="bg-surface/92 border border-border/40 rounded-xl overflow-hidden fx-rise fx-rise-d2">
           <div className="px-4 pt-4 pb-2">
-            <span className="font-display text-[10px] uppercase tracking-[0.2em] text-accent">Rolleprofil</span>
+            <span className="font-display text-[10px] uppercase tracking-[0.2em] text-accent">Role Profile</span>
           </div>
           <div className="flex justify-center pb-4">
             <RadarChart player={playerAnalysis} size={160} />
@@ -459,7 +459,7 @@ export function PlayerProfileDisplay({ profile }: { profile: PlayerProfileRespon
       {/* ── Back navigation ── */}
       <div className="pt-2 pb-4">
         <Link href="/" className="font-mono text-[11px] uppercase tracking-widest text-muted hover:text-text transition-colors">
-          ← Tilbake til søk
+          ← Back to search
         </Link>
       </div>
 

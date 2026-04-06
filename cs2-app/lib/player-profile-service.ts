@@ -57,7 +57,7 @@ export async function buildPlayerProfile(
   ])
 
   if (!teamId) {
-    throw new PlayerProfileError('Spiller har ingen lagdata', 404)
+    throw new PlayerProfileError('Player has no team data', 404)
   }
 
   // 2. Fetch all team matchups
@@ -102,11 +102,15 @@ export async function buildPlayerProfile(
   // 3. Fetch stats + meta for all finished matchups in parallel
   const results = await Promise.allSettled(
     finishedMatchups.map(async (m) => {
-      const [stats, meta] = await Promise.all([
-        getMatchupStats(m.id, BL_TOKEN),
-        getMatchupMeta(m.id, BL_TOKEN),
-      ])
-      return { matchupId: m.id, stats, meta, finishedAt: m.finished_at }
+      try {
+        const [stats, meta] = await Promise.all([
+          getMatchupStats(m.id, BL_TOKEN),
+          getMatchupMeta(m.id, BL_TOKEN),
+        ])
+        return { matchupId: m.id, stats, meta, finishedAt: m.finished_at }
+      } catch {
+        return null
+      }
     }),
   )
 
@@ -124,7 +128,7 @@ export async function buildPlayerProfile(
   let displayName = ''
 
   for (const r of results) {
-    if (r.status !== 'fulfilled') continue
+    if (r.status !== 'fulfilled' || r.value === null) continue
     const { matchupId, stats, meta, finishedAt } = r.value
 
     const allPlayers = [...stats.home_players, ...stats.away_players]
@@ -153,7 +157,7 @@ export async function buildPlayerProfile(
   }
 
   if (matchEntries.length === 0) {
-    throw new PlayerProfileError('Ingen kampdata funnet for spilleren', 404)
+    throw new PlayerProfileError('No match data found for this player', 404)
   }
 
   // 5. Fetch Leetify profile if we have a Steam64
@@ -186,15 +190,15 @@ export async function buildPlayerProfile(
   let totalK5 = 0
 
   for (const { player } of matchEntries) {
-    totalKills += player.kills
-    totalDeaths += player.deaths
-    totalAssists += player.assists
-    totalDamage += player.damage
-    totalOdWon += player.opening_kills
-    totalOdAttempts += player.opening_attempts
-    weightedKast += player.kast * player.rounds
-    weightedHs += player.hs * player.rounds
-    totalRounds += player.rounds
+    totalKills += player.kills ?? 0
+    totalDeaths += player.deaths ?? 0
+    totalAssists += player.assists ?? 0
+    totalDamage += player.damage ?? 0
+    totalOdWon += player.opening_kills ?? 0
+    totalOdAttempts += player.opening_attempts ?? 0
+    weightedKast += (player.kast ?? 0) * (player.rounds ?? 0)
+    weightedHs += (player.hs ?? 0) * (player.rounds ?? 0)
+    totalRounds += player.rounds ?? 0
 
     const ext = player.bl_extended
     if (ext) {
@@ -314,10 +318,10 @@ export async function buildPlayerProfile(
     const tOd = leetifyData.t_od
     const delta = Math.abs(ctOd - tOd)
     const verdict = delta < 0.05
-      ? 'Balansert CT/T-split'
+      ? 'Balanced CT/T split'
       : ctOd > tOd
-        ? `CT-sterk (${(ctOd * 100).toFixed(0)}% vs ${(tOd * 100).toFixed(0)}%)`
-        : `T-sterk (${(tOd * 100).toFixed(0)}% vs ${(ctOd * 100).toFixed(0)}%)`
+        ? `CT-strong (${(ctOd * 100).toFixed(0)}% vs ${(tOd * 100).toFixed(0)}%)`
+        : `T-strong (${(tOd * 100).toFixed(0)}% vs ${(ctOd * 100).toFixed(0)}%)`
     sideSplit = { ct_od: ctOd, t_od: tOd, verdict }
   }
 

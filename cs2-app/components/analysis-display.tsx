@@ -62,7 +62,7 @@ function formatSigned(value: number, digits = 2): string {
   return `${value >= 0 ? '+' : ''}${value.toFixed(digits)}`
 }
 
-const osloDateTimeFormatter = new Intl.DateTimeFormat('nb-NO', {
+const osloDateTimeFormatter = new Intl.DateTimeFormat('en-GB', {
   timeZone: 'Europe/Oslo',
   day: '2-digit',
   month: '2-digit',
@@ -228,7 +228,7 @@ function TrendBadge({ player }: { player: PlayerAnalysis }) {
   return (
     <span
       className="text-[8px] font-mono text-muted tabular-nums border border-border/45 bg-surface2/55 rounded px-1 py-px shrink-0"
-      title="På linje med karrieresnitt"
+      title="On par with career average"
     >
       → 0.0
     </span>
@@ -256,7 +256,7 @@ function toPercent(value: number): string {
 }
 
 function edgeDirection(delta: number, homeLabel: string, awayLabel: string): string {
-  if (Math.abs(delta) < 0.0001) return 'Jevnt'
+  if (Math.abs(delta) < 0.0001) return 'Even'
   return delta > 0 ? homeLabel : awayLabel
 }
 
@@ -366,7 +366,7 @@ function EarlyStrengthCard({
 
       <div className="space-y-2">
         <div>
-          <p className="font-mono text-[9px] uppercase tracking-widest text-success/70 mb-1.5">Sterkest i opening</p>
+          <p className="font-mono text-[9px] uppercase tracking-widest text-success/70 mb-1.5">Strongest in opening</p>
           {strengths.length > 0 ? (
             <div className="space-y-1.5">
               {strengths.map((player) => {
@@ -452,7 +452,7 @@ function FormGraph({
       </div>
 
       {data.length === 0 ? (
-        <p className="font-mono text-[10px] text-muted">Mangler Leetify-data for å beregne formavvik.</p>
+        <p className="font-mono text-[10px] text-muted">Missing Leetify data to compute form deviation.</p>
       ) : (
         <div className="space-y-1.5">
           {data.map((player) => {
@@ -512,8 +512,8 @@ function EarlyRoundAndFormPanel({
 
   return (
     <AnalysisSection
-      title="Åpningsdueller & Form"
-      description="Denne seksjonen går ned på spillernivå. Den viser hvem som oftest vinner første kontakt, og hvem som spiller over eller under sin egen baseline akkurat nå."
+      title="Opening Duels & Form"
+      description="This section drills down to the player level. It shows who most often wins first contact, and who is currently playing above or below their own baseline."
       className="mt-6 mb-6 border-border/45 bg-surface p-4"
       headerRight={(
         <div className="flex items-center gap-2 shrink-0">
@@ -532,21 +532,21 @@ function EarlyRoundAndFormPanel({
       <div className="rounded-lg border border-border/30 bg-surface2/15 p-3 mb-4">
         <div className="mb-2 flex items-center justify-between gap-3">
           <p className="font-mono text-[9px] uppercase tracking-widest text-muted/50">
-            Lagveid åpningsduell-rate
+            Team-weighted opening duel rate
           </p>
           <span className={`font-mono text-[9px] ${
             Math.abs(edgeDelta) < 0.03 ? 'text-muted' : edgeDelta > 0 ? 'text-accent' : 'text-accent2'
           }`}>
             {Math.abs(edgeDelta * 100) < 3
               ? 'Likt fordelt'
-              : `${edgeDelta > 0 ? home.name || 'Hjem' : away.name || 'Borte'} +${Math.abs(edgeDelta * 100).toFixed(1)} pp`}
+              : `${edgeDelta > 0 ? home.name || 'Home' : away.name || 'Away'} +${Math.abs(edgeDelta * 100).toFixed(1)} pp`}
           </span>
         </div>
         <HeadToHeadBar
           homeShare={homeTeamOd * 100}
           awayShare={awayTeamOd * 100}
-          homeLabel={`${home.name || 'Hjem'} ${toPercent(homeTeamOd)}`}
-          awayLabel={`${toPercent(awayTeamOd)} ${away.name || 'Borte'}`}
+          homeLabel={`${home.name || 'Home'} ${toPercent(homeTeamOd)}`}
+          awayLabel={`${toPercent(awayTeamOd)} ${away.name || 'Away'}`}
           centerLabel="weighted opening"
         />
       </div>
@@ -555,14 +555,14 @@ function EarlyRoundAndFormPanel({
         <div className="rounded-lg border border-border/30 bg-surface2/15 p-3">
           <p className="font-mono text-[9px] uppercase tracking-widest text-muted/50 mb-1.5">Hva du ser her</p>
           <p className="font-mono text-[11px] text-text/90">
-            Opening-delen er spillerfokusert og viser hvem som setter første kontakt oftest. Den supplerer
-            <span className="text-text"> Pre-match Control</span>, som allerede dekker trade, survival og entry-press på lagnivå.
+            The opening section is player-focused and shows who most often makes first contact. It supplements
+            <span className="text-text"> Pre-match Control</span>, which already covers trade, survival and entry pressure at the team level.
           </p>
         </div>
         <div className="rounded-lg border border-border/30 bg-surface2/15 p-3">
           <p className="font-mono text-[9px] uppercase tracking-widest text-muted/50 mb-1.5">Formlesning</p>
           <p className="font-mono text-[11px] text-text/90">
-            Formgrafen viser avvik mot Leetify-baseline. Positiv verdi betyr at spilleren kommer inn i kampen over sitt normale nivå, negativ verdi betyr at profilen er kaldere enn vanlig.
+            The form graph shows deviation from the Leetify baseline. A positive value means the player enters the match above their normal level; a negative value means the profile is colder than usual.
           </p>
         </div>
       </div>
@@ -571,26 +571,26 @@ function EarlyRoundAndFormPanel({
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-4">
         <div>
           <p className="font-mono text-[9px] uppercase tracking-widest text-muted/50 mb-2 px-0.5">
-            {home.name || 'Hjem'} · Åpningsdueller per spiller
+            {home.name || 'Home'} · Opening duels per player
           </p>
-            <EarlyStrengthCard title={home.name || 'Hjem'} accentClass="text-accent" players={homeEarly} />
+            <EarlyStrengthCard title={home.name || 'Home'} accentClass="text-accent" players={homeEarly} />
         </div>
         <div>
           <p className="font-mono text-[9px] uppercase tracking-widest text-muted/50 mb-2 px-0.5">
-            {away.name || 'Borte'} · Åpningsdueller per spiller
+            {away.name || 'Away'} · Opening duels per player
           </p>
-            <EarlyStrengthCard title={away.name || 'Borte'} accentClass="text-accent2" players={awayEarly} />
+            <EarlyStrengthCard title={away.name || 'Away'} accentClass="text-accent2" players={awayEarly} />
         </div>
       </div>
 
       {/* Form vs career baseline */}
       <div>
         <p className="font-mono text-[9px] uppercase tracking-widest text-muted/50 mb-2 px-0.5">
-          Form vs karrieresnitt (Leetify) — positiv betyr over normalt nivå
+          Form vs career average (Leetify) — positive means above normal level
         </p>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-          <FormGraph title={home.name || 'Hjem'} accentClass="text-accent" data={homeForm} />
-          <FormGraph title={away.name || 'Borte'} accentClass="text-accent2" data={awayForm} />
+          <FormGraph title={home.name || 'Home'} accentClass="text-accent" data={homeForm} />
+          <FormGraph title={away.name || 'Away'} accentClass="text-accent2" data={awayForm} />
         </div>
       </div>
     </AnalysisSection>
@@ -795,13 +795,13 @@ function MetaBar({ meta }: { meta: AnalyzeResponse['meta'] }) {
     <div className="flex flex-wrap gap-x-5 gap-y-1 text-[10px] font-mono text-muted bg-surface rounded-md px-4 py-2.5 border border-border/40 mb-6">
       <span>
         <span className="text-text/70">Status</span>{' '}
-        <span className="tabular-nums">{meta.match_status === 'played' ? 'Spilt' : 'Kommende'}</span>
+        <span className="tabular-nums">{meta.match_status === 'played' ? 'Played' : 'Upcoming'}</span>
       </span>
       <span>
-        <span className="text-text/70">Runder</span>{' '}
+        <span className="text-text/70">Rounds</span>{' '}
         <span className="tabular-nums">{meta.rounds_fetched}</span>
       </span>
-      <span title={meta.leetify_count === 0 && meta.leetify_attempts > 0 ? '404 — ingen Leetify-profiler funnet for disse spillerne' : undefined}>
+      <span title={meta.leetify_count === 0 && meta.leetify_attempts > 0 ? '404 — no Leetify profiles found for these players' : undefined}>
         <span className="text-text/70">Leetify</span>{' '}
         <span className={`tabular-nums ${meta.leetify_count === 0 && meta.leetify_attempts > 0 ? 'text-warning' : ''}`}>
           {meta.leetify_count}/{meta.leetify_attempts}
@@ -855,16 +855,16 @@ function CopyReportButton({ result }: { result: AnalyzeResponse }) {
 
 function teamLabel(result: AnalyzeResponse, side: 'home' | 'away'): string {
   return side === 'home'
-    ? (result.teams.home.name || 'Hjem')
-    : (result.teams.away.name || 'Borte')
+    ? (result.teams.home.name || 'Home')
+    : (result.teams.away.name || 'Away')
 }
 
 function winnerLabel(result: AnalyzeResponse, winner?: 'home' | 'away' | 'draw' | 'unknown'): string {
   const resolved = winner ?? result.result_summary?.winner ?? 'unknown'
   if (resolved === 'home') return teamLabel(result, 'home')
   if (resolved === 'away') return teamLabel(result, 'away')
-  if (resolved === 'draw') return 'Uavgjort'
-  return 'Ukjent'
+  if (resolved === 'draw') return 'Draw'
+  return 'Unknown'
 }
 
 function signed(value: number, suffix = ''): string {
@@ -1134,7 +1134,7 @@ function SectionWinner({
   if (homeWins === awayWins) {
     return (
       <Badge variant="outline" className="font-mono text-[9px] uppercase tracking-widest text-muted border-border/50 px-1.5 py-0.5 h-auto rounded">
-        Jevnt
+        Even
       </Badge>
     )
   }
@@ -1180,29 +1180,29 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
   )
   const completeness = mapsPlayed?.completeness ?? 'missing'
   const completionLabel =
-    completeness === 'full' ? 'Komplett data' : completeness === 'partial' ? 'Delvis data' : 'Mangler data'
+    completeness === 'full' ? 'Full data' : completeness === 'partial' ? 'Partial data' : 'Missing data'
   const scoreLabel = (
     resultSummary?.home_score != null &&
     resultSummary?.away_score != null
   )
     ? `${resultSummary.home_score}-${resultSummary.away_score}`
-    : 'Ukjent'
+    : 'Unknown'
   const finishedLabel = resultSummary?.finished_at
     ? formatOsloDateTime(resultSummary.finished_at)
-    : 'Ukjent tidspunkt'
+    : 'Unknown time'
 
   return (
     <section className="mb-6 rounded-xl border border-accent/30 bg-gradient-to-b from-surface to-surface2/15 p-4 md:p-5">
       <div className="flex items-center justify-between gap-3 mb-5">
-        <h3 className="font-display text-[10px] uppercase tracking-widest text-accent">Etteranalyse</h3>
+        <h3 className="font-display text-[10px] uppercase tracking-widest text-accent">Post-match Analysis</h3>
         <span className="font-mono text-[9px] uppercase tracking-widest rounded border border-accent/40 text-accent bg-accent/10 px-2 py-1.5">
-          Spilt kamp
+          Played match
         </span>
       </div>
 
       <div className="rounded-xl border border-border/40 bg-gradient-to-br from-surface2/55 via-surface to-surface p-4 mb-4">
         <div className="flex items-center justify-between gap-3 mb-3.5">
-          <p className="font-mono text-[10px] uppercase tracking-widest text-muted">Resultat & kampkontekst</p>
+          <p className="font-mono text-[10px] uppercase tracking-widest text-muted">Result & match context</p>
           <div className="flex items-center gap-2 flex-wrap justify-end">
             <span className={`font-mono text-[9px] uppercase tracking-widest rounded border px-2 py-1.5 ${completenessBadgeClass(completeness)}`}>
               {completionLabel}
@@ -2208,8 +2208,8 @@ export function AnalysisDisplay({
   result: AnalyzeResponse
   showCopyReport?: boolean
 }) {
-  const homeName = result.teams.home.name || 'Hjem'
-  const awayName = result.teams.away.name || 'Borte'
+  const homeName = result.teams.home.name || 'Home'
+  const awayName = result.teams.away.name || 'Away'
   const isUpcoming = result.meta.match_status === 'upcoming'
 
   const lineupSize = result.simulation?.lineup_size ?? 5
@@ -2351,7 +2351,7 @@ export function AnalysisDisplay({
 
               {!hasExactLineups && (
                 <div className="mt-4 rounded border border-warning/40 bg-warning/10 px-3 py-2 font-mono text-[11px] text-warning">
-                  Velg nøyaktig {lineupSize} spillere på begge lag for live 5v5-simulering.
+                  Select exactly {lineupSize} players on both teams for live 5v5 simulation.
                 </div>
               )}
             </div>

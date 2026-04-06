@@ -1,4 +1,4 @@
-import { getDivisionMatchups } from '@/lib/bl-api'
+import { getDivisionMatchups, getCompetitionDivisions } from '@/lib/bl-api'
 import { normalizeBlImageUrl } from '@/lib/bl-image-url'
 import { findDivisionPreset } from '@/lib/divisions'
 import { inferDivisionStatus, phaseFromDivisionStatus } from '@/lib/match-phase'
@@ -63,7 +63,7 @@ function teamName(raw: DivisionMatchupRaw, index: 0 | 1): string {
   const fallback = raw.signups?.[index]?.team?.name
   if (fallback && fallback.trim().length > 0) return fallback
 
-  return 'Ukjent lag'
+  return 'Unknown team'
 }
 
 function teamId(raw: DivisionMatchupRaw, index: 0 | 1): number | undefined {
@@ -162,9 +162,21 @@ export async function getDivisionOverview(divisionId: number): Promise<DivisionR
     })
     .sort(sortMatches)
 
+  let divisionName: string | undefined = findDivisionPreset(divisionId)?.name
+  if (!divisionName) {
+    try {
+      const competitionId = Number(process.env.COMPETITION_ID ?? '1220')
+      const divisions = await getCompetitionDivisions(competitionId, blToken)
+      const match = divisions.find((d) => d.id === divisionId)
+      if (match?.name) divisionName = match.name
+    } catch {
+      // best-effort — leave undefined
+    }
+  }
+
   return {
     division_id: divisionId,
-    division_name: findDivisionPreset(divisionId)?.name,
+    division_name: divisionName,
     matches,
     fetched_at: new Date().toISOString(),
   }
