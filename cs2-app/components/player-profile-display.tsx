@@ -16,7 +16,10 @@ import {
 } from 'recharts'
 import { PlayerAvatar } from '@/components/identity-badge'
 import { RadarChart } from '@/components/radar-chart'
+import { StatCard } from '@/components/ui/stat-card'
+import { SectionLabel } from '@/components/ui/section-label'
 import { ROLE_META_PROFILE } from '@/lib/detect-role'
+import { CHART_TOOLTIP_STYLE, CHART_LABEL_STYLE, CHART_ITEM_STYLE, AXIS_TICK_PROPS } from '@/lib/chart-config'
 import type { PlayerProfileResponse, PerformanceTrendPoint } from '@/lib/types'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -43,16 +46,6 @@ function ConfBadge({ conf }: { conf: 'low' | 'medium' | 'high' }) {
     <span className={`font-mono text-[8px] uppercase tracking-widest border px-1 py-0.5 rounded ${cls}`}>
       {conf === 'high' ? 'god data' : conf === 'medium' ? 'ok data' : 'lite data'}
     </span>
-  )
-}
-
-function StatCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
-  return (
-    <div className="bg-surface2/50 border border-border/25 rounded-lg px-3 py-2.5 min-w-0">
-      <div className="font-mono text-[9px] uppercase tracking-widest text-muted/60 mb-1 truncate">{label}</div>
-      <div className="font-display text-xl tabular-nums text-text">{value}</div>
-      {sub && <div className="font-mono text-[9px] text-muted/50 mt-0.5">{sub}</div>}
-    </div>
   )
 }
 
@@ -95,14 +88,14 @@ function TrendSection({ trend }: { trend: PlayerProfileResponse['trend'] }) {
 
   if (chartData.length === 0) {
     return (
-      <div className="px-4 py-5 font-mono text-xs text-muted/60">Ingen trend-data tilgjengelig</div>
+      <div className="px-5 py-5 font-mono text-xs text-muted/60">Ingen trend-data tilgjengelig</div>
     )
   }
 
   return (
     <div>
-      <div className="flex items-center justify-between gap-3 mb-3 px-4 pt-4">
-        <span className="font-display text-[10px] uppercase tracking-[0.2em] text-accent">Ytelsesutvikling</span>
+      <div className="section-header flex items-center justify-between gap-3">
+        <SectionLabel>Ytelsesutvikling</SectionLabel>
         <div className="flex gap-1">
           {(['last5', 'last10', 'last20'] as TrendWindow[]).map((w) => (
             <button
@@ -110,7 +103,7 @@ function TrendSection({ trend }: { trend: PlayerProfileResponse['trend'] }) {
               onClick={() => setWindow(w)}
               className={`font-mono text-[9px] uppercase tracking-widest px-2 py-1 rounded border transition-colors ${
                 window === w
-                  ? 'border-accent/50 text-accent bg-accent/8'
+                  ? 'border-accent/50 text-accent bg-accent/10'
                   : 'border-border/30 text-muted/60 hover:text-text'
               }`}
             >
@@ -119,25 +112,16 @@ function TrendSection({ trend }: { trend: PlayerProfileResponse['trend'] }) {
           ))}
         </div>
       </div>
-      <div className="px-1 pb-4">
+      <div className="px-1 pb-4 pt-3">
         <ResponsiveContainer width="100%" height={140}>
           <LineChart data={chartData} margin={{ top: 4, right: 12, bottom: 4, left: -24 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" opacity={0.3} />
-            <XAxis
-              dataKey="label"
-              tick={{ fontSize: 9, fontFamily: 'var(--font-mono)', fill: 'var(--color-muted)' }}
-              axisLine={false}
-              tickLine={false}
-            />
-            <YAxis
-              tick={{ fontSize: 9, fontFamily: 'var(--font-mono)', fill: 'var(--color-muted)' }}
-              axisLine={false}
-              tickLine={false}
-            />
+            <XAxis dataKey="label" tick={AXIS_TICK_PROPS} axisLine={false} tickLine={false} />
+            <YAxis tick={AXIS_TICK_PROPS} axisLine={false} tickLine={false} />
             <Tooltip
-              contentStyle={{ background: 'var(--color-surface2)', border: '1px solid var(--color-border)', borderRadius: 6, fontSize: 10, fontFamily: 'var(--font-mono)' }}
-              labelStyle={{ color: 'var(--color-text)', marginBottom: 2 }}
-              itemStyle={{ color: 'var(--color-muted)' }}
+              contentStyle={CHART_TOOLTIP_STYLE}
+              labelStyle={CHART_LABEL_STYLE}
+              itemStyle={CHART_ITEM_STYLE}
               formatter={(value: number, name: string) => [value, name === 'score' ? 'Score (/10)' : 'K/D']}
             />
             <Line type="monotone" dataKey="score" stroke="var(--color-accent)" strokeWidth={1.5} dot={{ r: 3, fill: 'var(--color-accent)' }} name="score" />
@@ -163,7 +147,7 @@ function TrendSection({ trend }: { trend: PlayerProfileResponse['trend'] }) {
 
 function MapSection({ records }: { records: PlayerProfileResponse['map_records'] }) {
   if (records.length === 0) {
-    return <div className="px-4 py-5 font-mono text-xs text-muted/60">Ingen kartdata tilgjengelig</div>
+    return <div className="px-5 py-5 font-mono text-xs text-muted/60">Ingen kartdata tilgjengelig</div>
   }
 
   const chartData = records.slice(0, 8).map((r) => ({
@@ -174,27 +158,29 @@ function MapSection({ records }: { records: PlayerProfileResponse['map_records']
   }))
 
   return (
-    <div className="px-1 pb-4 pt-4">
-      <div className="px-3 mb-3">
-        <span className="font-display text-[10px] uppercase tracking-[0.2em] text-accent">Per-kart</span>
+    <div className="pb-4 pt-0">
+      <div className="section-header mb-3">
+        <SectionLabel>Per-kart</SectionLabel>
       </div>
-      <ResponsiveContainer width="100%" height={Math.max(120, chartData.length * 28)}>
-        <BarChart data={chartData} layout="vertical" margin={{ top: 0, right: 50, bottom: 0, left: 10 }}>
-          <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 9, fontFamily: 'var(--font-mono)', fill: 'var(--color-muted)' }} axisLine={false} tickLine={false} tickFormatter={(v) => `${v}%`} />
-          <YAxis type="category" dataKey="map" tick={{ fontSize: 9, fontFamily: 'var(--font-mono)', fill: 'var(--color-muted)' }} axisLine={false} tickLine={false} width={52} />
-          <Tooltip
-            contentStyle={{ background: 'var(--color-surface2)', border: '1px solid var(--color-border)', borderRadius: 6, fontSize: 10, fontFamily: 'var(--font-mono)' }}
-            formatter={(value: number) => [`${value}%`, 'Vinnrate']}
-          />
-          <Bar dataKey="win_rate" radius={[0, 3, 3, 0]}>
-            {chartData.map((entry, i) => (
-              <Cell key={i} fill={mapColor(entry.win_rate / 100)} />
-            ))}
-          </Bar>
-        </BarChart>
-      </ResponsiveContainer>
+      <div className="px-1">
+        <ResponsiveContainer width="100%" height={Math.max(120, chartData.length * 28)}>
+          <BarChart data={chartData} layout="vertical" margin={{ top: 0, right: 50, bottom: 0, left: 10 }}>
+            <XAxis type="number" domain={[0, 100]} tick={AXIS_TICK_PROPS} axisLine={false} tickLine={false} tickFormatter={(v) => `${v}%`} />
+            <YAxis type="category" dataKey="map" tick={AXIS_TICK_PROPS} axisLine={false} tickLine={false} width={52} />
+            <Tooltip
+              contentStyle={CHART_TOOLTIP_STYLE}
+              formatter={(value: number) => [`${value}%`, 'Vinnrate']}
+            />
+            <Bar dataKey="win_rate" radius={[0, 3, 3, 0]}>
+              {chartData.map((entry, i) => (
+                <Cell key={i} fill={mapColor(entry.win_rate / 100)} />
+              ))}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
       {/* W/L records */}
-      <div className="mt-3 px-3 space-y-1">
+      <div className="mt-3 px-4 space-y-1">
         {records.slice(0, 8).map((r) => (
           <div key={r.map} className="flex items-center justify-between gap-2">
             <span className="font-mono text-[9px] text-muted/60 w-20 truncate">{r.map.replace('de_', '')}</span>
@@ -224,7 +210,7 @@ export function PlayerProfileDisplay({ profile }: { profile: PlayerProfileRespon
     <div className="space-y-4">
 
       {/* ── Section 1: Hero ── */}
-      <div className="bg-surface/92 border border-border/40 rounded-xl overflow-hidden fx-rise">
+      <div className="card-1 overflow-hidden fx-rise">
         <div className="px-5 py-5">
           <div className="flex items-start gap-4">
             <PlayerAvatar name={profile.name} imageUrl={profile.avatar_url} tone="neutral" size="md" className="shrink-0" />
@@ -266,7 +252,7 @@ export function PlayerProfileDisplay({ profile }: { profile: PlayerProfileRespon
             {/* Composite score */}
             <div className="shrink-0 text-right">
               <div className="font-display text-3xl tabular-nums leading-none text-text">{scoreDisplay}</div>
-              <div className="font-mono text-[9px] text-muted/50 mt-0.5">±{profile.ci} (90% CI)</div>
+              <div className="font-mono text-[9px] text-muted/60 mt-0.5">±{profile.ci} (90% CI)</div>
               <div className="font-mono text-[8px] uppercase tracking-widest text-muted/40 mt-0.5">
                 {profile.data_source === 'combined' ? 'BL + Leetify' : profile.data_source === 'leetify' ? 'Leetify' : 'BL'}
               </div>
@@ -277,8 +263,8 @@ export function PlayerProfileDisplay({ profile }: { profile: PlayerProfileRespon
           <div className="mt-4">
             <div className="w-full bg-surface2 rounded-full h-1.5">
               <div
-                className="h-1.5 rounded-full transition-all"
-                style={{ width: `${Math.min(profile.score * 100, 100)}%`, background: 'var(--color-accent)' }}
+                className="h-1.5 rounded-full bg-accent transition-all"
+                style={{ width: `${Math.min(profile.score * 100, 100)}%` }}
               />
             </div>
           </div>
@@ -295,38 +281,35 @@ export function PlayerProfileDisplay({ profile }: { profile: PlayerProfileRespon
       </div>
 
       {/* ── Section 2: Trend ── */}
-      <div className="bg-surface/92 border border-border/40 rounded-xl overflow-hidden fx-rise fx-rise-d1">
+      <div className="card-1 overflow-hidden fx-rise fx-rise-d1">
         <TrendSection trend={profile.trend} />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
         {/* ── Section 3: Map performance ── */}
-        <div className="bg-surface/92 border border-border/40 rounded-xl overflow-hidden fx-rise fx-rise-d1">
+        <div className="card-1 overflow-hidden fx-rise fx-rise-d1">
           <MapSection records={profile.map_records} />
         </div>
 
         {/* ── Section 4: Stat detail grid ── */}
-        <div className="bg-surface/92 border border-border/40 rounded-xl overflow-hidden fx-rise fx-rise-d2">
-          <div className="px-4 pt-4 pb-2">
-            <span className="font-display text-[10px] uppercase tracking-[0.2em] text-accent">Detaljerte stats</span>
+        <div className="card-1 overflow-hidden fx-rise fx-rise-d2">
+          <div className="section-header">
+            <SectionLabel>Detaljerte stats</SectionLabel>
           </div>
-          <div className="px-4 pb-4 space-y-3">
+          <div className="px-5 py-4 space-y-3">
 
             {/* Multi-kills */}
             {profile.multi_kills && (
               <div>
-                <div className="font-mono text-[9px] uppercase tracking-widest text-muted/50 mb-1.5">Multi-kills per kamp</div>
+                <div className="label-micro text-muted/50 mb-1.5">Multi-kills per kamp</div>
                 <div className="grid grid-cols-3 gap-2">
                   {[
                     { label: '3K', val: profile.multi_kills.k3_per_map },
                     { label: '4K', val: profile.multi_kills.k4_per_map },
                     { label: '5K', val: profile.multi_kills.k5_per_map },
                   ].map(({ label, val }) => (
-                    <div key={label} className="bg-surface2/50 rounded-lg px-2 py-2 text-center">
-                      <div className="font-display text-sm tabular-nums text-text">{val.toFixed(2)}</div>
-                      <div className="font-mono text-[8px] text-muted/50 mt-0.5">{label}/kamp</div>
-                    </div>
+                    <StatCard key={label} label={label} value={val.toFixed(2)} sub="/kamp" size="sm" align="center" />
                   ))}
                 </div>
               </div>
@@ -335,7 +318,7 @@ export function PlayerProfileDisplay({ profile }: { profile: PlayerProfileRespon
             {/* Clutch win % */}
             {profile.clutch_win_pct != null && (
               <div className="flex items-center justify-between">
-                <span className="font-mono text-[9px] uppercase tracking-widest text-muted/60">Clutch vinn%</span>
+                <span className="label-micro text-muted/60">Clutch vinn%</span>
                 <span className="font-display text-sm tabular-nums text-text">{pct(profile.clutch_win_pct)}</span>
               </div>
             )}
@@ -343,7 +326,7 @@ export function PlayerProfileDisplay({ profile }: { profile: PlayerProfileRespon
             {/* First death rate */}
             {profile.first_death_rate != null && (
               <div className="flex items-center justify-between">
-                <span className="font-mono text-[9px] uppercase tracking-widest text-muted/60">First death rate</span>
+                <span className="label-micro text-muted/60">First death rate</span>
                 <span className="font-display text-sm tabular-nums text-text">{pct(profile.first_death_rate)}</span>
               </div>
             )}
@@ -351,16 +334,10 @@ export function PlayerProfileDisplay({ profile }: { profile: PlayerProfileRespon
             {/* Side split */}
             {profile.side_split && (
               <div>
-                <div className="font-mono text-[9px] uppercase tracking-widest text-muted/50 mb-1.5">CT/T opening duel split</div>
+                <div className="label-micro text-muted/50 mb-1.5">CT/T opening duel split</div>
                 <div className="grid grid-cols-2 gap-2 mb-1.5">
-                  <div className="bg-surface2/50 rounded-lg px-2 py-2 text-center">
-                    <div className="font-display text-sm tabular-nums text-text">{pct(profile.side_split.ct_od)}</div>
-                    <div className="font-mono text-[8px] text-muted/50 mt-0.5">CT side</div>
-                  </div>
-                  <div className="bg-surface2/50 rounded-lg px-2 py-2 text-center">
-                    <div className="font-display text-sm tabular-nums text-text">{pct(profile.side_split.t_od)}</div>
-                    <div className="font-mono text-[8px] text-muted/50 mt-0.5">T side</div>
-                  </div>
+                  <StatCard label="CT side" value={pct(profile.side_split.ct_od)} size="sm" align="center" />
+                  <StatCard label="T side" value={pct(profile.side_split.t_od)} size="sm" align="center" />
                 </div>
                 <p className="font-mono text-[9px] text-muted/60">{profile.side_split.verdict}</p>
               </div>
@@ -372,22 +349,22 @@ export function PlayerProfileDisplay({ profile }: { profile: PlayerProfileRespon
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
         {/* ── Section 5: Radar ── */}
-        <div className="bg-surface/92 border border-border/40 rounded-xl overflow-hidden fx-rise fx-rise-d2">
-          <div className="px-4 pt-4 pb-2">
-            <span className="font-display text-[10px] uppercase tracking-[0.2em] text-accent">Rolleprofil</span>
+        <div className="card-1 overflow-hidden fx-rise fx-rise-d2">
+          <div className="section-header">
+            <SectionLabel>Rolleprofil</SectionLabel>
           </div>
-          <div className="flex justify-center pb-4">
+          <div className="flex justify-center py-4">
             <RadarChart player={playerAnalysis} size={160} />
           </div>
         </div>
 
         {/* ── Section 6: Leetify ratings (conditional) ── */}
         {profile.leetify && (
-          <div className="bg-surface/92 border border-border/40 rounded-xl overflow-hidden fx-rise fx-rise-d2">
-            <div className="px-4 pt-4 pb-2">
-              <span className="font-display text-[10px] uppercase tracking-[0.2em] text-accent">Leetify ratings</span>
+          <div className="card-1 overflow-hidden fx-rise fx-rise-d2">
+            <div className="section-header">
+              <SectionLabel>Leetify ratings</SectionLabel>
             </div>
-            <div className="px-4 pb-4 space-y-2.5">
+            <div className="px-5 py-4 space-y-2.5">
               {[
                 { label: 'Aim', value: profile.leetify.aim, max: 100 },
                 { label: 'Posisjonering', value: profile.leetify.positioning, max: 100 },
@@ -395,31 +372,25 @@ export function PlayerProfileDisplay({ profile }: { profile: PlayerProfileRespon
               ].map(({ label, value, max }) => (
                 <div key={label}>
                   <div className="flex items-center justify-between mb-1">
-                    <span className="font-mono text-[9px] uppercase tracking-widest text-muted/60">{label}</span>
+                    <span className="label-micro text-muted/60">{label}</span>
                     <span className="font-display text-sm tabular-nums text-text">{value.toFixed(0)}</span>
                   </div>
                   <div className="w-full bg-surface2 rounded-full h-1">
                     <div
-                      className="h-1 rounded-full"
-                      style={{ width: `${(value / max) * 100}%`, background: 'var(--color-accent)' }}
+                      className="h-1 rounded-full bg-accent"
+                      style={{ width: `${(value / max) * 100}%` }}
                     />
                   </div>
                 </div>
               ))}
               {/* Clutch + opening (raw values) */}
               <div className="grid grid-cols-2 gap-2 pt-1">
-                <div className="bg-surface2/50 rounded px-2 py-1.5 text-center">
-                  <div className="font-display text-sm tabular-nums text-text">{profile.leetify.clutch.toFixed(2)}</div>
-                  <div className="font-mono text-[8px] text-muted/50">Clutch</div>
-                </div>
-                <div className="bg-surface2/50 rounded px-2 py-1.5 text-center">
-                  <div className="font-display text-sm tabular-nums text-text">{profile.leetify.opening.toFixed(2)}</div>
-                  <div className="font-mono text-[8px] text-muted/50">Opening</div>
-                </div>
+                <StatCard label="Clutch" value={profile.leetify.clutch.toFixed(2)} size="sm" align="center" />
+                <StatCard label="Opening" value={profile.leetify.opening.toFixed(2)} size="sm" align="center" />
               </div>
               {profile.leetify.reaction_time_ms > 0 && (
                 <div className="flex items-center justify-between">
-                  <span className="font-mono text-[9px] uppercase tracking-widest text-muted/60">Reaksjonstid</span>
+                  <span className="label-micro text-muted/60">Reaksjonstid</span>
                   <span className="font-display text-sm tabular-nums text-text">{profile.leetify.reaction_time_ms} ms</span>
                 </div>
               )}
@@ -430,17 +401,17 @@ export function PlayerProfileDisplay({ profile }: { profile: PlayerProfileRespon
 
       {/* ── Section 7: Recent matchmaking matches (conditional) ── */}
       {profile.recent_matches && profile.recent_matches.length > 0 && (
-        <div className="bg-surface/92 border border-border/40 rounded-xl overflow-hidden fx-rise fx-rise-d3">
-          <div className="px-4 pt-4 pb-2">
-            <span className="font-display text-[10px] uppercase tracking-[0.2em] text-accent">Siste matchmaking-kamper</span>
-            <span className="font-mono text-[9px] text-muted/50 ml-2">(Leetify)</span>
+        <div className="card-1 overflow-hidden fx-rise fx-rise-d3">
+          <div className="section-header flex items-center gap-2">
+            <SectionLabel>Siste matchmaking-kamper</SectionLabel>
+            <span className="font-mono text-[9px] text-muted/50">(Leetify)</span>
           </div>
           <div className="divide-y divide-border/15">
             {profile.recent_matches.slice(0, 8).map((m, i) => (
-              <div key={i} className="flex items-center gap-3 px-4 py-2.5">
-                <div className="font-mono text-[9px] text-muted/50 w-12 shrink-0">{dateShort(m.finished_at)}</div>
+              <div key={i} className="flex items-center gap-3 px-5 py-2.5">
+                <div className="font-mono text-[9px] text-muted/60 w-12 shrink-0">{dateShort(m.finished_at)}</div>
                 <div className="flex-1 font-mono text-[10px] text-text/80 truncate">{m.map_name}</div>
-                <span className={`font-mono text-[9px] uppercase tracking-widest px-1.5 py-0.5 rounded border ${
+                <span className={`status-pill ${
                   m.outcome === 'win' ? 'text-success border-success/30 bg-success/8'
                   : m.outcome === 'loss' ? 'text-danger border-danger/30 bg-danger/8'
                   : 'text-muted border-border/30'

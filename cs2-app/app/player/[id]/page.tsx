@@ -1,6 +1,7 @@
-import Link from 'next/link'
 import { buildPlayerProfile, PlayerProfileError } from '@/lib/player-profile-service'
 import { PlayerProfileDisplay } from '@/components/player-profile-display'
+import { ErrorCard } from '@/components/ui/error-card'
+import { NavBreadcrumb } from '@/components/ui/nav-breadcrumb'
 
 export const dynamic = 'force-dynamic'
 
@@ -48,11 +49,8 @@ export default async function PlayerPage({ params, searchParams }: PlayerPagePro
       <section className="atlas-shell min-h-dvh">
         <div className="atlas-topline" />
         <div className="max-w-5xl mx-auto px-6 md:px-10 py-10">
-          <div className="flex items-center justify-between gap-3 mb-6 fx-rise">
-            <Link href="/" className="font-mono text-[11px] uppercase tracking-widest text-muted hover:text-text transition-colors">
-              ← Til søk
-            </Link>
-            <span className="font-mono text-[10px] uppercase tracking-widest text-muted/60">Spillerprofil</span>
+          <div className="fx-rise">
+            <NavBreadcrumb backHref="/" contextLabel="Spillerprofil" />
           </div>
           <PlayerProfileDisplay profile={profile} />
         </div>

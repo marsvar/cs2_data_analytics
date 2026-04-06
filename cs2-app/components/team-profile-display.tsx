@@ -12,7 +12,9 @@ import {
 } from 'recharts'
 import { TeamLogo, PlayerAvatar } from '@/components/identity-badge'
 import { EconomyFlow } from '@/components/economy-flow'
+import { SectionLabel } from '@/components/ui/section-label'
 import { ROLE_META_PROFILE } from '@/lib/detect-role'
+import { CHART_TOOLTIP_STYLE, AXIS_TICK_PROPS } from '@/lib/chart-config'
 import type { TeamProfileResponse, PlayerRole } from '@/lib/types'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -30,6 +32,12 @@ function mapColor(winRate: number) {
   if (winRate >= 0.6) return 'var(--color-success)'
   if (winRate >= 0.4) return 'var(--color-warning)'
   return 'var(--color-danger)'
+}
+
+function barColor(winPct: number): string {
+  if (winPct >= 0.6) return 'bg-success'
+  if (winPct >= 0.4) return 'bg-warning'
+  return 'bg-danger'
 }
 
 function RoleBadge({ role }: { role: PlayerRole | null }) {
@@ -77,7 +85,7 @@ export function TeamProfileDisplay({ profile }: { profile: TeamProfileResponse }
     <div className="space-y-4">
 
       {/* ── Section 1: Header ── */}
-      <div className="bg-surface/92 border border-border/40 rounded-xl overflow-hidden fx-rise">
+      <div className="card-1 overflow-hidden fx-rise">
         <div className="px-5 py-5">
           <div className="flex items-start gap-4">
             <TeamLogo name={profile.team_name} logoUrl={profile.logo_url} tone="neutral" size="lg" />
@@ -115,11 +123,8 @@ export function TeamProfileDisplay({ profile }: { profile: TeamProfileResponse }
             <div className="mt-4">
               <div className="w-full bg-surface2 rounded-full h-1.5">
                 <div
-                  className="h-1.5 rounded-full transition-all"
-                  style={{
-                    width: `${winPct * 100}%`,
-                    background: winPct >= 0.6 ? 'var(--color-success)' : winPct >= 0.4 ? 'var(--color-warning)' : 'var(--color-danger)',
-                  }}
+                  className={`h-1.5 rounded-full transition-all ${barColor(winPct)}`}
+                  style={{ width: `${winPct * 100}%` }}
                 />
               </div>
             </div>
@@ -131,11 +136,11 @@ export function TeamProfileDisplay({ profile }: { profile: TeamProfileResponse }
 
         {/* ── Section 2: Map pool ── */}
         {profile.map_pool.length > 0 && (
-          <div className="bg-surface/92 border border-border/40 rounded-xl overflow-hidden fx-rise fx-rise-d1">
-            <div className="px-4 pt-4 pb-2">
-              <span className="font-display text-[10px] uppercase tracking-[0.2em] text-accent">Kartpool</span>
+          <div className="card-1 overflow-hidden fx-rise fx-rise-d1">
+            <div className="section-header">
+              <SectionLabel>Kartpool</SectionLabel>
             </div>
-            <div className="px-1 pb-4">
+            <div className="px-1 pb-4 pt-2">
               <ResponsiveContainer width="100%" height={Math.max(110, profile.map_pool.slice(0, 7).length * 28)}>
                 <BarChart
                   data={profile.map_pool.slice(0, 7).map((m) => ({
@@ -146,10 +151,10 @@ export function TeamProfileDisplay({ profile }: { profile: TeamProfileResponse }
                   layout="vertical"
                   margin={{ top: 0, right: 50, bottom: 0, left: 10 }}
                 >
-                  <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 9, fontFamily: 'var(--font-mono)', fill: 'var(--color-muted)' }} axisLine={false} tickLine={false} tickFormatter={(v) => `${v}%`} />
-                  <YAxis type="category" dataKey="map" tick={{ fontSize: 9, fontFamily: 'var(--font-mono)', fill: 'var(--color-muted)' }} axisLine={false} tickLine={false} width={52} />
+                  <XAxis type="number" domain={[0, 100]} tick={AXIS_TICK_PROPS} axisLine={false} tickLine={false} tickFormatter={(v) => `${v}%`} />
+                  <YAxis type="category" dataKey="map" tick={AXIS_TICK_PROPS} axisLine={false} tickLine={false} width={52} />
                   <Tooltip
-                    contentStyle={{ background: 'var(--color-surface2)', border: '1px solid var(--color-border)', borderRadius: 6, fontSize: 10, fontFamily: 'var(--font-mono)' }}
+                    contentStyle={CHART_TOOLTIP_STYLE}
                     formatter={(value: number, _: string, props) => [`${value}% (${props.payload.played} kamper)`, 'Vinnrate']}
                   />
                   <Bar dataKey="win_rate" radius={[0, 3, 3, 0]}>
@@ -164,16 +169,16 @@ export function TeamProfileDisplay({ profile }: { profile: TeamProfileResponse }
         )}
 
         {/* ── Section 3: Roster ── */}
-        <div className="bg-surface/92 border border-border/40 rounded-xl overflow-hidden fx-rise fx-rise-d1">
-          <div className="px-4 pt-4 pb-2">
-            <span className="font-display text-[10px] uppercase tracking-[0.2em] text-accent">Roster</span>
+        <div className="card-1 overflow-hidden fx-rise fx-rise-d1">
+          <div className="section-header">
+            <SectionLabel>Roster</SectionLabel>
           </div>
           <div className="divide-y divide-border/15">
             {profile.roster.length === 0 ? (
-              <div className="px-4 py-4 font-mono text-xs text-muted/60">Ingen spillerdata tilgjengelig</div>
+              <div className="px-5 py-4 font-mono text-xs text-muted/60">Ingen spillerdata tilgjengelig</div>
             ) : (
               profile.roster.map((player) => (
-                <div key={player.paradise_user_id} className="flex items-center gap-3 px-4 py-2.5">
+                <div key={player.paradise_user_id} className="flex items-center gap-3 px-5 py-2.5">
                   <PlayerAvatar name={player.name} tone="neutral" size="xs" />
                   <div className="flex-1 min-w-0">
                     <Link
@@ -182,7 +187,7 @@ export function TeamProfileDisplay({ profile }: { profile: TeamProfileResponse }
                     >
                       {player.name}
                     </Link>
-                    <div className="font-mono text-[9px] text-muted/50 mt-0.5">{player.rounds} runder</div>
+                    <div className="font-mono text-[9px] text-muted/60 mt-0.5">{player.rounds} runder</div>
                   </div>
                   <RoleBadge role={player.role} />
                   {player.score != null && (
@@ -199,15 +204,15 @@ export function TeamProfileDisplay({ profile }: { profile: TeamProfileResponse }
 
       {/* ── Section 4: Composition ── */}
       {(profile.composition_notes.length > 0 || profile.playstyle_summary) && (
-        <div className="bg-surface/92 border border-border/40 rounded-xl overflow-hidden fx-rise fx-rise-d2">
-          <div className="px-4 pt-4 pb-2">
-            <span className="font-display text-[10px] uppercase tracking-[0.2em] text-accent">Lagsammensetning</span>
+        <div className="card-1 overflow-hidden fx-rise fx-rise-d2">
+          <div className="section-header">
+            <SectionLabel>Lagsammensetning</SectionLabel>
           </div>
-          <div className="px-4 pb-4 space-y-3">
+          <div className="px-5 py-4 space-y-3">
             {/* Role distribution bar */}
             {profile.roster.length > 0 && (
               <div>
-                <div className="font-mono text-[9px] uppercase tracking-widest text-muted/50 mb-1.5">Rollefordeling</div>
+                <div className="label-micro text-muted/50 mb-1.5">Rollefordeling</div>
                 <RoleDistBar dist={profile.role_distribution} total={profile.roster.length} />
                 <div className="flex flex-wrap gap-2 mt-1.5">
                   {(Object.entries(profile.role_distribution) as [PlayerRole, number][]).map(([role, count]) => {
@@ -246,11 +251,11 @@ export function TeamProfileDisplay({ profile }: { profile: TeamProfileResponse }
 
       {/* ── Section 5: Economy notes ── */}
       {profile.economy_notes.length > 0 && (
-        <div className="bg-surface/92 border border-border/40 rounded-xl overflow-hidden fx-rise fx-rise-d2">
-          <div className="px-4 pt-4 pb-2">
-            <span className="font-display text-[10px] uppercase tracking-[0.2em] text-accent">Økonomiproxy</span>
+        <div className="card-1 overflow-hidden fx-rise fx-rise-d2">
+          <div className="section-header">
+            <SectionLabel>Økonomiproxy</SectionLabel>
           </div>
-          <div className="px-4 pb-4">
+          <div className="px-5 py-4">
             <EconomyFlow notes={profile.economy_notes} />
           </div>
         </div>
@@ -258,22 +263,22 @@ export function TeamProfileDisplay({ profile }: { profile: TeamProfileResponse }
 
       {/* ── Section 6: Match history ── */}
       {profile.match_history.length > 0 && (
-        <div className="bg-surface/92 border border-border/40 rounded-xl overflow-hidden fx-rise fx-rise-d3">
-          <div className="px-4 pt-4 pb-2">
-            <span className="font-display text-[10px] uppercase tracking-[0.2em] text-accent">Kamphistorikk</span>
+        <div className="card-1 overflow-hidden fx-rise fx-rise-d3">
+          <div className="section-header">
+            <SectionLabel>Kamphistorikk</SectionLabel>
           </div>
           {/* Header */}
-          <div className="grid grid-cols-[3rem_1fr_4rem_2.5rem_5rem] gap-2 px-4 py-2 border-b border-border/20 font-mono text-[9px] uppercase tracking-widest text-muted/50">
+          <div className="grid grid-cols-[3rem_1fr_4rem_2.5rem_5rem] gap-2 px-5 py-2 border-b border-border/20 font-mono text-[9px] uppercase tracking-widest text-muted/50">
             <span>Dato</span>
             <span>Motstander</span>
             <span className="text-center">Score</span>
             <span className="text-center">Res.</span>
             <span className="text-right">Analyse</span>
           </div>
-          <div className="divide-y divide-border/10 max-h-80 overflow-y-auto">
+          <div className="divide-y divide-border/15 max-h-80 overflow-y-auto">
             {profile.match_history.slice(0, 20).map((m) => (
-              <div key={m.matchup_id} className="grid grid-cols-[3rem_1fr_4rem_2.5rem_5rem] gap-2 items-center px-4 py-2.5 hover:bg-surface2/15 transition-colors">
-                <span className="font-mono text-[9px] text-muted/50 tabular-nums">{dateShort(m.date)}</span>
+              <div key={m.matchup_id} className="grid grid-cols-[3rem_1fr_4rem_2.5rem_5rem] gap-2 items-center px-5 py-2.5 hover:bg-surface2/20 transition-colors">
+                <span className="font-mono text-[9px] text-muted/60 tabular-nums">{dateShort(m.date)}</span>
                 <div className="min-w-0">
                   {m.opponent_id > 0 ? (
                     <Link
@@ -307,7 +312,7 @@ export function TeamProfileDisplay({ profile }: { profile: TeamProfileResponse }
                   )}
                 </div>
                 <div className="text-center">
-                  <span className={`font-mono text-[9px] uppercase tracking-widest px-1 py-0.5 rounded border ${
+                  <span className={`status-pill ${
                     m.won === true ? 'text-success border-success/30 bg-success/8'
                     : m.won === false ? 'text-danger border-danger/30 bg-danger/8'
                     : 'text-muted border-border/20'
