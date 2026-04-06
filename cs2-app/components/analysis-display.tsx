@@ -52,6 +52,18 @@ function scoreColor(score: number): string {
   return 'var(--color-danger)'
 }
 
+function scoreClass(score: number): string {
+  if (score >= 0.7) return 'text-success'
+  if (score >= 0.5) return 'text-warning'
+  return 'text-danger'
+}
+
+function scoreBgClass(score: number): string {
+  if (score >= 0.7) return 'bg-success'
+  if (score >= 0.5) return 'bg-warning'
+  return 'bg-danger'
+}
+
 function confidenceFromSample(sampleSize: number): 'low' | 'medium' | 'high' {
   if (sampleSize >= 20) return 'high'
   if (sampleSize >= 8) return 'medium'
@@ -603,10 +615,12 @@ function PlayerRow({
   player,
   matchStatus,
   tone,
+  teamId,
 }: {
   player: PlayerAnalysis
   matchStatus: AnalyzeResponse['meta']['match_status']
   tone: 'home' | 'away'
+  teamId?: number
 }) {
   const [expanded, setExpanded] = useState(false)
   const displayScore = (player.score * 10).toFixed(2)
@@ -654,7 +668,7 @@ function PlayerRow({
               size="xs"
             />
             <Link
-              href={`/player/${player.paradise_user_id}`}
+              href={teamId ? `/player/${player.paradise_user_id}?team_id=${teamId}` : `/player/${player.paradise_user_id}`}
               className="font-mono text-xs text-text hover:text-accent hover:underline underline-offset-2 truncate transition-colors"
               onClick={(e) => e.stopPropagation()}
             >
@@ -678,19 +692,12 @@ function PlayerRow({
 
         <div className="relative flex-1 h-1 bg-surface2 rounded-full mx-2">
           <div
-            className="absolute inset-y-0 left-0 rounded-full"
-            style={{
-              width: `${player.score * 100}%`,
-              background: scoreColor(player.score),
-              transition: 'width 400ms ease',
-            }}
+            className={`absolute inset-y-0 left-0 rounded-full ${scoreBgClass(player.score)}`}
+            style={{ width: `${player.score * 100}%`, transition: 'width 400ms ease' }}
           />
         </div>
 
-        <span
-          className="w-20 shrink-0 font-mono text-xs text-right tabular-nums"
-          style={{ color: scoreColor(player.score) }}
-        >
+        <span className={`w-20 shrink-0 font-mono text-xs text-right tabular-nums ${scoreClass(player.score)}`}>
           {displayScore}{' '}
           <span className="text-muted text-[10px]">±{displayCI}</span>
         </span>
@@ -753,7 +760,7 @@ function TeamCard({
         </h2>
         <span className="font-mono text-[10px] text-muted tabular-nums">
           ⌀{' '}
-          <span style={{ color: scoreColor(stats.avg_score) }}>
+          <span className={scoreClass(stats.avg_score)}>
             {(stats.avg_score * 10).toFixed(1)}
           </span>
         </span>
@@ -781,6 +788,7 @@ function TeamCard({
             player={p}
             matchStatus={matchStatus}
             tone={tone}
+            teamId={team.id || undefined}
           />
         ))}
       </div>
@@ -2126,9 +2134,9 @@ function LineupPicker({
   const selectedAwayCount = selectedAwayIds.size
 
   return (
-    <div className="bg-surface border border-border/50 rounded-lg p-4 mb-6">
+    <div className="card-1 p-4 mb-6">
       <div className="flex items-center justify-between gap-3 mb-3">
-        <h3 className="font-display text-[10px] uppercase tracking-widest text-accent">
+        <h3 className="label-display text-accent">
           5v5 lineup-simulator
         </h3>
         <span className="font-mono text-[10px] text-muted">

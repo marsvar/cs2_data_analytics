@@ -1,13 +1,14 @@
 import Link from 'next/link'
 import { TeamLogo } from '@/components/identity-badge'
 import { UpcomingPreviewPanel } from '@/components/upcoming-preview-panel'
+import { ErrorCard } from '@/components/ui/error-card'
+import { NavBreadcrumb } from '@/components/ui/nav-breadcrumb'
+import { SectionLabel } from '@/components/ui/section-label'
 import { resolveDivisionReference } from '@/lib/divisions'
 import { DivisionServiceError, getDivisionOverview } from '@/lib/division-service'
 import type { DivisionMatchSummary, DivisionResponse } from '@/lib/types'
 
 const MAX_UPCOMING_PREVIEWS = 4
-
-// ── Standings computation ─────────────────────────────────────────────────────
 
 type StandingRow = {
   teamId: number
@@ -47,8 +48,13 @@ function computeStandings(matches: DivisionMatchSummary[]): StandingRow[] {
     const as_ = m.away_score ?? null
 
     if (hs != null && as_ != null) {
-      if (hs > as_) { home.wins += 1; away.losses += 1 }
-      else if (as_ > hs) { away.wins += 1; home.losses += 1 }
+      if (hs > as_) {
+        home.wins += 1
+        away.losses += 1
+      } else if (as_ > hs) {
+        away.wins += 1
+        home.losses += 1
+      }
     }
   }
 
@@ -71,24 +77,23 @@ function StandingsTable({ result }: { result: DivisionResponse }) {
   return (
     <div className="mb-6 fx-rise fx-rise-d1">
       <div className="flex items-center gap-2 mb-3 px-1">
-        <span className="font-display text-[10px] uppercase tracking-[0.2em] text-accent">Standings</span>
+        <SectionLabel>Standings</SectionLabel>
         {!hasScores && (
           <span className="font-mono text-[9px] text-muted/50">· scores not available</span>
         )}
       </div>
-      <div className="bg-surface/92 border border-border/40 rounded-xl overflow-hidden">
-        {/* Header */}
-        <div className="grid grid-cols-[1.5rem_1fr_2.5rem_2.5rem_2.5rem] gap-3 px-4 py-2 border-b border-border/25 font-mono text-[9px] uppercase tracking-widest text-muted/60">
+      <div className="card-1 overflow-hidden">
+        <div className="grid grid-cols-[1.5rem_1fr_2.5rem_2.5rem_2.5rem] gap-3 px-4 py-2 border-b border-border/20 font-mono text-[9px] uppercase tracking-widest text-muted/60">
           <span>#</span>
           <span>Team</span>
           <span className="text-center">P</span>
-          <span className="text-center text-success/70">V</span>
-          <span className="text-center text-danger/70">T</span>
+          <span className="text-center text-success/70">W</span>
+          <span className="text-center text-danger/70">L</span>
         </div>
         {standings.map((row, i) => (
           <div
             key={row.teamId}
-            className="grid grid-cols-[1.5rem_1fr_2.5rem_2.5rem_2.5rem] gap-3 items-center px-4 py-2.5 border-b border-border/12 last:border-0"
+            className="grid grid-cols-[1.5rem_1fr_2.5rem_2.5rem_2.5rem] gap-3 items-center px-4 py-2.5 border-b border-border/15 last:border-0"
           >
             <span className="font-mono text-[10px] tabular-nums text-muted/50">{i + 1}</span>
             <div className="flex items-center gap-2 min-w-0">
@@ -165,20 +170,15 @@ function MatchCard({
 
   return (
     <div
-      className="border-b border-border/15 last:border-0 px-4 py-3.5 hover:bg-surface2/18 transition-colors fx-rise"
+      className="border-b border-border/15 last:border-0 px-4 py-3.5 hover:bg-surface2/20 transition-colors fx-rise"
       style={{ animationDelay: `${(section === 'upcoming' ? 120 : 260) + index * 30}ms` }}
     >
-      {/* Top row: date + status */}
       <div className="flex items-center justify-between gap-3 mb-2.5">
         <span className="font-mono text-[10px] text-muted/60 tabular-nums">{dateLabel(match.date)}</span>
-        <span className={`font-mono text-[9px] uppercase tracking-widest px-2 py-0.5 rounded border ${pill.cls}`}>
-          {pill.text}
-        </span>
+        <span className={`status-pill ${pill.cls}`}>{pill.text}</span>
       </div>
 
-      {/* Match row: teams + score + action */}
       <div className="flex items-center gap-3">
-        {/* Home team */}
         <div className="flex-1 flex items-center gap-2 min-w-0 justify-end">
           {match.home_team_id ? (
             <Link
@@ -195,7 +195,6 @@ function MatchCard({
           <TeamLogo name={match.home_team} logoUrl={match.home_logo_url} tone="home" size="md" />
         </div>
 
-        {/* Score / VS divider */}
         <div className="shrink-0 w-14 flex items-center justify-center">
           {hasScore ? (
             <span className="font-display tabular-nums text-sm font-semibold">
@@ -208,7 +207,6 @@ function MatchCard({
           )}
         </div>
 
-        {/* Away team */}
         <div className="flex-1 flex items-center gap-2 min-w-0">
           <TeamLogo name={match.away_team} logoUrl={match.away_logo_url} tone="away" size="md" />
           {match.away_team_id ? (
@@ -225,7 +223,6 @@ function MatchCard({
           )}
         </div>
 
-        {/* Action link */}
         <Link
           href={
             divisionId != null
@@ -243,31 +240,6 @@ function MatchCard({
   )
 }
 
-function ErrorCard({
-  title,
-  detail,
-  divisionId,
-}: {
-  title: string
-  detail: string
-  divisionId?: string | number
-}) {
-  return (
-    <section className="atlas-shell min-h-dvh">
-      <div className="atlas-topline" />
-      <div className="max-w-5xl mx-auto px-6 md:px-10 py-12">
-        <Link href={buildHomeHref(divisionId)} className="font-mono text-[11px] uppercase tracking-widest text-muted hover:text-text">
-          ← Back to search
-        </Link>
-        <div className="mt-5 bg-surface border border-danger/40 rounded-lg p-5">
-          <h1 className="font-display text-sm tracking-widest uppercase text-danger mb-2">{title}</h1>
-          <p className="font-mono text-xs text-muted">{detail}</p>
-        </div>
-      </div>
-    </section>
-  )
-}
-
 export default async function DivisionPage({ params, searchParams }: DivisionPageProps) {
   const { id } = await params
   const resolvedSearchParams = searchParams ? await searchParams : undefined
@@ -279,7 +251,8 @@ export default async function DivisionPage({ params, searchParams }: DivisionPag
       <ErrorCard
         title="Invalid division"
         detail="Division not found. Go back to the home page and select a known division."
-        divisionId={resolvedSearchParams?.division}
+        backHref={buildHomeHref(resolvedSearchParams?.division)}
+        backLabel="← Back to search"
       />
     )
   }
@@ -294,27 +267,22 @@ export default async function DivisionPage({ params, searchParams }: DivisionPag
       <section className="atlas-shell min-h-dvh">
         <div className="atlas-topline" />
         <div className="max-w-5xl mx-auto px-6 md:px-10 py-10">
-
-          {/* Page header */}
           <div className="mb-7 fx-rise">
-            <div className="flex items-center justify-between gap-3 mb-5">
-              <Link href={buildHomeHref(selectedDivisionId)} className="font-mono text-[11px] uppercase tracking-widest text-muted hover:text-text">
-                ← Back to search
-              </Link>
-              <span className="font-mono text-[10px] uppercase tracking-widest text-muted/70">Match Overview</span>
-            </div>
-            <div className="bg-surface/85 border border-border/45 rounded-xl px-5 py-4">
-              <p className="font-display text-[11px] uppercase tracking-[0.2em] text-accent mb-1.5">Division</p>
+            <NavBreadcrumb
+              backHref={buildHomeHref(selectedDivisionId)}
+              backLabel="← Back to search"
+              contextLabel="Match Overview"
+            />
+            <div className="card-1 px-5 py-4">
+              <SectionLabel className="mb-1.5 block">Division</SectionLabel>
               <h1 className="font-display text-2xl md:text-3xl leading-none tracking-tight">{title}</h1>
             </div>
           </div>
 
-          {/* Standings */}
           <StandingsTable result={result} />
 
-          {/* Match lists */}
           {result.matches.length === 0 && (
-            <div className="bg-surface/92 border border-border/40 rounded-xl px-4 py-5 font-mono text-xs text-muted">
+            <div className="card-1 px-4 py-5 font-mono text-xs text-muted">
               No matches found.
             </div>
           )}
@@ -322,10 +290,10 @@ export default async function DivisionPage({ params, searchParams }: DivisionPag
           {notPlayedMatches.length > 0 && (
             <div className="mb-6 fx-rise fx-rise-d2">
               <div className="flex items-center gap-2 mb-3 px-1">
-                <span className="font-display text-[10px] uppercase tracking-[0.2em] text-accent">Upcoming Matches</span>
+                <SectionLabel>Upcoming Matches</SectionLabel>
                 <span className="font-mono text-[9px] text-muted/50">· {notPlayedMatches.length} match{notPlayedMatches.length !== 1 ? 'es' : ''}</span>
               </div>
-              <div className="bg-surface/92 border border-border/40 rounded-xl overflow-hidden">
+              <div className="card-1 overflow-hidden">
                 {notPlayedMatches.map((match, i) => (
                   <MatchCard
                     key={match.matchup_id}
@@ -343,29 +311,37 @@ export default async function DivisionPage({ params, searchParams }: DivisionPag
           {playedMatches.length > 0 && (
             <div className="fx-rise fx-rise-d3">
               <div className="flex items-center gap-2 mb-3 px-1">
-                <span className="font-display text-[10px] uppercase tracking-[0.2em] text-success/80">Played Matches</span>
+                <SectionLabel color="success">Played Matches</SectionLabel>
                 <span className="font-mono text-[9px] text-muted/50">· {playedMatches.length} match{playedMatches.length !== 1 ? 'es' : ''}</span>
               </div>
-              <div className="bg-surface/92 border border-border/40 rounded-xl overflow-hidden">
+              <div className="card-1 overflow-hidden">
                 {playedMatches.map((match, i) => (
                   <MatchCard key={match.matchup_id} match={match} index={i} section="played" divisionId={divisionRef.id} />
                 ))}
               </div>
             </div>
           )}
-
         </div>
       </section>
     )
   } catch (err) {
     if (err instanceof DivisionServiceError) {
-      return <ErrorCard title="Could not load division" detail={err.message} divisionId={selectedDivisionId} />
+      return (
+        <ErrorCard
+          title="Could not load division"
+          detail={err.message}
+          backHref={buildHomeHref(selectedDivisionId)}
+          backLabel="← Back to search"
+        />
+      )
     }
+
     return (
       <ErrorCard
         title="Unexpected error"
         detail="An error occurred while loading the division. Please try again."
-        divisionId={selectedDivisionId}
+        backHref={buildHomeHref(selectedDivisionId)}
+        backLabel="← Back to search"
       />
     )
   }

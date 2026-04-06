@@ -129,4 +129,51 @@
   .fx-pulse-glow {
     animation: pulse-glow 2.6s ease-in-out infinite;
   }
+
+  /* ── Card elevation system ── */
+  .card-1 {
+    @apply bg-surface/92 border border-border/40 rounded-xl;
+    box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 1px 3px rgba(0,0,0,0.4);
+  }
+  .card-2 {
+    @apply bg-surface2/50 border border-border/25 rounded-lg;
+  }
+  .card-3 {
+    @apply bg-surface2/40 border border-border/15 rounded-md;
+  }
+  .card-interactive {
+    @apply transition-colors hover:bg-surface2/20 hover:border-border/50;
+  }
+
+  /* ── Section header / body inside a card ── */
+  .section-header {
+    @apply px-5 pt-4 pb-3 border-b border-border/20;
+  }
+  .section-header-title {
+    @apply font-display text-[10px] uppercase tracking-[0.2em] text-accent;
+  }
+  .section-body {
+    @apply px-5 py-4;
+  }
+
+  /* ── Semantic divider ── */
+  .divider {
+    @apply border-t border-border/20;
+  }
+
+  /* ── Label scale ── */
+  .label-micro {
+    @apply font-mono text-[9px] uppercase tracking-widest;
+  }
+  .label-sm {
+    @apply font-mono text-[10px] uppercase tracking-widest;
+  }
+  .label-display {
+    @apply font-display text-[10px] uppercase tracking-[0.2em];
+  }
+
+  /* ── Status pill ── */
+  .status-pill {
+    @apply font-mono text-[9px] uppercase tracking-widest px-2 py-0.5 rounded border;
+  }
 }

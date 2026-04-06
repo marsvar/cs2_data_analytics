@@ -946,3 +946,73 @@ export async function getTeamMatchups(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return arr as any[]
 }
+
+/**
+ * Fetch matchup listing for a specific user (paradise_user_id).
+ * Tries `/matchup?user_id={userId}` — returns [] on any error.
+ * When successful, also extracts the player's team ID from the first matchup.
+ */
+async function fetchMatchupListByParam(
+  param: string,
+  token: string,
+): Promise<{ id: number; finished_at?: string | null; matchup_users?: unknown[]; home_signup?: unknown; away_signup?: unknown }[]> {
+  type Raw = { data?: unknown[] } | unknown[]
+  const data = await blGet<Raw>(`/matchup?${param}&limit=100`, token)
+  const arr = Array.isArray(data) ? data : ((data as { data?: unknown[] }).data ?? [])
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (arr as any[]).filter((m) => Number.isInteger(m?.id) && (m?.id ?? 0) > 0)
+}
+
+/**
+ * Fetch matchup listing for a specific user (paradise_user_id).
+ * Tries `user_id` and `paradise_user_id` query params — returns empty on any error.
+ * Also extracts the player's team ID from matchup_users when available.
+ */
+export async function getPlayerMatchupsAndTeamId(
+  userId: number,
+  token: string,
+): Promise<{
+  matchups: { id: number; finished_at?: string | null }[]
+  teamId: number | null
+}> {
+  let rawMatchups: { id: number; finished_at?: string | null; matchup_users?: unknown[]; home_signup?: unknown; away_signup?: unknown }[] = []
+
+  // Try user_id param first, then paradise_user_id
+  for (const param of [`user_id=${userId}`, `paradise_user_id=${userId}`]) {
+    try {
+      const result = await fetchMatchupListByParam(param, token)
+      if (result.length > 0) {
+        rawMatchups = result
+        break
+      }
+    } catch {
+      // try next
+    }
+  }
+
+  if (rawMatchups.length === 0) return { matchups: [], teamId: null }
+
+  const matchups = rawMatchups.map((m) => ({
+    id: m.id,
+    finished_at: (m?.finished_at ?? null) as string | null,
+  }))
+
+  // Extract team ID from matchup_users of the first finished matchup
+  const firstFinished = rawMatchups.find((m) => m?.finished_at)
+  let teamId: number | null = null
+  if (firstFinished) {
+    const mu = Array.isArray(firstFinished.matchup_users) ? firstFinished.matchup_users : []
+    const userRow = (mu as { user_id?: number; team_id?: number }[]).find((u) => u?.user_id === userId)
+    if (userRow?.team_id) {
+      teamId = userRow.team_id
+    } else {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const home = (firstFinished.home_signup as any)?.team?.id ?? null
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const away = (firstFinished.away_signup as any)?.team?.id ?? null
+      teamId = home ?? away
+    }
+  }
+
+  return { matchups, teamId }
+}

@@ -14,8 +14,6 @@ import { TeamLogo, PlayerAvatar } from '@/components/identity-badge'
 import { ROLE_META_PROFILE } from '@/lib/detect-role'
 import type { TeamProfileResponse, PlayerRole, RosterMember, TeamMatchResult } from '@/lib/types'
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
 function pct(v: number) { return `${(v * 100).toFixed(1)}%` }
 
 function dateShort(iso: string | null): string {
@@ -47,8 +45,14 @@ function cellColor(val: number | null, mean: number | null, higherIsBetter = tru
 
 function formLast5(history: TeamMatchResult[]): ('W' | 'L' | '?')[] {
   return history.slice(0, 5).map((m) =>
-    m.won === true ? 'W' : m.won === false ? 'L' : '?'
+    m.won === true ? 'W' : m.won === false ? 'L' : '?',
   )
+}
+
+function barColor(winPct: number): string {
+  if (winPct >= 0.6) return 'bg-success'
+  if (winPct >= 0.4) return 'bg-warning'
+  return 'bg-danger'
 }
 
 function RoleBadge({ role }: { role: PlayerRole | null }) {
@@ -65,8 +69,6 @@ function ConfidenceDot({ confidence }: { confidence: 'high' | 'medium' | 'low' }
   const cls = confidence === 'high' ? 'text-success' : confidence === 'medium' ? 'text-warning' : 'text-danger/60'
   return <span className={`${cls} text-[10px]`}>●</span>
 }
-
-// ── Key Metrics Strip ─────────────────────────────────────────────────────────
 
 function StatCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
@@ -115,8 +117,6 @@ function KeyMetricsStrip({ profile }: { profile: TeamProfileResponse }) {
   )
 }
 
-// ── Player Benchmarking Table ─────────────────────────────────────────────────
-
 function PlayerBenchmarkTable({ roster }: { roster: RosterMember[] }) {
   if (roster.length === 0) {
     return <div className="px-4 py-4 font-mono text-xs text-muted/60">No player data available</div>
@@ -129,7 +129,6 @@ function PlayerBenchmarkTable({ roster }: { roster: RosterMember[] }) {
 
   return (
     <div>
-      {/* Header row */}
       <div className="grid grid-cols-[auto_1fr_auto_4rem_4rem_4rem_4rem_3rem] gap-x-2 px-4 py-1.5 border-b border-border/20 font-mono text-[8px] uppercase tracking-widest text-muted/40">
         <span />
         <span>Player</span>
@@ -176,16 +175,12 @@ function PlayerBenchmarkTable({ roster }: { roster: RosterMember[] }) {
   )
 }
 
-// ── Main component ────────────────────────────────────────────────────────────
-
 export function TeamProfileDisplay({ profile }: { profile: TeamProfileResponse }) {
   const winPct = profile.win_rate
 
   return (
     <div className="space-y-4">
-
-      {/* ── Section 1: Header ── */}
-      <div className="bg-surface/92 border border-border/40 rounded-xl overflow-hidden fx-rise">
+      <div className="card-1 overflow-hidden fx-rise">
         <div className="px-5 py-5">
           <div className="flex items-start gap-4">
             <TeamLogo name={profile.team_name} logoUrl={profile.logo_url} tone="neutral" size="lg" />
@@ -197,8 +192,6 @@ export function TeamProfileDisplay({ profile }: { profile: TeamProfileResponse }
                 {profile.total_matches} {profile.total_matches === 1 ? 'match' : 'matches'}
                 {profile.roster.length > 0 && ` · ${profile.roster.length} players`}
               </div>
-
-              {/* W/L record */}
               <div className="flex items-center gap-4">
                 <div className="text-center">
                   <div className="font-display text-2xl tabular-nums text-success">{profile.wins}</div>
@@ -218,16 +211,12 @@ export function TeamProfileDisplay({ profile }: { profile: TeamProfileResponse }
             </div>
           </div>
 
-          {/* Win rate bar */}
           {profile.total_matches > 0 && (
             <div className="mt-4">
               <div className="w-full bg-surface2 rounded-full h-1.5">
                 <div
-                  className="h-1.5 rounded-full transition-all"
-                  style={{
-                    width: `${winPct * 100}%`,
-                    background: winPct >= 0.6 ? 'var(--color-success)' : winPct >= 0.4 ? 'var(--color-warning)' : 'var(--color-danger)',
-                  }}
+                  className={`h-1.5 rounded-full transition-all ${barColor(winPct)}`}
+                  style={{ width: `${winPct * 100}%` }}
                 />
               </div>
             </div>
@@ -235,12 +224,10 @@ export function TeamProfileDisplay({ profile }: { profile: TeamProfileResponse }
         </div>
       </div>
 
-      {/* ── Section 2: Key Metrics Strip ── */}
       <div className="fx-rise fx-rise-d1">
         <KeyMetricsStrip profile={profile} />
       </div>
 
-      {/* ── Section 3: Player Benchmarking Table ── */}
       <div className="bg-surface/92 border border-border/40 rounded-xl overflow-hidden fx-rise fx-rise-d2">
         <div className="px-4 pt-4 pb-2 flex items-center justify-between gap-2">
           <span className="font-display text-[10px] uppercase tracking-[0.2em] text-accent">Roster</span>
@@ -252,8 +239,6 @@ export function TeamProfileDisplay({ profile }: { profile: TeamProfileResponse }
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-
-        {/* ── Section 4: Map Pool ── */}
         {profile.map_pool.length > 0 && (
           <div className="bg-surface/92 border border-border/40 rounded-xl overflow-hidden fx-rise fx-rise-d2">
             <div className="px-4 pt-4 pb-2">
@@ -285,7 +270,6 @@ export function TeamProfileDisplay({ profile }: { profile: TeamProfileResponse }
                 </BarChart>
               </ResponsiveContainer>
             </div>
-            {/* Confidence legend */}
             <div className="flex flex-wrap gap-x-3 gap-y-1 px-4 pb-3">
               {profile.map_pool.slice(0, 7).map((m) => (
                 <span key={m.map} className="font-mono text-[8px] text-muted/50 flex items-center gap-1">
@@ -297,13 +281,11 @@ export function TeamProfileDisplay({ profile }: { profile: TeamProfileResponse }
           </div>
         )}
 
-        {/* ── Section 5: Match History ── */}
         {profile.match_history.length > 0 && (
           <div className="bg-surface/92 border border-border/40 rounded-xl overflow-hidden fx-rise fx-rise-d3">
             <div className="px-4 pt-4 pb-2">
               <span className="font-display text-[10px] uppercase tracking-[0.2em] text-accent">Match History</span>
             </div>
-            {/* Header */}
             <div className="grid grid-cols-[3rem_1fr_4rem_2.5rem_5rem] gap-2 px-4 py-2 border-b border-border/20 font-mono text-[9px] uppercase tracking-widest text-muted/50">
               <span>Date</span>
               <span>Opponent</span>
@@ -371,13 +353,11 @@ export function TeamProfileDisplay({ profile }: { profile: TeamProfileResponse }
         )}
       </div>
 
-      {/* ── Back navigation ── */}
       <div className="pt-2 pb-4">
         <Link href="/" className="font-mono text-[11px] uppercase tracking-widest text-muted hover:text-text transition-colors">
           ← Back to search
         </Link>
       </div>
-
     </div>
   )
 }

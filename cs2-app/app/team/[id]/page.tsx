@@ -1,28 +1,12 @@
-import Link from 'next/link'
 import { buildTeamProfile, TeamProfileError } from '@/lib/team-profile-service'
 import { TeamProfileDisplay } from '@/components/team-profile-display'
+import { ErrorCard } from '@/components/ui/error-card'
+import { NavBreadcrumb } from '@/components/ui/nav-breadcrumb'
 
 export const dynamic = 'force-dynamic'
 
 type TeamPageProps = {
   params: Promise<{ id: string }>
-}
-
-function ErrorCard({ title, detail }: { title: string; detail: string }) {
-  return (
-    <section className="atlas-shell min-h-dvh">
-      <div className="atlas-topline" />
-      <div className="max-w-5xl mx-auto px-6 md:px-10 py-12">
-        <Link href="/" className="font-mono text-[11px] uppercase tracking-widest text-muted hover:text-text transition-colors">
-          ← Back to search
-        </Link>
-        <div className="mt-5 bg-surface border border-danger/40 rounded-lg p-5">
-          <h1 className="font-display text-sm tracking-widest uppercase text-danger mb-2">{title}</h1>
-          <p className="font-mono text-xs text-muted">{detail}</p>
-        </div>
-      </div>
-    </section>
-  )
 }
 
 export default async function TeamPage({ params }: TeamPageProps) {
@@ -34,6 +18,7 @@ export default async function TeamPage({ params }: TeamPageProps) {
       <ErrorCard
         title="Invalid team ID"
         detail="Team not found. Check the URL and try again."
+        backLabel="← Back to search"
       />
     )
   }
@@ -45,31 +30,29 @@ export default async function TeamPage({ params }: TeamPageProps) {
       <section className="atlas-shell min-h-dvh">
         <div className="atlas-topline" />
         <div className="max-w-5xl mx-auto px-6 md:px-10 py-10">
-          <div className="flex items-center justify-between gap-3 mb-6 fx-rise">
-            <Link href="/" className="font-mono text-[11px] uppercase tracking-widest text-muted hover:text-text transition-colors">
-              ← Back to search
-            </Link>
-            <span className="font-mono text-[10px] uppercase tracking-widest text-muted/60">Team Profile</span>
+          <div className="fx-rise">
+            <NavBreadcrumb backHref="/" backLabel="← Back to search" contextLabel="Team Profile" />
           </div>
           <TeamProfileDisplay profile={profile} />
         </div>
       </section>
     )
   } catch (err) {
-    if (err instanceof TeamProfileError) {
-      if (err.status === 404) {
-        return (
-          <ErrorCard
-            title="Team not found"
-            detail={err.message}
-          />
-        )
-      }
+    if (err instanceof TeamProfileError && err.status === 404) {
+      return (
+        <ErrorCard
+          title="Team not found"
+          detail={err.message}
+          backLabel="← Back to search"
+        />
+      )
     }
+
     return (
       <ErrorCard
         title="Unexpected error"
         detail="An error occurred while loading the team profile. Please try again."
+        backLabel="← Back to search"
       />
     )
   }

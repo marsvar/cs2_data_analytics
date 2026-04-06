@@ -9,9 +9,12 @@ import {
   getUserSteamId,
   getUserTeamId,
   getTeamMatchups,
+  getTeamPlayers,
   getMatchupStats,
   getMatchupMeta,
   getUserImageUrl,
+  getCompetitions,
+  getCompetitionSignupTeams,
 } from '@/lib/bl-api'
 import { fetchProfiles } from '@/lib/leetify-api'
 import { compositeScore, blWeight, ci90 } from '@/lib/aggregation'
@@ -42,32 +45,80 @@ const profileCache = new Map<number, CachedEntry>()
 const BL_TOKEN = process.env.BL_TOKEN ?? ''
 const LEETIFY_TOKEN = process.env.LEETIFY_TOKEN ?? ''
 
+async function discoverTeamId(
+  userId: number,
+  token: string,
+): Promise<number | null> {
+  const competitionIdsToScan: number[] = []
+
+  const envCompId = process.env.COMPETITION_ID ? parseInt(process.env.COMPETITION_ID) : NaN
+  if (!isNaN(envCompId) && envCompId > 0) {
+    competitionIdsToScan.push(envCompId)
+  }
+
+  if (competitionIdsToScan.length === 0) {
+    const competitions = await getCompetitions(token)
+    const recentCs2 = competitions
+      .filter((c) => {
+        const n = c.name?.toLowerCase() ?? ''
+        return n.includes('bedriftsligaen') || n.includes('counter-strike') || n.includes('cs2')
+      })
+      .sort((a, b) => b.id - a.id)
+      .slice(0, 3)
+    competitionIdsToScan.push(...recentCs2.map((c) => c.id))
+  }
+
+  for (const compId of competitionIdsToScan) {
+    const signups = await getCompetitionSignupTeams(compId, token)
+    const teamIds = signups.map((s) => s.team_id)
+    if (teamIds.length === 0) continue
+
+    const results = await Promise.allSettled(
+      teamIds.map(async (teamId) => {
+        const players = await getTeamPlayers(teamId, token)
+        if (players.some((p) => p.userId === userId)) return teamId
+        return null
+      }),
+    )
+
+    for (const r of results) {
+      if (r.status === 'fulfilled' && r.value != null) return r.value
+    }
+  }
+
+  return null
+}
+
 export async function buildPlayerProfile(
   userId: number,
+  hintTeamId?: number,
 ): Promise<PlayerProfileResponse> {
-  // Cache hit
   const cached = profileCache.get(userId)
   if (cached && cached.expiresAt > Date.now()) return cached.value
 
-  // 1. Get Steam64 and team ID from BL user record
-  const [steam64, teamId, avatarUrl] = await Promise.all([
+  const [steam64, avatarUrl] = await Promise.all([
     getUserSteamId(userId, BL_TOKEN),
-    getUserTeamId(userId, BL_TOKEN),
     getUserImageUrl(userId, BL_TOKEN),
   ])
 
-  if (!teamId) {
+  let resolvedTeamId: number | null = hintTeamId ?? null
+
+  if (!resolvedTeamId) {
+    resolvedTeamId = await getUserTeamId(userId, BL_TOKEN)
+  }
+
+  if (!resolvedTeamId) {
+    resolvedTeamId = await discoverTeamId(userId, BL_TOKEN)
+  }
+
+  if (!resolvedTeamId) {
     throw new PlayerProfileError('Player has no team data', 404)
   }
 
-  // 2. Fetch all team matchups
-  const allMatchups = await getTeamMatchups(teamId, BL_TOKEN)
-  const finishedMatchups = allMatchups.filter(
-    (m) => m.finished_at && m.id > 0,
-  )
+  const allMatchups = await getTeamMatchups(resolvedTeamId, BL_TOKEN)
+  const finishedMatchups = allMatchups.filter((m) => m.finished_at && m.id > 0)
 
   if (finishedMatchups.length === 0) {
-    // Return a minimal profile when no matches have been played
     const emptyProfile: PlayerProfileResponse = {
       paradise_user_id: userId,
       name: '',
@@ -99,7 +150,6 @@ export async function buildPlayerProfile(
     return emptyProfile
   }
 
-  // 3. Fetch stats + meta for all finished matchups in parallel
   const results = await Promise.allSettled(
     finishedMatchups.map(async (m) => {
       try {
@@ -114,7 +164,6 @@ export async function buildPlayerProfile(
     }),
   )
 
-  // 4. Collect this player's rows from each matchup
   type MatchEntry = {
     matchupId: number
     player: BLPlayerStats
@@ -147,7 +196,6 @@ export async function buildPlayerProfile(
       else if (meta.winner === 'away') won = !isHome
       else won = null
 
-      // Use first map name if available
       if (meta.maps.length > 0 && meta.maps[0].name) {
         mapName = normalizeActiveDutyMap(meta.maps[0].name) ?? undefined
       }
@@ -160,7 +208,6 @@ export async function buildPlayerProfile(
     throw new PlayerProfileError('No match data found for this player', 404)
   }
 
-  // 5. Fetch Leetify profile if we have a Steam64
   let leetifyData = undefined
   let recentMatches = undefined
   if (steam64) {
@@ -172,7 +219,6 @@ export async function buildPlayerProfile(
     }
   }
 
-  // 6. Aggregate stats across all matches
   let totalKills = 0
   let totalDeaths = 0
   let totalAssists = 0
@@ -211,108 +257,53 @@ export async function buildPlayerProfile(
     }
   }
 
-  const aggKd = totalDeaths > 0 ? totalKills / totalDeaths : totalKills
-  const aggDpr = totalRounds > 0 ? totalDamage / totalRounds : 0
-  const aggKast = totalRounds > 0 ? weightedKast / totalRounds : 0
-  const aggHs = totalRounds > 0 ? weightedHs / totalRounds : 0
-  const aggOdRate = totalOdAttempts > 0 ? totalOdWon / totalOdAttempts : 0
+  const kd = totalDeaths > 0 ? totalKills / totalDeaths : totalKills
+  const dpr = totalRounds > 0 ? totalDamage / totalRounds : 0
+  const kast = totalRounds > 0 ? weightedKast / totalRounds : 0
+  const hs = totalRounds > 0 ? weightedHs / totalRounds : 0
+  const odRate = totalOdAttempts > 0 ? totalOdWon / totalOdAttempts : 0
+  const flashAssistsPerRound = null
+  const utilityDmgPerRound = null
+  const clutchWinPct = totalOneVX > 0 ? totalClutchWon / totalOneVX : null
+  const firstDeathRate = null
 
-  // 7. Build trend (most recent first, up to 20 matches)
-  const sortedEntries = [...matchEntries].sort((a, b) => {
-    if (!a.date && !b.date) return 0
-    if (!a.date) return 1
-    if (!b.date) return -1
-    return new Date(b.date).getTime() - new Date(a.date).getTime()
-  })
+  const mapsPlayed = matchEntries.length
+  const multiKills = mapsPlayed > 0
+    ? {
+        k3: totalK3,
+        k4: totalK4,
+        k5: totalK5,
+        k3_per_map: totalK3 / mapsPlayed,
+        k4_per_map: totalK4 / mapsPlayed,
+        k5_per_map: totalK5 / mapsPlayed,
+      }
+    : null
 
-  const trendPoints: PerformanceTrendPoint[] = sortedEntries.map(({ matchupId, player, date, won, mapName }) => {
-    const kd = player.deaths > 0 ? player.kills / player.deaths : player.kills
-    const dpr = player.rounds > 0 ? player.damage / player.rounds : 0
-    const odRate = player.opening_attempts > 0 ? player.opening_kills / player.opening_attempts : 0
-    const score = compositeScore(dpr, player.kast, odRate, kd, player.hs)
-    return { matchup_id: matchupId, date, score: Math.round(score * 10000) / 10000, kd: Math.round(kd * 100) / 100, dpr: Math.round(dpr * 10) / 10, map: mapName, won }
-  })
+  const score = compositeScore(dpr, kast, odRate, kd, hs)
+  const ci = ci90(kast, odRate, dpr, kd, totalRounds, totalOdAttempts)
 
-  // 8. Per-map records
-  const mapGroups = new Map<string, { wins: number; losses: number; kdSum: number; dprSum: number; kastSum: number; count: number }>()
-  for (const { player, won, mapName } of matchEntries) {
-    if (!mapName) continue
-    if (!mapGroups.has(mapName)) mapGroups.set(mapName, { wins: 0, losses: 0, kdSum: 0, dprSum: 0, kastSum: 0, count: 0 })
-    const g = mapGroups.get(mapName)!
-    const kd = player.deaths > 0 ? player.kills / player.deaths : player.kills
-    const dpr = player.rounds > 0 ? player.damage / player.rounds : 0
-    g.kdSum += kd
-    g.dprSum += dpr
-    g.kastSum += player.kast
-    g.count += 1
-    if (won === true) g.wins += 1
-    if (won === false) g.losses += 1
-  }
-
-  const mapRecords: PlayerMapRecord[] = Array.from(mapGroups.entries())
-    .map(([map, g]) => ({
-      map,
-      played: g.count,
-      wins: g.wins,
-      losses: g.losses,
-      win_rate: g.count > 0 ? g.wins / g.count : 0,
-      avg_kd: Math.round((g.kdSum / g.count) * 100) / 100,
-      avg_dpr: Math.round(g.dprSum / g.count),
-      avg_kast: Math.round((g.kastSum / g.count) * 1000) / 1000,
-      confidence: g.count >= 5 ? ('medium' as const) : g.count >= 10 ? ('high' as const) : ('low' as const),
-    }))
-    .sort((a, b) => b.played - a.played)
-
-  // Fix confidence assignment (high needs more matches)
-  for (const r of mapRecords) {
-    r.confidence = r.played >= 10 ? 'high' : r.played >= 5 ? 'medium' : 'low'
-  }
-
-  // 9. Composite score + CI on aggregated data
-  const aggScore = compositeScore(aggDpr, aggKast, aggOdRate, aggKd, aggHs)
-  const w = blWeight(totalRounds)
-  let finalScore = aggScore
-  let dataSource: PlayerProfileResponse['data_source'] = 'bl'
-
-  if (leetifyData) {
-    const leetifyPrior =
-      (leetifyData.aim / 100) * 0.4 +
-      (leetifyData.positioning / 100) * 0.3 +
-      ((leetifyData.ct_od + leetifyData.t_od) / 2) * 0.3
-    finalScore = w * aggScore + (1 - w) * leetifyPrior
-    dataSource = 'combined'
-  }
-
-  const ciVal = ci90(aggKast, aggOdRate, aggDpr, aggKd, totalRounds, totalOdAttempts)
-
-  // 10. Role inference — build a minimal PlayerAnalysis shape
-  const aggPlayerAnalysis = {
-    name: displayName,
-    paradise_user_id: userId,
-    steam64: steam64 ?? undefined,
-    score: finalScore,
-    ci: ciVal,
-    rounds: totalRounds,
-    assists: totalAssists,
-    kd: aggKd,
-    kast: aggKast,
-    dpr: aggDpr,
-    hs: aggHs,
-    od_rate: aggOdRate,
-    bl_extended: {
-      trade_kills: matchEntries.reduce((s, e) => s + (e.player.bl_extended?.trade_kills ?? 0), 0),
-      traded_deaths: totalTradedDeaths,
-      firstkills: matchEntries.reduce((s, e) => s + (e.player.bl_extended?.firstkills ?? 0), 0),
-      survival_ratio: matchEntries[0]?.player.bl_extended?.survival_ratio,
+  const role = inferProfileRole(
+    {
+      name: displayName,
+      paradise_user_id: userId,
+      steam64: steam64 ?? undefined,
+      avatar_url: avatarUrl,
+      score,
+      ci,
+      rounds: totalRounds,
+      assists: totalAssists,
+      kd,
+      kast,
+      dpr,
+      hs,
+      od_rate: odRate,
+      leetify: leetifyData,
+      data_source: leetifyData ? 'combined' : 'bl',
     },
-    leetify: leetifyData,
-    data_source: dataSource,
-  }
+    matchEntries.length,
+  )
 
-  const roleResult = inferProfileRole(aggPlayerAnalysis, matchEntries.length)
-
-  // 11. Side split from Leetify
-  let sideSplit: PlayerProfileResponse['side_split'] = null
+  let sideSplit = null
   if (leetifyData) {
     const ctOd = leetifyData.ct_od
     const tOd = leetifyData.t_od
@@ -325,22 +316,78 @@ export async function buildPlayerProfile(
     sideSplit = { ct_od: ctOd, t_od: tOd, verdict }
   }
 
-  // 12. Multi-kills per map
-  const mapsPlayed = matchEntries.length
-  const multiKills = mapsPlayed > 0
-    ? {
-        k3: totalK3,
-        k4: totalK4,
-        k5: totalK5,
-        k3_per_map: Math.round((totalK3 / mapsPlayed) * 100) / 100,
-        k4_per_map: Math.round((totalK4 / mapsPlayed) * 100) / 100,
-        k5_per_map: Math.round((totalK5 / mapsPlayed) * 100) / 100,
-      }
-    : null
+  const trendPoints = matchEntries
+    .slice()
+    .sort((a, b) => {
+      const ad = a.date ? new Date(a.date).getTime() : 0
+      const bd = b.date ? new Date(b.date).getTime() : 0
+      return bd - ad
+    })
+    .map<PerformanceTrendPoint>(({ matchupId, date, won, mapName, player }) => ({
+      matchup_id: matchupId,
+      date,
+      won,
+      map: mapName,
+      score: compositeScore(
+        player.rounds > 0 ? player.damage / player.rounds : 0,
+        player.kast,
+        player.opening_attempts > 0 ? player.opening_kills / player.opening_attempts : 0,
+        player.deaths > 0 ? player.kills / player.deaths : player.kills,
+        player.hs,
+      ),
+      kd: player.deaths > 0 ? player.kills / player.deaths : player.kills,
+      dpr: player.rounds > 0 ? player.damage / player.rounds : 0,
+    }))
 
-  const last20 = trendPoints.slice(0, 20)
-  const last10 = trendPoints.slice(0, 10)
-  const last5 = trendPoints.slice(0, 5)
+  const trend = {
+    last5: trendPoints.slice(0, 5),
+    last10: trendPoints.slice(0, 10),
+    last20: trendPoints.slice(0, 20),
+  }
+
+  const mapAgg = new Map<
+    string,
+    {
+      wins: number
+      losses: number
+      played: number
+      totalKd: number
+      totalDpr: number
+      totalKast: number
+    }
+  >()
+  for (const entry of matchEntries) {
+    if (!entry.mapName) continue
+    const bucket = mapAgg.get(entry.mapName) ?? {
+      wins: 0,
+      losses: 0,
+      played: 0,
+      totalKd: 0,
+      totalDpr: 0,
+      totalKast: 0,
+    }
+    bucket.played += 1
+    if (entry.won === true) bucket.wins += 1
+    if (entry.won === false) bucket.losses += 1
+    bucket.totalKd += entry.player.deaths > 0 ? entry.player.kills / entry.player.deaths : entry.player.kills
+    bucket.totalDpr += entry.player.rounds > 0 ? entry.player.damage / entry.player.rounds : 0
+    bucket.totalKast += entry.player.kast ?? 0
+    mapAgg.set(entry.mapName, bucket)
+  }
+
+  const mapRecords = Array.from(mapAgg.entries())
+    .map<PlayerMapRecord>(([map, agg]) => ({
+      map,
+      played: agg.played,
+      wins: agg.wins,
+      losses: agg.losses,
+      win_rate: agg.played > 0 ? agg.wins / agg.played : 0,
+      avg_kd: agg.played > 0 ? agg.totalKd / agg.played : 0,
+      avg_dpr: agg.played > 0 ? agg.totalDpr / agg.played : 0,
+      avg_kast: agg.played > 0 ? agg.totalKast / agg.played : 0,
+      confidence: agg.played >= 8 ? 'high' : agg.played >= 4 ? 'medium' : 'low',
+    }))
+    .sort((a, b) => b.played - a.played)
 
   const profile: PlayerProfileResponse = {
     paradise_user_id: userId,
@@ -349,27 +396,27 @@ export async function buildPlayerProfile(
     steam64: steam64 ?? undefined,
     total_rounds: totalRounds,
     total_matches: matchEntries.length,
-    kd: Math.round(aggKd * 1000) / 1000,
-    kast: Math.round(aggKast * 10000) / 10000,
-    dpr: Math.round(aggDpr * 10) / 10,
-    hs: Math.round(aggHs * 10000) / 10000,
-    od_rate: Math.round(aggOdRate * 10000) / 10000,
-    flash_assists_per_round: null,
-    utility_dmg_per_round: null,
-    clutch_win_pct: totalOneVX > 0 ? Math.round((totalClutchWon / totalOneVX) * 10000) / 10000 : null,
-    first_death_rate: totalRounds > 0 ? Math.round((totalTradedDeaths / totalRounds) * 10000) / 10000 : null,
+    kd,
+    kast,
+    dpr,
+    hs,
+    od_rate: odRate,
+    flash_assists_per_round: flashAssistsPerRound,
+    utility_dmg_per_round: utilityDmgPerRound,
+    clutch_win_pct: clutchWinPct,
+    first_death_rate: firstDeathRate,
     multi_kills: multiKills,
     side_split: sideSplit,
-    score: Math.round(finalScore * 10000) / 10000,
-    ci: ciVal,
-    role: roleResult.role,
-    role_confidence: roleResult.confidence,
-    role_signals: roleResult.signals,
-    trend: { last5, last10, last20 },
+    score,
+    ci,
+    role: role.role as PlayerRole,
+    role_confidence: role.confidence,
+    role_signals: role.signals,
+    trend,
     map_records: mapRecords,
     leetify: leetifyData,
     recent_matches: recentMatches,
-    data_source: dataSource,
+    data_source: leetifyData ? 'combined' : 'bl',
     fetched_at: new Date().toISOString(),
   }
 

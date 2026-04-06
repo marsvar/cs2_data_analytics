@@ -19,8 +19,6 @@ import { RadarChart } from '@/components/radar-chart'
 import { ROLE_META_PROFILE } from '@/lib/detect-role'
 import type { PlayerProfileResponse, PerformanceTrendPoint } from '@/lib/types'
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
 function pct(v: number) { return `${(v * 100).toFixed(1)}%` }
 function round2(v: number) { return Math.round(v * 100) / 100 }
 
@@ -56,7 +54,6 @@ function StatCard({ label, value, sub }: { label: string; value: string; sub?: s
   )
 }
 
-// Convert profile to PlayerAnalysis shape for RadarChart
 function profileToPlayerAnalysis(p: PlayerProfileResponse) {
   return {
     name: p.name,
@@ -77,8 +74,6 @@ function profileToPlayerAnalysis(p: PlayerProfileResponse) {
   }
 }
 
-// ── Trend section ─────────────────────────────────────────────────────────────
-
 type TrendWindow = 'last5' | 'last10' | 'last20'
 
 function TrendSection({ trend }: { trend: PlayerProfileResponse['trend'] }) {
@@ -86,7 +81,7 @@ function TrendSection({ trend }: { trend: PlayerProfileResponse['trend'] }) {
   const points: PerformanceTrendPoint[] = trend[window]
 
   const chartData = [...points].reverse().map((p, i) => ({
-    label: p.date ? dateShort(p.date) : `K${i + 1}`,
+    label: p.date ? dateShort(p.date) : `M${i + 1}`,
     score: round2(p.score * 10),
     kd: round2(p.kd),
     won: p.won,
@@ -114,7 +109,7 @@ function TrendSection({ trend }: { trend: PlayerProfileResponse['trend'] }) {
                   : 'border-border/30 text-muted/60 hover:text-text'
               }`}
             >
-              {w === 'last5' ? '5K' : w === 'last10' ? '10K' : '20K'}
+              {w === 'last5' ? '5M' : w === 'last10' ? '10M' : '20M'}
             </button>
           ))}
         </div>
@@ -159,11 +154,9 @@ function TrendSection({ trend }: { trend: PlayerProfileResponse['trend'] }) {
   )
 }
 
-// ── Map performance ───────────────────────────────────────────────────────────
-
 function MapSection({ records }: { records: PlayerProfileResponse['map_records'] }) {
   if (records.length === 0) {
-    return <div className="px-4 py-5 font-mono text-xs text-muted/60">Ingen kartdata tilgjengelig</div>
+    return <div className="px-4 py-5 font-mono text-xs text-muted/60">No map data available</div>
   }
 
   const chartData = records.slice(0, 8).map((r) => ({
@@ -184,7 +177,7 @@ function MapSection({ records }: { records: PlayerProfileResponse['map_records']
           <YAxis type="category" dataKey="map" tick={{ fontSize: 9, fontFamily: 'var(--font-mono)', fill: 'var(--color-muted)' }} axisLine={false} tickLine={false} width={52} />
           <Tooltip
             contentStyle={{ background: 'var(--color-surface2)', border: '1px solid var(--color-border)', borderRadius: 6, fontSize: 10, fontFamily: 'var(--font-mono)' }}
-            formatter={(value: number) => [`${value}%`, 'Vinnrate']}
+            formatter={(value: number) => [`${value}%`, 'Win Rate']}
           />
           <Bar dataKey="win_rate" radius={[0, 3, 3, 0]}>
             {chartData.map((entry, i) => (
@@ -193,16 +186,15 @@ function MapSection({ records }: { records: PlayerProfileResponse['map_records']
           </Bar>
         </BarChart>
       </ResponsiveContainer>
-      {/* W/L records */}
       <div className="mt-3 px-3 space-y-1">
         {records.slice(0, 8).map((r) => (
           <div key={r.map} className="flex items-center justify-between gap-2">
             <span className="font-mono text-[9px] text-muted/60 w-20 truncate">{r.map.replace('de_', '')}</span>
             <div className="flex items-center gap-2">
               <span className="font-mono text-[9px] tabular-nums">
-                <span className="text-success">{r.wins}V</span>
+                <span className="text-success">{r.wins}W</span>
                 <span className="text-muted/40 mx-0.5">–</span>
-                <span className="text-danger">{r.losses}T</span>
+                <span className="text-danger">{r.losses}L</span>
               </span>
               <ConfBadge conf={r.confidence} />
             </div>
@@ -213,8 +205,6 @@ function MapSection({ records }: { records: PlayerProfileResponse['map_records']
   )
 }
 
-// ── Main component ────────────────────────────────────────────────────────────
-
 export function PlayerProfileDisplay({ profile }: { profile: PlayerProfileResponse }) {
   const roleMeta = ROLE_META_PROFILE[profile.role]
   const scoreDisplay = (profile.score * 10).toFixed(2)
@@ -222,8 +212,6 @@ export function PlayerProfileDisplay({ profile }: { profile: PlayerProfileRespon
 
   return (
     <div className="space-y-4">
-
-      {/* ── Section 1: Hero ── */}
       <div className="bg-surface/92 border border-border/40 rounded-xl overflow-hidden fx-rise">
         <div className="px-5 py-5">
           <div className="flex items-start gap-4">
@@ -231,7 +219,7 @@ export function PlayerProfileDisplay({ profile }: { profile: PlayerProfileRespon
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap mb-1">
                 <h1 className="font-display text-xl md:text-2xl leading-none tracking-tight text-text">
-                  {profile.name || `Spiller #${profile.paradise_user_id}`}
+                  {profile.name || `Player #${profile.paradise_user_id}`}
                 </h1>
                 <span className={`font-mono text-[9px] uppercase tracking-widest border px-2 py-0.5 rounded ${roleMeta.colorClass} border-current/30 bg-current/5`}>
                   {roleMeta.label}
@@ -250,7 +238,7 @@ export function PlayerProfileDisplay({ profile }: { profile: PlayerProfileRespon
               <div className="flex items-center gap-2 flex-wrap">
                 {profile.leetify?.premier && (
                   <span className="font-mono text-[9px] text-accent/80 border border-accent/20 bg-accent/5 px-1.5 py-0.5 rounded">
-                    Premier {profile.leetify.premier.toLocaleString()}
+                    Premier {profile.leetify.premier.toLocaleString('en-GB')}
                   </span>
                 )}
                 {profile.leetify?.faceit_level && (
@@ -263,7 +251,6 @@ export function PlayerProfileDisplay({ profile }: { profile: PlayerProfileRespon
                 </span>
               </div>
             </div>
-            {/* Composite score */}
             <div className="shrink-0 text-right">
               <div className="font-display text-3xl tabular-nums leading-none text-text">{scoreDisplay}</div>
               <div className="font-mono text-[9px] text-muted/50 mt-0.5">±{profile.ci} (90% CI)</div>
@@ -273,7 +260,6 @@ export function PlayerProfileDisplay({ profile }: { profile: PlayerProfileRespon
             </div>
           </div>
 
-          {/* Score bar */}
           <div className="mt-4">
             <div className="w-full bg-surface2 rounded-full h-1.5">
               <div
@@ -283,7 +269,6 @@ export function PlayerProfileDisplay({ profile }: { profile: PlayerProfileRespon
             </div>
           </div>
 
-          {/* Stat row */}
           <div className="grid grid-cols-5 gap-2 mt-4">
             <StatCard label="K/D" value={profile.kd.toFixed(2)} />
             <StatCard label="KAST" value={pct(profile.kast)} />
@@ -294,29 +279,23 @@ export function PlayerProfileDisplay({ profile }: { profile: PlayerProfileRespon
         </div>
       </div>
 
-      {/* ── Section 2: Trend ── */}
       <div className="bg-surface/92 border border-border/40 rounded-xl overflow-hidden fx-rise fx-rise-d1">
         <TrendSection trend={profile.trend} />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-
-        {/* ── Section 3: Map performance ── */}
         <div className="bg-surface/92 border border-border/40 rounded-xl overflow-hidden fx-rise fx-rise-d1">
           <MapSection records={profile.map_records} />
         </div>
 
-        {/* ── Section 4: Stat detail grid ── */}
         <div className="bg-surface/92 border border-border/40 rounded-xl overflow-hidden fx-rise fx-rise-d2">
           <div className="px-4 pt-4 pb-2">
             <span className="font-display text-[10px] uppercase tracking-[0.2em] text-accent">Detailed Stats</span>
           </div>
           <div className="px-4 pb-4 space-y-3">
-
-            {/* Multi-kills */}
             {profile.multi_kills && (
               <div>
-                <div className="font-mono text-[9px] uppercase tracking-widest text-muted/50 mb-1.5">Multi-kills per kamp</div>
+                <div className="font-mono text-[9px] uppercase tracking-widest text-muted/50 mb-1.5">Multi-kills per match</div>
                 <div className="grid grid-cols-3 gap-2">
                   {[
                     { label: '3K', val: profile.multi_kills.k3_per_map },
@@ -325,22 +304,20 @@ export function PlayerProfileDisplay({ profile }: { profile: PlayerProfileRespon
                   ].map(({ label, val }) => (
                     <div key={label} className="bg-surface2/50 rounded-lg px-2 py-2 text-center">
                       <div className="font-display text-sm tabular-nums text-text">{val.toFixed(2)}</div>
-                      <div className="font-mono text-[8px] text-muted/50 mt-0.5">{label}/kamp</div>
+                      <div className="font-mono text-[8px] text-muted/50 mt-0.5">{label}/match</div>
                     </div>
                   ))}
                 </div>
               </div>
             )}
 
-            {/* Clutch win % */}
             {profile.clutch_win_pct != null && (
               <div className="flex items-center justify-between">
-                <span className="font-mono text-[9px] uppercase tracking-widest text-muted/60">Clutch vinn%</span>
+                <span className="font-mono text-[9px] uppercase tracking-widest text-muted/60">Clutch win %</span>
                 <span className="font-display text-sm tabular-nums text-text">{pct(profile.clutch_win_pct)}</span>
               </div>
             )}
 
-            {/* First death rate */}
             {profile.first_death_rate != null && (
               <div className="flex items-center justify-between">
                 <span className="font-mono text-[9px] uppercase tracking-widest text-muted/60">First death rate</span>
@@ -348,7 +325,6 @@ export function PlayerProfileDisplay({ profile }: { profile: PlayerProfileRespon
               </div>
             )}
 
-            {/* Side split */}
             {profile.side_split && (
               <div>
                 <div className="font-mono text-[9px] uppercase tracking-widest text-muted/50 mb-1.5">CT/T opening duel split</div>
@@ -370,8 +346,6 @@ export function PlayerProfileDisplay({ profile }: { profile: PlayerProfileRespon
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-
-        {/* ── Section 5: Radar ── */}
         <div className="bg-surface/92 border border-border/40 rounded-xl overflow-hidden fx-rise fx-rise-d2">
           <div className="px-4 pt-4 pb-2">
             <span className="font-display text-[10px] uppercase tracking-[0.2em] text-accent">Role Profile</span>
@@ -381,16 +355,15 @@ export function PlayerProfileDisplay({ profile }: { profile: PlayerProfileRespon
           </div>
         </div>
 
-        {/* ── Section 6: Leetify ratings (conditional) ── */}
         {profile.leetify && (
           <div className="bg-surface/92 border border-border/40 rounded-xl overflow-hidden fx-rise fx-rise-d2">
             <div className="px-4 pt-4 pb-2">
-              <span className="font-display text-[10px] uppercase tracking-[0.2em] text-accent">Leetify ratings</span>
+              <span className="font-display text-[10px] uppercase tracking-[0.2em] text-accent">Leetify Ratings</span>
             </div>
             <div className="px-4 pb-4 space-y-2.5">
               {[
                 { label: 'Aim', value: profile.leetify.aim, max: 100 },
-                { label: 'Posisjonering', value: profile.leetify.positioning, max: 100 },
+                { label: 'Positioning', value: profile.leetify.positioning, max: 100 },
                 { label: 'Utility', value: profile.leetify.utility, max: 100 },
               ].map(({ label, value, max }) => (
                 <div key={label}>
@@ -406,7 +379,6 @@ export function PlayerProfileDisplay({ profile }: { profile: PlayerProfileRespon
                   </div>
                 </div>
               ))}
-              {/* Clutch + opening (raw values) */}
               <div className="grid grid-cols-2 gap-2 pt-1">
                 <div className="bg-surface2/50 rounded px-2 py-1.5 text-center">
                   <div className="font-display text-sm tabular-nums text-text">{profile.leetify.clutch.toFixed(2)}</div>
@@ -419,7 +391,7 @@ export function PlayerProfileDisplay({ profile }: { profile: PlayerProfileRespon
               </div>
               {profile.leetify.reaction_time_ms > 0 && (
                 <div className="flex items-center justify-between">
-                  <span className="font-mono text-[9px] uppercase tracking-widest text-muted/60">Reaksjonstid</span>
+                  <span className="font-mono text-[9px] uppercase tracking-widest text-muted/60">Reaction time</span>
                   <span className="font-display text-sm tabular-nums text-text">{profile.leetify.reaction_time_ms} ms</span>
                 </div>
               )}
@@ -428,11 +400,10 @@ export function PlayerProfileDisplay({ profile }: { profile: PlayerProfileRespon
         )}
       </div>
 
-      {/* ── Section 7: Recent matchmaking matches (conditional) ── */}
       {profile.recent_matches && profile.recent_matches.length > 0 && (
         <div className="bg-surface/92 border border-border/40 rounded-xl overflow-hidden fx-rise fx-rise-d3">
           <div className="px-4 pt-4 pb-2">
-            <span className="font-display text-[10px] uppercase tracking-[0.2em] text-accent">Siste matchmaking-kamper</span>
+            <span className="font-display text-[10px] uppercase tracking-[0.2em] text-accent">Recent Matchmaking Matches</span>
             <span className="font-mono text-[9px] text-muted/50 ml-2">(Leetify)</span>
           </div>
           <div className="divide-y divide-border/15">
@@ -445,7 +416,7 @@ export function PlayerProfileDisplay({ profile }: { profile: PlayerProfileRespon
                   : m.outcome === 'loss' ? 'text-danger border-danger/30 bg-danger/8'
                   : 'text-muted border-border/30'
                 }`}>
-                  {m.outcome === 'win' ? 'V' : m.outcome === 'loss' ? 'T' : 'U'}
+                  {m.outcome === 'win' ? 'W' : m.outcome === 'loss' ? 'L' : 'D'}
                 </span>
                 <div className="font-mono text-[10px] tabular-nums text-accent/80 w-10 text-right">
                   {m.leetify_rating.toFixed(2)}
@@ -456,13 +427,11 @@ export function PlayerProfileDisplay({ profile }: { profile: PlayerProfileRespon
         </div>
       )}
 
-      {/* ── Back navigation ── */}
       <div className="pt-2 pb-4">
         <Link href="/" className="font-mono text-[11px] uppercase tracking-widest text-muted hover:text-text transition-colors">
           ← Back to search
         </Link>
       </div>
-
     </div>
   )
 }
