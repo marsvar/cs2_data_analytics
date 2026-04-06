@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { PlayerAvatar } from '@/components/identity-badge'
 import type { UpcomingMatchPreview } from '@/lib/upcoming-preview'
 
 type UpcomingPreviewPanelProps = {
@@ -109,14 +110,14 @@ export function UpcomingPreviewPanel({ matchupId }: UpcomingPreviewPanelProps) {
     return (
       <div className="mt-3 rounded-lg border border-border/20 bg-surface2/15 p-3 animate-pulse">
         <div className="mb-2 h-4 w-24 rounded bg-surface" />
-        <div className="mb-3 h-6 rounded bg-surface" />
+        <div className="mb-3 h-14 rounded bg-surface" />
         <div className="mb-2 flex gap-2">
           <div className="h-6 w-24 rounded bg-surface" />
           <div className="h-6 w-24 rounded bg-surface" />
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <div className="h-9 rounded bg-surface" />
-          <div className="h-9 rounded bg-surface" />
+          <div className="h-11 rounded bg-surface" />
+          <div className="h-11 rounded bg-surface" />
         </div>
       </div>
     )
@@ -130,7 +131,31 @@ export function UpcomingPreviewPanel({ matchupId }: UpcomingPreviewPanelProps) {
         <span className={`font-mono text-[8px] uppercase tracking-widest px-2 py-0.5 rounded border ${preview.confidenceClass}`}>
           {preview.confidenceLabel}
         </span>
-        <span className="font-mono text-[9px] text-muted/55">pre-match snapshot</span>
+        <span className="font-mono text-[9px] text-muted/55">preview snapshot</span>
+      </div>
+
+      <div className="mb-3 flex items-stretch overflow-hidden rounded-lg border border-border/20">
+        <div className="flex-1 border-r border-border/20 px-2.5 py-2 text-center">
+          <div className="font-mono text-[9px] uppercase tracking-widest text-accent/75 truncate">
+            {preview.homeTeam}
+          </div>
+          <div className="mt-1 font-mono text-xl font-semibold leading-none tabular-nums text-accent">
+            {preview.homeWinPct}%
+          </div>
+        </div>
+        <div className="flex items-center justify-center px-2 text-center">
+          <span className="font-mono text-[9px] text-muted/55">
+            {preview.confidenceNote ?? 'win band'}
+          </span>
+        </div>
+        <div className="flex-1 border-l border-border/20 px-2.5 py-2 text-center">
+          <div className="font-mono text-[9px] uppercase tracking-widest text-accent2/75 truncate">
+            {preview.awayTeam}
+          </div>
+          <div className="mt-1 font-mono text-xl font-semibold leading-none tabular-nums text-accent2">
+            {preview.awayWinPct}%
+          </div>
+        </div>
       </div>
 
       <div className="mb-2">
@@ -139,36 +164,38 @@ export function UpcomingPreviewPanel({ matchupId }: UpcomingPreviewPanelProps) {
             className="absolute inset-y-0 left-0 bg-accent"
             style={{ width: `${preview.homeWinPct}%` }}
           />
+          <div
+            className="absolute inset-y-0 right-0 bg-accent2/65"
+            style={{ width: `${preview.awayWinPct}%` }}
+          />
           <div className="absolute inset-y-0 left-1/2 w-px bg-border/80" />
         </div>
-        <div className="mt-1.5 flex items-center justify-between font-mono text-[10px]">
-          <span className="text-accent tabular-nums">{preview.homeWinPct}%</span>
-          <span className="text-muted/45">win band</span>
-          <span className="text-accent2 tabular-nums">{preview.awayWinPct}%</span>
-        </div>
-      </div>
-
-      <div className="mb-2 flex flex-wrap gap-2">
-        {preview.bestMap && (
-          <span className="font-mono text-[9px] uppercase tracking-widest rounded border border-accent/25 bg-accent/8 px-2 py-1 text-accent">
-            Press: {preview.bestMap}
-          </span>
-        )}
-        {preview.cautionMap && (
-          <span className="font-mono text-[9px] uppercase tracking-widest rounded border border-warning/25 bg-warning/8 px-2 py-1 text-warning">
-            Risiko: {preview.cautionMap}
-          </span>
-        )}
       </div>
 
       <div className="grid grid-cols-2 gap-3 font-mono text-[10px]">
-        <div>
-          <p className="mb-1 text-muted/55">Nøkkel hjem</p>
-          <p className="truncate text-text">{preview.homeKeyPlayer ?? '–'}</p>
+        <div className="rounded-md border border-border/15 bg-surface/30 px-2.5 py-2">
+          <p className="mb-1 text-muted/55">Home key player</p>
+          <div className="flex items-center gap-2 min-w-0">
+            <PlayerAvatar
+              name={preview.homeKeyPlayer ?? 'Home'}
+              imageUrl={preview.homeKeyPlayerAvatarUrl}
+              tone="home"
+              size="xs"
+            />
+            <p className="truncate text-text">{preview.homeKeyPlayer ?? '–'}</p>
+          </div>
         </div>
-        <div>
-          <p className="mb-1 text-muted/55">Nøkkel borte</p>
-          <p className="truncate text-text">{preview.awayKeyPlayer ?? '–'}</p>
+        <div className="rounded-md border border-border/15 bg-surface/30 px-2.5 py-2">
+          <p className="mb-1 text-muted/55">Away key player</p>
+          <div className="flex items-center gap-2 min-w-0">
+            <PlayerAvatar
+              name={preview.awayKeyPlayer ?? 'Away'}
+              imageUrl={preview.awayKeyPlayerAvatarUrl}
+              tone="away"
+              size="xs"
+            />
+            <p className="truncate text-text">{preview.awayKeyPlayer ?? '–'}</p>
+          </div>
         </div>
       </div>
     </div>

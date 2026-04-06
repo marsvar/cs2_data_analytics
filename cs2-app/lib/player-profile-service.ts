@@ -2,13 +2,12 @@
  * player-profile-service.ts
  * -------------------------
  * Builds a PlayerProfileResponse for a given paradise_user_id by aggregating
- * all finished matchup stats for the player's team, then blending with Leetify.
+ * the player's finished matchup stats, then blending with Leetify.
  */
 
 import {
   getUserSteamId,
-  getUserTeamId,
-  getTeamMatchups,
+  getUserMatchups,
   getMatchupStats,
   getMatchupMeta,
   getUserImageUrl,
@@ -49,19 +48,14 @@ export async function buildPlayerProfile(
   const cached = profileCache.get(userId)
   if (cached && cached.expiresAt > Date.now()) return cached.value
 
-  // 1. Get Steam64 and team ID from BL user record
-  const [steam64, teamId, avatarUrl] = await Promise.all([
+  // 1. Get Steam64 and avatar from BL user record.
+  const [steam64, avatarUrl] = await Promise.all([
     getUserSteamId(userId, BL_TOKEN),
-    getUserTeamId(userId, BL_TOKEN),
     getUserImageUrl(userId, BL_TOKEN),
   ])
 
-  if (!teamId) {
-    throw new PlayerProfileError('Spiller har ingen lagdata', 404)
-  }
-
-  // 2. Fetch all team matchups
-  const allMatchups = await getTeamMatchups(teamId, BL_TOKEN)
+  // 2. Fetch all matchups for the player directly.
+  const allMatchups = await getUserMatchups(userId, BL_TOKEN)
   const finishedMatchups = allMatchups.filter(
     (m) => m.finished_at && m.id > 0,
   )
