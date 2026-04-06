@@ -134,7 +134,7 @@ function buildWatchBuckets(players: PlayerAnalysis[]) {
         paradise_user_id: player.paradise_user_id,
         name: player.name,
         avatar_url: player.avatar_url,
-        reason: delta >= 0 ? 'Spiller over forventet baseline' : 'Spiller under forventet baseline',
+        reason: delta >= 0 ? 'Player is above the expected baseline' : 'Player is below the expected baseline',
         display_value: `${delta >= 0 ? '+' : ''}${(delta * 10).toFixed(1)}`,
       }
     })
@@ -150,7 +150,7 @@ function buildWatchBuckets(players: PlayerAnalysis[]) {
       paradise_user_id: player.paradise_user_id,
       name: player.name,
       avatar_url: player.avatar_url,
-      reason: player.rounds < 50 ? 'Tynt utvalg kan vippe kampen' : 'Høy varians i profilen',
+      reason: player.rounds < 50 ? 'A thin sample can swing the match' : 'High variance in the profile',
       display_value: `CI ${player.ci.toFixed(2)} · ${player.rounds} r`,
     }))
 
@@ -197,8 +197,8 @@ function buildMapBattlefield(mapPool?: LandingAnalytics['map_pool']): LandingAna
       away_sample_size: away?.sample_size ?? 0,
       favored,
       confidence,
-      home_display: home != null ? `${Math.round(home.win_rate * 100)}% · ${home.sample_size}` : 'Ingen data',
-      away_display: away != null ? `${Math.round(away.win_rate * 100)}% · ${away.sample_size}` : 'Ingen data',
+      home_display: home != null ? `${Math.round(home.win_rate * 100)}% · ${home.sample_size}` : 'No data',
+      away_display: away != null ? `${Math.round(away.win_rate * 100)}% · ${away.sample_size}` : 'No data',
     }
   })
 
@@ -447,8 +447,8 @@ export function deriveLandingAnalytics(
       }),
       source: mapBattlefield != null ? 'derived' : 'insufficient',
       note: mapBattlefield?.veto_flow.length
-        ? `Veto-plan ${mapBattlefield.veto_flow.map((step) => `${step.label} ${formatMapName(step.map)}`).slice(0, 2).join(' · ')}`
-        : 'Ingen robust veto-sekvens',
+        ? `Veto plan ${mapBattlefield.veto_flow.map((step) => `${step.label} ${formatMapName(step.map)}`).slice(0, 2).join(' · ')}`
+        : 'No strong veto sequence',
     },
   ]
 

@@ -401,12 +401,12 @@ function EarlyStrengthCard({
               })}
             </div>
           ) : (
-            <p className="font-mono text-[10px] text-muted">Ingen data.</p>
+            <p className="font-mono text-[10px] text-muted">No data.</p>
           )}
         </div>
 
         <div>
-          <p className="font-mono text-[9px] uppercase tracking-widest text-danger/70 mb-1.5">Svakest i opening</p>
+          <p className="font-mono text-[9px] uppercase tracking-widest text-danger/70 mb-1.5">Weakest in openings</p>
           {weaknesses.length > 0 ? (
             <div className="space-y-1.5">
               {weaknesses.map((player) => {
@@ -429,7 +429,7 @@ function EarlyStrengthCard({
               })}
             </div>
           ) : (
-            <p className="font-mono text-[10px] text-muted">Ingen tydelig svakhet.</p>
+            <p className="font-mono text-[10px] text-muted">No clear weakness.</p>
           )}
         </div>
       </div>
@@ -1280,7 +1280,7 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                         </span>
                         {!mapPlayed && (
                           <span className="font-mono text-[8px] uppercase tracking-widest text-muted border border-border/40 bg-surface/45 rounded px-1.5 py-0.5">
-                            Ikke spilt
+                            Not played
                           </span>
                         )}
                         {mapPlayed && (
@@ -1308,14 +1308,14 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                               {map.home_score}-{map.away_score}
                             </div>
                             <div className={`font-mono text-[9px] uppercase tracking-widest ${mapWinner === 'home' ? 'text-accent' : mapWinner === 'away' ? 'text-accent2' : 'text-warning'}`}>
-                              Vinner: {winnerLabel(result, mapWinner)}
+                              Winner: {winnerLabel(result, mapWinner)}
                             </div>
                           </>
                         ) : (
                           <>
-                            <div className="font-mono text-[11px] text-muted tabular-nums">Ikke spilt</div>
+                            <div className="font-mono text-[11px] text-muted tabular-nums">Not played</div>
                             <div className="font-mono text-[9px] text-muted/80">
-                              {seriesDecidedEarly ? 'Serien var allerede avgjort.' : 'Ingen score registrert.'}
+                              {seriesDecidedEarly ? 'The series had already been decided.' : 'No score recorded.'}
                             </div>
                           </>
                         )}
@@ -1325,7 +1325,7 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                 })}
               </div>
             ) : (
-              <p className="font-mono text-[11px] text-muted">Ingen map-liste tilgjengelig for denne kampen.</p>
+              <p className="font-mono text-[11px] text-muted">No map list is available for this match.</p>
             )}
             {mapsPlayed.note && (
               <p className={`font-mono text-[10px] mt-2 ${seriesDecidedEarly ? 'text-muted' : 'text-warning'}`}>
