@@ -140,7 +140,7 @@ export function TeamComparisonBars({ home, away }: { home: Team; away: Team }) {
     <div className="card-1 p-5 mb-6">
       <div className="flex items-center justify-between mb-4">
         <h2 className="font-display text-[11px] tracking-widest uppercase text-muted">
-          Lagsammenligning
+          Team comparison
         </h2>
         <span className="font-mono text-[8px] text-muted/50 uppercase tracking-widest">BL-liga</span>
       </div>
@@ -148,13 +148,13 @@ export function TeamComparisonBars({ home, away }: { home: Team; away: Team }) {
       {/* Team name headers */}
       <div className="grid grid-cols-[1fr_52px_1fr] mb-3">
         <span className="inline-flex items-center justify-end gap-1.5 font-mono text-xs text-accent text-right truncate pr-2">
-          <TeamLogo name={home.name || 'Hjemmelag'} logoUrl={home.logo_url} tone="home" size="sm" />
-          {home.name || 'Hjemmelag'}
+          <TeamLogo name={home.name || 'Home'} logoUrl={home.logo_url} tone="home" size="sm" />
+          {home.name || 'Home'}
         </span>
         <span />
         <span className="inline-flex items-center gap-1.5 font-mono text-xs text-accent2 truncate pl-2">
-          <TeamLogo name={away.name || 'Bortelag'} logoUrl={away.logo_url} tone="away" size="sm" />
-          {away.name || 'Bortelag'}
+          <TeamLogo name={away.name || 'Away'} logoUrl={away.logo_url} tone="away" size="sm" />
+          {away.name || 'Away'}
         </span>
       </div>
 

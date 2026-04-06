@@ -19,7 +19,7 @@ function StatusBadge({ status }: { status: DivisionMatchSummary['status'] }) {
   if (status === 'upcoming') {
     return (
       <span className="font-mono text-[8px] uppercase tracking-widest px-1.5 py-0.5 rounded border border-accent/40 text-accent bg-accent/10">
-        Kommende
+        Upcoming
       </span>
     )
   }
@@ -33,7 +33,7 @@ function StatusBadge({ status }: { status: DivisionMatchSummary['status'] }) {
   if (status === 'completed') {
     return (
       <span className="font-mono text-[8px] uppercase tracking-widest px-1.5 py-0.5 rounded border border-border/40 text-muted">
-        Spilt
+        Played
       </span>
     )
   }
@@ -44,7 +44,7 @@ function formatMatchDate(iso: string | null): string {
   if (!iso) return ''
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return ''
-  return new Intl.DateTimeFormat('nb-NO', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(d)
+  return new Intl.DateTimeFormat('en-GB', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(d)
 }
 
 function formatResultScore(match: DivisionMatchSummary): string | null {
@@ -183,8 +183,8 @@ function RecentMatchesPanel({
     <div className="rounded-xl border border-border/45 bg-surface/65 backdrop-blur-sm p-5 md:p-6">
       <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
         <div>
-          <h2 className="font-display text-xs tracking-widest uppercase text-accent">Kommende kamper</h2>
-          <p className="font-mono text-[11px] text-muted mt-1">Velg kamp fra listen eller søk direkte under.</p>
+          <h2 className="font-display text-xs tracking-widest uppercase text-accent">Upcoming Matches</h2>
+          <p className="font-mono text-[11px] text-muted mt-1">Select a match from the list or search directly below.</p>
         </div>
 
         {/* Division selector */}
@@ -195,7 +195,7 @@ function RecentMatchesPanel({
             value={selectedDivisionId ?? ''}
             onChange={(e) => setSelectedDivisionId(Number(e.target.value))}
             className="font-mono text-[10px] text-muted bg-surface border border-border/50 rounded px-2 py-1 focus:outline-none focus:border-accent/50"
-            aria-label="Velg divisjon"
+            aria-label="Select division"
           >
             {divisions.map((d) => (
               <option key={d.id} value={d.id}>{d.name}</option>
@@ -216,16 +216,16 @@ function RecentMatchesPanel({
 
       {!loadingMatches && allMatches.length === 0 && (
         <p className="font-mono text-[11px] text-muted">
-          {selectedDivisionId ? 'Ingen kamper funnet for denne divisjonen.' : 'Velg en divisjon for å se kamper.'}
+          {selectedDivisionId ? 'No matches found for this division.' : 'Select a division to see matches.'}
         </p>
       )}
 
       {!loadingMatches && allMatches.length > 0 && (
         <div className="space-y-4">
           <div>
-            <p className="font-mono text-[10px] uppercase tracking-widest text-accent mb-2">Ikke spilt ennå</p>
+            <p className="font-mono text-[10px] uppercase tracking-widest text-accent mb-2">Not played yet</p>
             {notPlayedYet.length === 0 ? (
-              <p className="font-mono text-[11px] text-muted">Ingen kommende eller live-kamper i utvalget.</p>
+              <p className="font-mono text-[11px] text-muted">No upcoming or live matches in selection.</p>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {notPlayedYet.map((match) => (
@@ -257,15 +257,15 @@ function RecentMatchesPanel({
 
           <div>
             <div className="mb-2 flex items-center justify-between gap-3">
-              <p className="font-mono text-[10px] uppercase tracking-widest text-success">Forrige runde</p>
+              <p className="font-mono text-[10px] uppercase tracking-widest text-success">Previous round</p>
               {previousRound.roundNumber != null && (
                 <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-muted/70">
-                  Runde {previousRound.roundNumber}
+                  Round {previousRound.roundNumber}
                 </p>
               )}
             </div>
             {previousRoundMatches.length === 0 ? (
-              <p className="font-mono text-[11px] text-muted">Ingen kamper fra forrige runde i utvalget.</p>
+              <p className="font-mono text-[11px] text-muted">No matches from the previous round in selection.</p>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {previousRoundMatches.map((match) => {
@@ -311,7 +311,7 @@ function RecentMatchesPanel({
             href={`/division/${selectedDivisionId}?division=${selectedDivisionId}`}
             className="font-mono text-[10px] text-muted hover:text-accent transition-colors"
           >
-            Se alle kamper i divisjonen →
+            View all matches in this division →
           </Link>
         </div>
       )}
@@ -368,7 +368,7 @@ export default function Home() {
         const payload = (await response.json()) as MatchSearchResponse | { error: string }
         if (!response.ok || 'error' in payload) {
           setSuggestions([])
-          setSearchError('Kunne ikke søke i kamper akkurat nå.')
+          setSearchError('Could not search matches right now.')
           return
         }
 
@@ -376,7 +376,7 @@ export default function Home() {
       } catch {
         if (controller.signal.aborted) return
         setSuggestions([])
-        setSearchError('Kunne ikke søke i kamper akkurat nå.')
+        setSearchError('Could not search matches right now.')
       } finally {
         if (!controller.signal.aborted) setSearchLoading(false)
       }
@@ -405,7 +405,7 @@ export default function Home() {
     if (loading) return
 
     if (!matchupId) {
-      setError('Søk etter lag og velg riktig kamp fra listen før du går videre.')
+      setError('Search for a team and select the correct match from the list before continuing.')
       return
     }
 
@@ -456,16 +456,16 @@ export default function Home() {
         <div className="max-w-3xl mx-auto w-full">
           <div className="flex items-center justify-between mb-10">
             <span className="font-display text-[11px] tracking-widest uppercase text-accent">
-              CS2 Analyse
+              CS2 Analytics
             </span>
             <span className="font-mono text-[10px] text-muted uppercase tracking-widest hidden sm:block">
-              Bedriftsligaen · Vår 2026
+              Bedriftsligaen · Spring 2026
             </span>
           </div>
 
           <div>
             <h1 className="font-display font-bold uppercase leading-none tracking-tight mb-5">
-              <span className="block text-4xl md:text-6xl text-text">TAKTISK</span>
+              <span className="block text-4xl md:text-6xl text-text">TACTICAL</span>
               <span
                 className="block text-5xl md:text-7xl"
                 style={{
@@ -473,13 +473,13 @@ export default function Home() {
                   textShadow: '0 0 48px rgba(37,99,235,0.3), 0 0 12px rgba(37,99,235,0.15)',
                 }}
               >
-                KAMPANALYSE.
+                MATCH ANALYSIS.
               </span>
             </h1>
             <p className="font-mono text-sm text-muted max-w-md leading-relaxed">
-              Oversikt over kommende kamper i valgt divisjon.
+              Overview of upcoming matches in the selected division.
               <br />
-              Søk direkte på kamp nederst i oversikten.
+              Search directly for a match below.
             </p>
           </div>
         </div>
@@ -494,14 +494,14 @@ export default function Home() {
       <section className="px-6 md:px-10 pb-16 max-w-5xl mx-auto w-full">
         <div className="rounded-xl border border-border/45 bg-surface/65 backdrop-blur-sm p-5 md:p-6">
           <div className="mb-3">
-            <h2 className="font-display text-xs tracking-widest uppercase text-accent">Søk direkte på kamp</h2>
+            <h2 className="font-display text-xs tracking-widest uppercase text-accent">Search for a match</h2>
             <p className="font-mono text-[11px] text-muted mt-1">
-              Finn kamp på lagnavn, eller lim inn matchup-ID.
+              Find a match by team name, or paste a matchup ID.
             </p>
           </div>
 
           <div className="mb-3">
-            <label htmlFor="matchup-input" className="sr-only">Søk direkte på kamp</label>
+            <label htmlFor="matchup-input" className="sr-only">Search for a match</label>
             <div
               className="flex items-center border border-border rounded-lg bg-surface overflow-hidden"
               style={{
@@ -523,7 +523,7 @@ export default function Home() {
                   setError(null)
                 }}
                 onKeyDown={handleKeyDown}
-                placeholder="f.eks. Sopra vs GlobalConnect"
+                placeholder="e.g. Sopra vs GlobalConnect"
                 disabled={loading}
                 className="flex-1 bg-transparent font-mono text-base text-text px-3 py-3.5 focus:outline-none disabled:opacity-50 placeholder:text-muted/30 min-w-0"
               />
@@ -532,7 +532,7 @@ export default function Home() {
                 type="button"
                 onClick={runAnalysis}
                 disabled={loading || input.trim() === ''}
-                aria-label="Gå til kamp"
+                aria-label="Go to match"
                 className="px-5 py-3.5 font-mono text-sm border-l border-border shrink-0 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 style={{ background: 'rgba(37,99,235,0.08)', color: 'var(--color-accent)' }}
               >
@@ -542,7 +542,7 @@ export default function Home() {
           </div>
 
           {searchLoading && (
-            <p className="font-mono text-[10px] text-muted mb-2 animate-pulse">Søker i kampnavn…</p>
+            <p className="font-mono text-[10px] text-muted mb-2 animate-pulse">Searching matches…</p>
           )}
 
           {!searchLoading && suggestions.length > 0 && (
@@ -570,14 +570,14 @@ export default function Home() {
           <div className="h-4">
             {loading && (
               <p className="font-mono text-[11px] text-muted animate-pulse">
-                Navigerer til kampanalyse…
+                Navigating to match analysis…
               </p>
             )}
             {error && (
               <p className="font-mono text-[11px] text-danger">✗ {error}</p>
             )}
             {!loading && !error && !searchError && (
-              <p className="font-mono text-[11px] text-muted/40">Tips: Velg kamp fra forslagene for raskere treff.</p>
+              <p className="font-mono text-[11px] text-muted/40">Tip: Select a match from the suggestions for a faster hit.</p>
             )}
             {!loading && !error && searchError && (
               <p className="font-mono text-[11px] text-warning">{searchError}</p>

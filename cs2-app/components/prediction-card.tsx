@@ -16,7 +16,6 @@ function WarnIcon() {
   )
 }
 
-
 export function PredictionCard({ home, away }: { home: Team; away: Team }) {
   const homeStats = useMemo(() => deriveTeamStats(home.players), [home.players])
   const awayStats = useMemo(() => deriveTeamStats(away.players), [away.players])
@@ -39,30 +38,29 @@ export function PredictionCard({ home, away }: { home: Team; away: Team }) {
     [away.players],
   )
 
-  const homeName = home.name || 'Hjemmelag'
-  const awayName = away.name || 'Bortelag'
+  const homeName = home.name || 'Home'
+  const awayName = away.name || 'Away'
 
   return (
     <div className="card-1 p-5 mb-6">
-      {/* Header */}
       <div className="flex items-center justify-between mb-5">
         <h2 className="font-display text-[11px] tracking-widest uppercase text-muted">
-          Taktisk vurdering
+          Tactical assessment
         </h2>
         {lowConfidence && (
           <div className="flex items-center gap-1.5 text-[10px] font-mono text-warning">
             <WarnIcon />
-            <span>Lav konfidans (&lt;50 runder/sn.)</span>
+            <span>Low confidence (&lt;50 rounds/avg.)</span>
           </div>
         )}
       </div>
+
       {uncertainAnalysis && (
         <div className="mb-4 rounded border border-warning/40 bg-warning/10 px-3 py-2 text-[10px] font-mono text-warning">
-          Usikker analyse: minst én spiller har CI større enn halvparten av score.
+          Uncertain analysis: at least one player has CI greater than half their score.
         </div>
       )}
 
-      {/* Win probability — typografi-fokus */}
       <div className="flex items-stretch mb-5">
         <div className="flex-1 text-center py-3 border-r border-border/20">
           <div className="font-mono text-4xl font-bold tabular-nums leading-none text-accent">
@@ -74,7 +72,7 @@ export function PredictionCard({ home, away }: { home: Team; away: Team }) {
               {homeName}
             </span>
           </div>
-          <div className="font-mono text-[8px] text-muted/50 mt-0.5">seier</div>
+          <div className="font-mono text-[8px] text-muted/50 mt-0.5">win</div>
         </div>
         <div className="flex-1 text-center py-3">
           <div className="font-mono text-4xl font-bold tabular-nums leading-none text-accent2">
@@ -86,13 +84,12 @@ export function PredictionCard({ home, away }: { home: Team; away: Team }) {
               {awayName}
             </span>
           </div>
-          <div className="font-mono text-[8px] text-muted/50 mt-0.5">seier</div>
+          <div className="font-mono text-[8px] text-muted/50 mt-0.5">win</div>
         </div>
       </div>
 
-      {/* Key threats */}
       <div className="pt-4 border-t border-border/20">
-        <p className="text-[9px] font-mono uppercase tracking-widest text-muted mb-2">Nøkkelspillere</p>
+        <p className="text-[9px] font-mono uppercase tracking-widest text-muted mb-2">Key players</p>
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-1.5">
             {homeThreats.map((p) => (

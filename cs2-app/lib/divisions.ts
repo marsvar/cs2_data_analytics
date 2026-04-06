@@ -61,6 +61,6 @@ export function resolveDivisionReference(value: string | number | null | undefin
   return {
     id: numeric,
     slug: String(numeric),
-    name: `Divisjon ${numeric}`,
+    name: `Division ${numeric}`,
   }
 }

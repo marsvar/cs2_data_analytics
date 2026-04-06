@@ -156,18 +156,18 @@ export function UpcomingPreviewPanel({ matchupId }: UpcomingPreviewPanelProps) {
         )}
         {preview.cautionMap && (
           <span className="font-mono text-[9px] uppercase tracking-widest rounded border border-warning/25 bg-warning/8 px-2 py-1 text-warning">
-            Risiko: {preview.cautionMap}
+            Risk: {preview.cautionMap}
           </span>
         )}
       </div>
 
       <div className="grid grid-cols-2 gap-3 font-mono text-[10px]">
         <div>
-          <p className="mb-1 text-muted/55">Nøkkel hjem</p>
+          <p className="mb-1 text-muted/55">Key home</p>
           <p className="truncate text-text">{preview.homeKeyPlayer ?? '–'}</p>
         </div>
         <div>
-          <p className="mb-1 text-muted/55">Nøkkel borte</p>
+          <p className="mb-1 text-muted/55">Key away</p>
           <p className="truncate text-text">{preview.awayKeyPlayer ?? '–'}</p>
         </div>
       </div>

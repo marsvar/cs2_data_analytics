@@ -286,7 +286,7 @@ function extractMapSummaries(
     return {
       maps: [],
       completeness: 'missing',
-      note: 'Map-detaljer ble ikke returnert fra BL API for denne kampen.',
+      note: 'Map details were not returned from the BL API for this match.',
     }
   }
 
@@ -339,7 +339,7 @@ function extractMapSummaries(
     return {
       maps: [],
       completeness: 'missing',
-      note: 'Map-detaljer ble ikke returnert fra BL API for denne kampen.',
+      note: 'Map details were not returned from the BL API for this match.',
     }
   }
 
@@ -349,7 +349,7 @@ function extractMapSummaries(
   return {
     maps,
     completeness: 'partial',
-    note: 'Kun delvise map-detaljer var tilgjengelig fra BL API.',
+    note: 'Only partial map details were available from the BL API.',
   }
 }
 
@@ -767,7 +767,7 @@ export async function getCompetitionDivisions(
       .filter((d) => d?.id != null)
       .map((d) => ({
         id: d.id,
-        name: d.name ?? `Divisjon ${d.id}`,
+        name: d.name ?? `Division ${d.id}`,
         competition_id: competitionId,
       }))
   } catch {

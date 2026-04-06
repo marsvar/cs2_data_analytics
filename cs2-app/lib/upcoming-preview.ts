@@ -48,11 +48,11 @@ export function buildUpcomingPreview(result: AnalyzeResponse): UpcomingMatchPrev
 
   const confidence = landing.reliability.low_sample || landing.reliability.high_uncertainty
     ? {
-      label: 'Tynn data',
+      label: 'Thin data',
       cls: 'text-warning border-warning/30 bg-warning/8',
     }
     : {
-      label: 'OK grunnlag',
+      label: 'Solid baseline',
       cls: 'text-success border-success/30 bg-success/8',
     }
 
