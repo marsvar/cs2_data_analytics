@@ -17,6 +17,7 @@ type StandingRow = {
   played: number
   wins: number
   losses: number
+  points: number
 }
 
 function computeStandings(matches: DivisionMatchSummary[]): StandingRow[] {
@@ -24,7 +25,15 @@ function computeStandings(matches: DivisionMatchSummary[]): StandingRow[] {
 
   function ensureTeam(id: number, name: string, logoUrl?: string) {
     if (!rows.has(id)) {
-      rows.set(id, { teamId: id, name, logoUrl, played: 0, wins: 0, losses: 0 })
+      rows.set(id, {
+        teamId: id,
+        name,
+        logoUrl,
+        played: 0,
+        wins: 0,
+        losses: 0,
+        points: 0,
+      })
       return rows.get(id)!
     }
     const row = rows.get(id)!
@@ -50,15 +59,18 @@ function computeStandings(matches: DivisionMatchSummary[]): StandingRow[] {
     if (hs != null && as_ != null) {
       if (hs > as_) {
         home.wins += 1
+        home.points += 3
         away.losses += 1
       } else if (as_ > hs) {
         away.wins += 1
+        away.points += 3
         home.losses += 1
       }
     }
   }
 
   return Array.from(rows.values()).sort((a, b) => {
+    if (b.points !== a.points) return b.points - a.points
     if (b.wins !== a.wins) return b.wins - a.wins
     return a.losses - b.losses
   })
@@ -83,17 +95,18 @@ function StandingsTable({ result }: { result: DivisionResponse }) {
         )}
       </div>
       <div className="card-1 overflow-hidden">
-        <div className="grid grid-cols-[1.5rem_1fr_2.5rem_2.5rem_2.5rem] gap-3 px-4 py-2 border-b border-border/20 font-mono text-[9px] uppercase tracking-widest text-muted/60">
+        <div className="grid grid-cols-[1.5rem_1fr_2.5rem_2.5rem_2.5rem_3rem] gap-3 px-4 py-2 border-b border-border/20 font-mono text-[9px] uppercase tracking-widest text-muted/60">
           <span>#</span>
           <span>Team</span>
-          <span className="text-center">P</span>
+          <span className="text-center">M</span>
           <span className="text-center text-success/70">W</span>
           <span className="text-center text-danger/70">L</span>
+          <span className="text-center text-accent/80">PTS</span>
         </div>
         {standings.map((row, i) => (
           <div
             key={row.teamId}
-            className="grid grid-cols-[1.5rem_1fr_2.5rem_2.5rem_2.5rem] gap-3 items-center px-4 py-2.5 border-b border-border/15 last:border-0"
+            className="grid grid-cols-[1.5rem_1fr_2.5rem_2.5rem_2.5rem_3rem] gap-3 items-center px-4 py-2.5 border-b border-border/15 last:border-0"
           >
             <span className="font-mono text-[10px] tabular-nums text-muted/50">{i + 1}</span>
             <div className="flex items-center gap-2 min-w-0">
@@ -111,6 +124,9 @@ function StandingsTable({ result }: { result: DivisionResponse }) {
             </span>
             <span className="font-mono text-[11px] tabular-nums text-danger text-center">
               {hasScores ? row.losses : '–'}
+            </span>
+            <span className="font-mono text-[11px] tabular-nums text-accent text-center font-semibold">
+              {hasScores ? row.points : '–'}
             </span>
           </div>
         ))}

@@ -42,6 +42,22 @@ const teamCache = new Map<number, CachedEntry>()
 const BL_TOKEN = process.env.BL_TOKEN ?? ''
 const LEETIFY_TOKEN = process.env.LEETIFY_TOKEN ?? ''
 
+function resolveTeamSide(
+  teamId: number,
+  meta: Awaited<ReturnType<typeof getMatchupMeta>> | null,
+  stats: Awaited<ReturnType<typeof getMatchupStats>>,
+): 'home' | 'away' | null {
+  if (meta) {
+    if (meta.home.id === teamId) return 'home'
+    if (meta.away.id === teamId) return 'away'
+  }
+
+  if (stats.home_team.id === teamId) return 'home'
+  if (stats.away_team.id === teamId) return 'away'
+
+  return null
+}
+
 export async function buildTeamProfile(
   teamId: number,
 ): Promise<TeamProfileResponse> {
@@ -92,6 +108,8 @@ export async function buildTeamProfile(
   const leetifyProfiles = steamIds.length > 0
     ? await fetchProfiles(steamIds, LEETIFY_TOKEN)
     : new Map()
+  const rosterByUserId = new Map(roster.map((player) => [player.userId, player]))
+  const rosterUserIds = new Set(rosterByUserId.keys())
 
   // 5. Build per-player aggregated stats
   type PlayerAcc = {
@@ -117,14 +135,18 @@ export async function buildTeamProfile(
 
   for (const r of matchResults) {
     if (r.status !== 'fulfilled') continue
-    const { stats } = r.value
-    const isHome = stats.home_team.id === teamId ||
-      (stats.home_team.id === 0 && stats.home_players.length > 0)
-    const teamPlayers = isHome ? stats.home_players : stats.away_players
+    const { stats, meta } = r.value
+    const teamSide = resolveTeamSide(teamId, meta, stats)
+    if (!teamSide) continue
+
+    const teamPlayers = (teamSide === 'home' ? stats.home_players : stats.away_players)
+      .filter((player) => (
+        rosterUserIds.size === 0 || rosterUserIds.has(player.paradise_user_id)
+      ))
 
     for (const p of teamPlayers) {
       if (!playerAccs.has(p.paradise_user_id)) {
-        const rosterEntry = roster.find((r) => r.userId === p.paradise_user_id)
+        const rosterEntry = rosterByUserId.get(p.paradise_user_id)
         playerAccs.set(p.paradise_user_id, {
           userId: p.paradise_user_id,
           name: p.name,
@@ -153,10 +175,37 @@ export async function buildTeamProfile(
     }
   }
 
-  // 6. Build roster member list with role inference
+  // 6. Build roster member list with role inference.
+  // Prefer the current BL roster as the source of truth for who appears.
   const rosterMembers: RosterMember[] = []
+  const rosterSource = roster.length > 0
+    ? roster
+    : Array.from(playerAccs.values()).map((acc) => ({
+      userId: acc.userId,
+      userName: acc.name,
+      steam64: acc.steam64,
+    }))
 
-  for (const [userId, acc] of playerAccs) {
+  for (const rosterEntry of rosterSource) {
+    const acc = playerAccs.get(rosterEntry.userId)
+
+    if (!acc) {
+      rosterMembers.push({
+        paradise_user_id: rosterEntry.userId,
+        name: rosterEntry.userName,
+        steam64: rosterEntry.steam64,
+        role: null,
+        score: null,
+        rounds: 0,
+        kd: null,
+        dpr: null,
+        kast: null,
+        hs: null,
+        od_rate: null,
+      })
+      continue
+    }
+
     const kd = acc.deaths > 0 ? acc.kills / acc.deaths : acc.kills
     const dpr = acc.rounds > 0 ? acc.damage / acc.rounds : 0
     const kast = acc.rounds > 0 ? acc.weightedKast / acc.rounds : 0
@@ -172,10 +221,9 @@ export async function buildTeamProfile(
       finalScore = w * score + (1 - w) * prior
     }
 
-    // Build minimal PlayerAnalysis for role inference
     const aggPlayer = {
       name: acc.name,
-      paradise_user_id: userId,
+      paradise_user_id: rosterEntry.userId,
       steam64: acc.steam64,
       score: finalScore,
       ci: ci90(kast, odRate, dpr, kd, acc.rounds, acc.odAttempts),
@@ -194,11 +242,9 @@ export async function buildTeamProfile(
 
     const roleResult = inferProfileRole(aggPlayer, acc.matchCount)
 
-    // Find avatar from roster
-    const rosterEntry = roster.find((r) => r.userId === userId)
     rosterMembers.push({
-      paradise_user_id: userId,
-      name: acc.name,
+      paradise_user_id: rosterEntry.userId,
+      name: rosterEntry.userName ?? acc.name,
       steam64: acc.steam64,
       role: roleResult.role,
       score: Math.round(finalScore * 10000) / 10000,
@@ -211,8 +257,12 @@ export async function buildTeamProfile(
     })
   }
 
-  // Sort roster by score descending
-  rosterMembers.sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+  rosterMembers.sort((a, b) => {
+    if (a.score == null && b.score == null) return a.name.localeCompare(b.name)
+    if (a.score == null) return 1
+    if (b.score == null) return -1
+    return b.score - a.score
+  })
 
   // 7. Role distribution and composition notes
   const roleDist: Partial<Record<PlayerRole, number>> = {}
@@ -237,8 +287,9 @@ export async function buildTeamProfile(
     if (r.status !== 'fulfilled') continue
     const { matchupId, stats, meta, finishedAt } = r.value
 
-    const isHome = stats.home_team.id === teamId ||
-      (stats.home_team.id === 0 && stats.home_players.length > 0)
+    const teamSide = resolveTeamSide(teamId, meta, stats)
+    if (!teamSide) continue
+    const isHome = teamSide === 'home'
 
     let won: boolean | null = null
     let opponentName = ''

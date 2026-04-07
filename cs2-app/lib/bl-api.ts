@@ -659,6 +659,40 @@ export async function getDivisionMatchups(
   return (await getRawDivisionMatchups(divisionId, token)) as any[]
 }
 
+/**
+ * Fetch matchups for a specific BL user.
+ * Useful for resolving player-centric pages without guessing the player's team.
+ */
+export async function getUserMatchups(
+  userId: number,
+  token: string,
+  options?: {
+    divisionId?: number
+  },
+): Promise<Array<{
+  id: number
+  round_number?: number
+  start_time?: string
+  finished_at?: string
+  signups?: unknown[]
+}>> {
+  type Raw = { data?: unknown[] } | unknown[]
+  const params = new URLSearchParams({
+    user_id: String(userId),
+    limit: '100',
+  })
+  if (options?.divisionId != null && options.divisionId > 0) {
+    params.set('division_id', String(options.divisionId))
+  }
+  const data = await blGet<Raw>(
+    `/matchup?${params.toString()}`,
+    token,
+  )
+  const arr = Array.isArray(data) ? data : ((data as { data?: unknown[] }).data ?? [])
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return arr as any[]
+}
+
 export type CompetitionDivision = {
   id: number
   name: string

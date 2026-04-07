@@ -2,19 +2,15 @@
  * player-profile-service.ts
  * -------------------------
  * Builds a PlayerProfileResponse for a given paradise_user_id by aggregating
- * all finished matchup stats for the player's team, then blending with Leetify.
+ * the player's finished matchup stats, then blending with Leetify.
  */
 
 import {
   getUserSteamId,
-  getUserTeamId,
-  getTeamMatchups,
-  getTeamPlayers,
+  getUserMatchups,
   getMatchupStats,
   getMatchupMeta,
   getUserImageUrl,
-  getCompetitions,
-  getCompetitionSignupTeams,
 } from '@/lib/bl-api'
 import { fetchProfiles } from '@/lib/leetify-api'
 import { compositeScore, blWeight, ci90 } from '@/lib/aggregation'
@@ -45,53 +41,8 @@ const profileCache = new Map<number, CachedEntry>()
 const BL_TOKEN = process.env.BL_TOKEN ?? ''
 const LEETIFY_TOKEN = process.env.LEETIFY_TOKEN ?? ''
 
-async function discoverTeamId(
-  userId: number,
-  token: string,
-): Promise<number | null> {
-  const competitionIdsToScan: number[] = []
-
-  const envCompId = process.env.COMPETITION_ID ? parseInt(process.env.COMPETITION_ID) : NaN
-  if (!isNaN(envCompId) && envCompId > 0) {
-    competitionIdsToScan.push(envCompId)
-  }
-
-  if (competitionIdsToScan.length === 0) {
-    const competitions = await getCompetitions(token)
-    const recentCs2 = competitions
-      .filter((c) => {
-        const n = c.name?.toLowerCase() ?? ''
-        return n.includes('bedriftsligaen') || n.includes('counter-strike') || n.includes('cs2')
-      })
-      .sort((a, b) => b.id - a.id)
-      .slice(0, 3)
-    competitionIdsToScan.push(...recentCs2.map((c) => c.id))
-  }
-
-  for (const compId of competitionIdsToScan) {
-    const signups = await getCompetitionSignupTeams(compId, token)
-    const teamIds = signups.map((s) => s.team_id)
-    if (teamIds.length === 0) continue
-
-    const results = await Promise.allSettled(
-      teamIds.map(async (teamId) => {
-        const players = await getTeamPlayers(teamId, token)
-        if (players.some((p) => p.userId === userId)) return teamId
-        return null
-      }),
-    )
-
-    for (const r of results) {
-      if (r.status === 'fulfilled' && r.value != null) return r.value
-    }
-  }
-
-  return null
-}
-
 export async function buildPlayerProfile(
   userId: number,
-  hintTeamId?: number,
 ): Promise<PlayerProfileResponse> {
   const cached = profileCache.get(userId)
   if (cached && cached.expiresAt > Date.now()) return cached.value
@@ -101,22 +52,10 @@ export async function buildPlayerProfile(
     getUserImageUrl(userId, BL_TOKEN),
   ])
 
-  let resolvedTeamId: number | null = hintTeamId ?? null
-
-  if (!resolvedTeamId) {
-    resolvedTeamId = await getUserTeamId(userId, BL_TOKEN)
-  }
-
-  if (!resolvedTeamId) {
-    resolvedTeamId = await discoverTeamId(userId, BL_TOKEN)
-  }
-
-  if (!resolvedTeamId) {
-    throw new PlayerProfileError('Player has no team data', 404)
-  }
-
-  const allMatchups = await getTeamMatchups(resolvedTeamId, BL_TOKEN)
-  const finishedMatchups = allMatchups.filter((m) => m.finished_at && m.id > 0)
+  const allMatchups = await getUserMatchups(userId, BL_TOKEN)
+  const finishedMatchups = allMatchups.filter(
+    (m) => m.finished_at && m.id > 0,
+  )
 
   if (finishedMatchups.length === 0) {
     const emptyProfile: PlayerProfileResponse = {

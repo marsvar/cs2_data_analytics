@@ -180,11 +180,37 @@ function toOptionalNumber(value: unknown): number | null {
   return null
 }
 
-function extractTeamSeriesMaps(
+function getMatchupTeamIds(matchup: TeamMatchup): number[] {
+  const row = matchup as TeamMatchup & {
+    home_signup?: { team?: { id?: unknown } }
+    away_signup?: { team?: { id?: unknown } }
+    signups?: Array<{ team?: { id?: unknown } }>
+  }
+
+  const ids = [
+    toOptionalNumber(row.home_signup?.team?.id),
+    toOptionalNumber(row.away_signup?.team?.id),
+    ...(Array.isArray(row.signups)
+      ? row.signups.map((signup: { team?: { id?: unknown } }) =>
+        toOptionalNumber(signup.team?.id),
+      )
+      : []),
+  ].filter((id): id is number => id != null && id > 0)
+
+  return Array.from(new Set(ids))
+}
+
+function matchupIncludesAnyTeam(
+  matchup: TeamMatchup,
+  teamIds: ReadonlySet<number>,
+): boolean {
+  return getMatchupTeamIds(matchup).some((teamId) => teamIds.has(teamId))
+}
+
+function extractDirectTeamSeriesMaps(
   matchup: TeamMatchup,
   teamId: number,
-  metaByMatchupId: Map<number, MatchupMeta | null>,
-): Array<{ map: string; won: boolean }> {
+): Array<{ map: string; won: boolean }> | null {
   const row = matchup as TeamMatchup & {
     home_score?: unknown
     away_score?: unknown
@@ -218,11 +244,7 @@ function extractTeamSeriesMaps(
 
   const homeTeamId = toOptionalNumber(row.home_signup?.team?.id)
   const awayTeamId = toOptionalNumber(row.away_signup?.team?.id)
-  const signupTeamIds = Array.isArray(row.signups)
-    ? row.signups
-      .map((signup: { team?: { id?: unknown } }) => toOptionalNumber(signup.team?.id))
-      .filter((id): id is number => id != null && id > 0)
-    : []
+  const signupTeamIds = getMatchupTeamIds(matchup)
 
   const inferredIsHome =
     homeTeamId != null && awayTeamId != null
@@ -246,6 +268,17 @@ function extractTeamSeriesMaps(
       }]
     }
   }
+
+  return null
+}
+
+function extractTeamSeriesMaps(
+  matchup: TeamMatchup,
+  teamId: number,
+  metaByMatchupId: Map<number, MatchupMeta | null>,
+): Array<{ map: string; won: boolean }> {
+  const direct = extractDirectTeamSeriesMaps(matchup, teamId)
+  if (direct) return direct
 
   const meta = metaByMatchupId.get(matchup.id)
   if (!meta) return []
@@ -599,6 +632,15 @@ export async function analyzeMatchup(matchupId: number): Promise<AnalyzeResponse
       safeDate(matchupMeta?.startTime) ??
       safeDate(matchupMeta?.finishedAt) ??
       new Date()
+    let divisionMatchupsPromise: Promise<Awaited<ReturnType<typeof getDivisionMatchups>>> | null = null
+
+    const getDivisionMatchupRows = async () => {
+      if (!matchupMeta?.divisionId) return null
+      if (!divisionMatchupsPromise) {
+        divisionMatchupsPromise = getDivisionMatchups(matchupMeta.divisionId, blToken)
+      }
+      return divisionMatchupsPromise
+    }
 
     if (currentTeams.length > 0) {
       try {
@@ -654,29 +696,11 @@ export async function analyzeMatchup(matchupId: number): Promise<AnalyzeResponse
     // lineup resolution always sees the players who have actually played this season.
     if (matchupMeta?.divisionId && relevantTeamIds.size > 0) {
       try {
-        const divisionMatchups = await getDivisionMatchups(matchupMeta.divisionId, blToken)
+        const divisionMatchups = await getDivisionMatchupRows()
+        if (!divisionMatchups) throw new Error('Missing division matchups')
         for (const matchup of divisionMatchups) {
           if (!matchup.finished_at) continue
-
-          const signups = Array.isArray(matchup.signups) ? matchup.signups : []
-          const teamIds = signups
-            .map((signup) => {
-              if (
-                signup &&
-                typeof signup === 'object' &&
-                'team' in signup &&
-                signup.team &&
-                typeof signup.team === 'object' &&
-                'id' in signup.team &&
-                typeof signup.team.id === 'number'
-              ) {
-                return signup.team.id
-              }
-              return undefined
-            })
-            .filter((id): id is number => id != null && id > 0)
-
-          if (!teamIds.some((teamId) => relevantTeamIds.has(teamId))) continue
+          if (!matchupIncludesAnyTeam(matchup, relevantTeamIds)) continue
 
           const finishedAt = safeDate(matchup.finished_at)
           if (!finishedAt || finishedAt > referenceTime) continue
@@ -758,9 +782,10 @@ export async function analyzeMatchup(matchupId: number): Promise<AnalyzeResponse
         // Fetch completed division matchups and use their matchup_users for accurate
         // team membership. This avoids the stats-based home/away attribution which
         // relies on array order and can mis-assign players.
-        const divisionMatchups = await getDivisionMatchups(matchupMeta.divisionId, blToken)
+        const divisionMatchups = await getDivisionMatchupRows()
+        if (!divisionMatchups) throw new Error('Missing division matchups')
         const completedIds = divisionMatchups
-          .filter((m) => Boolean(m.finished_at))
+          .filter((m) => Boolean(m.finished_at) && matchupIncludesAnyTeam(m, relevantTeamIds))
           .map((m) => m.id)
 
         const teamPlayerResults = await Promise.allSettled(
@@ -1173,9 +1198,24 @@ export async function analyzeMatchup(matchupId: number): Promise<AnalyzeResponse
     },
   }
 
+  const currentTeamIds = [teams.home.id, teams.away.id].filter((teamId): teamId is number => teamId > 0)
   const historicalMapMetaResults = matchStatus === 'upcoming'
     ? await Promise.allSettled(
-      historicalMatchups.map(async (matchup) => ({
+      historicalMatchups
+        .filter((matchup) => {
+          const matchupTeamIds = getMatchupTeamIds(matchup)
+          if (matchupTeamIds.length === 0) return true
+
+          const relevantCurrentTeamIds = currentTeamIds.filter((teamId) =>
+            matchupTeamIds.includes(teamId),
+          )
+          if (relevantCurrentTeamIds.length === 0) return false
+
+          return relevantCurrentTeamIds.some((teamId) =>
+            extractDirectTeamSeriesMaps(matchup, teamId) == null,
+          )
+        })
+        .map(async (matchup) => ({
         matchupId: matchup.id,
         meta: await getMatchupMeta(matchup.id, blToken),
       })),
