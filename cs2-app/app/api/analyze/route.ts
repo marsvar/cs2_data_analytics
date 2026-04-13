@@ -6,6 +6,7 @@ export const maxDuration = 90
 
 export async function GET(request: NextRequest) {
   const matchupIdParam = request.nextUrl.searchParams.get('matchup_id')
+  const includeLeetify = request.nextUrl.searchParams.get('include_leetify') === '1'
   const matchupId = Number(matchupIdParam)
 
   if (!matchupIdParam || !Number.isInteger(matchupId) || matchupId <= 0) {
@@ -16,7 +17,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const result = await analyzeMatchup(matchupId)
+    const result = await analyzeMatchup(matchupId, { includeLeetify })
     return NextResponse.json(result)
   } catch (err) {
     if (err instanceof AnalyzeServiceError) {

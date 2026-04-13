@@ -190,7 +190,7 @@ export default async function MatchPage({ params, searchParams }: MatchPageProps
   }
 
   try {
-    const result = await analyzeMatchup(matchupId)
+    const result = await analyzeMatchup(matchupId, { includeLeetify: false })
 
     return (
       <section className="atlas-shell min-h-dvh">

@@ -843,7 +843,7 @@ function MetaBar({ meta }: { meta: AnalyzeResponse['meta'] }) {
         <span className="text-text/70">Rounds</span>{' '}
         <span className="tabular-nums">{meta.rounds_fetched}</span>
       </span>
-      <span title={meta.leetify_count === 0 && meta.leetify_attempts > 0 ? '404 — no Leetify profiles found for these players' : undefined}>
+      <span title={meta.leetify_count === 0 && meta.leetify_attempts > 0 ? 'No public Leetify profiles were returned for these players' : undefined}>
         <span className="text-text/70">Leetify</span>{' '}
         <span className={`tabular-nums ${meta.leetify_count === 0 && meta.leetify_attempts > 0 ? 'text-warning' : ''}`}>
           {meta.leetify_count}/{meta.leetify_attempts}
@@ -2283,8 +2283,8 @@ export function AnalysisDisplay({
   const isUpcoming = result.meta.match_status === 'upcoming'
 
   const lineupSize = result.simulation?.lineup_size ?? 5
-  const homePool = result.teams.home.players
-  const awayPool = result.teams.away.players
+  const homePool = result.simulation?.home_pool ?? result.teams.home.players
+  const awayPool = result.simulation?.away_pool ?? result.teams.away.players
 
   const getDefaultIds = (players: PlayerAnalysis[]) =>
     new Set(

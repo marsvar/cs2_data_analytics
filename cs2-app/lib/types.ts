@@ -396,6 +396,8 @@ export type AnalyzeResponse = {
   simulation?: {
     lineup_size: number
     active_maps: string[]
+    home_pool: PlayerAnalysis[]
+    away_pool: PlayerAnalysis[]
     map_pool: {
       recent_days: number
       min_matches_per_player: number
