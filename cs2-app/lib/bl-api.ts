@@ -558,6 +558,29 @@ export type TeamPlayerRef = {
   userId: number
   userName: string
   steam64?: string
+  avatarUrl?: string
+  teamId?: number
+  membershipRole?: string
+}
+
+function normalizeTeamMembershipRole(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const normalized = value.trim().toLowerCase()
+  return normalized.length > 0 ? normalized : undefined
+}
+
+function isVisibleTeamMembershipRole(role?: string): boolean {
+  if (!role) return true
+
+  // Different BL endpoints expose team visibility with different role vocabularies.
+  // `/team/{id}/players` has been observed returning `member` / `leader`, while
+  // signup-shaped data can use `player` / `substitute`.
+  return (
+    role === 'player' ||
+    role === 'substitute' ||
+    role === 'member' ||
+    role === 'leader'
+  )
 }
 
 /**
@@ -575,6 +598,15 @@ export async function getTeamPlayers(
     return rows
       .map((row) => {
         const user = row?.user ?? {}
+        const rowTeamId =
+          row?.team_id ??
+          row?.team?.id ??
+          row?.signup?.team?.id
+        const membershipRole = normalizeTeamMembershipRole(
+          row?.role ??
+          row?.team_player_role ??
+          row?.signup?.role,
+        )
         const accounts: { provider?: string; account_id?: string }[] =
           Array.isArray(user.accounts) ? user.accounts : []
         const steam = accounts.find(
@@ -585,9 +617,16 @@ export async function getTeamPlayers(
           userId: user.id ?? 0,
           userName: user.user_name ?? '',
           steam64: steam ?? undefined,
+          avatarUrl: normalizeBlImageUrl(user?.image?.url, user?.image?.relative_url) ?? undefined,
+          teamId: typeof rowTeamId === 'number' ? rowTeamId : undefined,
+          membershipRole,
         } satisfies TeamPlayerRef
       })
-      .filter((p) => p.userId > 0)
+      .filter((p) => (
+        p.userId > 0 &&
+        (p.teamId == null || p.teamId === teamId) &&
+        (p.membershipRole == null || isVisibleTeamMembershipRole(p.membershipRole))
+      ))
   } catch {
     return []
   }

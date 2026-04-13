@@ -27,3 +27,6 @@ Thumbs.db
 # Temp / cache
 /tmp/
 *.tmp
+
+# Claude Code internal state
+.claude/worktrees/

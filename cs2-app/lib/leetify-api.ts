@@ -18,6 +18,7 @@ import type {
 const LEETIFY_BASE = 'https://api-public.cs-prod.leetify.com'
 const PROFILE_CACHE_TTL_MS = 6 * 60 * 60 * 1000
 const PROFILE_NOT_FOUND_TTL_MS = 60 * 60 * 1000
+const PROFILE_FAILURE_TTL_MS = 15 * 60 * 1000
 const PROFILE_FETCH_CONCURRENCY = 3
 // Minimum gap between Leetify HTTP requests. The Python script used sleep(3),
 // and the API is documented as ~5 req/min. 3.2 s gives ~18 req/min headroom.
@@ -140,6 +141,9 @@ export async function getProfile(
     }
   }
   const data = (await res.json()) as RawLeetifyProfile
+  if (data.error) {
+    console.warn(`Leetify: API returned error for steam ${steam64}: ${data.error}`)
+  }
   return {
     data: data.error ? null : data,
     notFound: false,
@@ -286,9 +290,20 @@ export async function fetchProfiles(
             await sleep(waitSeconds * 1000)
             continue
           }
+          profileCache.set(steam64, {
+            value: null,
+            notFound: false,
+            expiresAt: now + PROFILE_FAILURE_TTL_MS,
+          })
           return { value: null, notFound, throttled }
         }
-      } catch {
+      } catch (error) {
+        console.warn(`Leetify: request failed for steam ${steam64}`, error)
+        profileCache.set(steam64, {
+          value: null,
+          notFound: false,
+          expiresAt: now + PROFILE_FAILURE_TTL_MS,
+        })
         // Skip failed profiles — caller gets a partial map
       }
 
