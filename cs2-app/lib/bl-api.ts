@@ -437,6 +437,8 @@ export type MatchupMeta = {
   playerTeams: Map<number, number>
   /** paradise_user_id → avatar image url */
   playerImages: Map<number, string>
+  /** paradise_user_id → Steam64 ID (extracted from matchup_users accounts embed if present) */
+  playerSteam64: Map<number, string>
 }
 
 /**
@@ -478,12 +480,16 @@ export async function getMatchupMeta(
 
     const playerTeams = new Map<number, number>()
     const playerImages = new Map<number, string>()
+    const playerSteam64 = new Map<number, string>()
     const matchupUsers: { user_id?: number; team_id?: number }[] =
       raw?.matchup_users ?? []
     for (const mu of matchupUsers as Array<{
       user_id?: number
       team_id?: number
-      user?: { image?: { url?: string; relative_url?: string } }
+      user?: {
+        image?: { url?: string; relative_url?: string }
+        accounts?: Array<{ provider?: string; account_id?: string }>
+      }
     }>) {
       if (mu.user_id != null && mu.team_id != null) {
         playerTeams.set(mu.user_id, mu.team_id)
@@ -494,6 +500,12 @@ export async function getMatchupMeta(
       )
       if (mu.user_id != null && avatarUrl) {
         playerImages.set(mu.user_id, avatarUrl)
+      }
+      const steamAccount = (mu.user?.accounts ?? []).find(
+        (a) => a.provider?.toUpperCase() === 'STEAM',
+      )
+      if (mu.user_id != null && steamAccount?.account_id) {
+        playerSteam64.set(mu.user_id, steamAccount.account_id)
       }
     }
 
@@ -513,6 +525,7 @@ export async function getMatchupMeta(
       away: { id: awayTeam.id ?? 0, name: awayTeam.name ?? '', logoUrl: awayLogoUrl },
       playerTeams,
       playerImages,
+      playerSteam64,
     }
   } catch {
     return null

@@ -611,6 +611,34 @@ export async function analyzeMatchup(matchupId: number): Promise<AnalyzeResponse
     } catch (err) {
       throw new AnalyzeServiceError(`Failed to fetch matchup ${matchupId}: ${err}`, 502)
     }
+
+    // Reconcile stats home/away with meta home/away.
+    // getMatchupStats assigns sides by "first side seen in flat array", which may be
+    // the away team if the API returns them first. Cross-check using playerTeams from
+    // meta (derived from matchup_users, which has explicit team_id per player).
+    if (
+      matchupMeta &&
+      matchupStats.home_players.length > 0 &&
+      matchupStats.away_players.length > 0
+    ) {
+      const homeMetaId = matchupMeta.home.id
+      const awayMetaId = matchupMeta.away.id
+      if (homeMetaId && awayMetaId) {
+        // Count how many "home" stats players actually belong to the away meta team
+        let homeMisassigned = 0
+        for (const p of matchupStats.home_players) {
+          const teamId = matchupMeta.playerTeams.get(p.paradise_user_id)
+          if (teamId === awayMetaId) homeMisassigned++
+        }
+        // If the majority of home_players are on the away team, flip the sides
+        if (homeMisassigned > matchupStats.home_players.length / 2) {
+          const tmp = matchupStats.home_players
+          matchupStats.home_players = matchupStats.away_players
+          matchupStats.away_players = tmp
+        }
+      }
+    }
+
     const hasMatchPlayers =
       matchupStats.home_players.length + matchupStats.away_players.length > 0
     // BL /stats can sometimes expose non-finalized player rows before a match is
@@ -828,12 +856,12 @@ export async function analyzeMatchup(matchupId: number): Promise<AnalyzeResponse
     const homeLineupIds = matchupMeta?.home.id ? resolveLineupIds(matchupMeta.home.id) : []
     const awayLineupIds = matchupMeta?.away.id ? resolveLineupIds(matchupMeta.away.id) : []
 
-    const [homeTeamRoster, awayTeamRoster] = !hasMatchPlayers
-      ? await Promise.all([
-        matchupMeta?.home.id ? getTeamPlayers(matchupMeta.home.id, blToken) : Promise.resolve([]),
-        matchupMeta?.away.id ? getTeamPlayers(matchupMeta.away.id, blToken) : Promise.resolve([]),
-      ])
-      : [[], []]
+    // Always fetch team rosters: for upcoming matches they drive lineup candidates;
+    // for played matches they supply steam64 IDs (2 calls vs one-per-player).
+    const [homeTeamRoster, awayTeamRoster] = await Promise.all([
+      matchupMeta?.home.id ? getTeamPlayers(matchupMeta.home.id, blToken) : Promise.resolve([]),
+      matchupMeta?.away.id ? getTeamPlayers(matchupMeta.away.id, blToken) : Promise.resolve([]),
+    ])
     const homeRosterByUserId = new Map(homeTeamRoster.map((p) => [p.userId, p]))
     const awayRosterByUserId = new Map(awayTeamRoster.map((p) => [p.userId, p]))
 
@@ -976,15 +1004,30 @@ export async function analyzeMatchup(matchupId: number): Promise<AnalyzeResponse
     ]))
     const steamByUserId = new Map<number, string>()
 
+  // Source 1: steam64 already on the candidate (lineup path for upcoming matches)
   for (const candidate of [...eligibleHomeCandidates, ...eligibleAwayCandidates]) {
     if (candidate.steam64) steamByUserId.set(candidate.userId, candidate.steam64)
   }
 
+  // Source 2: static hardcoded map
   for (const userId of analysisPlayerIds) {
     const staticSteam = STEAM_BY_USER_ID[userId]
     if (staticSteam && !steamByUserId.has(userId)) steamByUserId.set(userId, staticSteam)
   }
 
+  // Source 3: matchup_users embed (accounts may be included in the BL response)
+  if (matchupMeta) {
+    for (const [userId, steam64] of matchupMeta.playerSteam64) {
+      if (!steamByUserId.has(userId)) steamByUserId.set(userId, steam64)
+    }
+  }
+
+  // Source 4: team roster — 2 API calls instead of one per player
+  for (const p of [...homeTeamRoster, ...awayTeamRoster]) {
+    if (p.steam64 && !steamByUserId.has(p.userId)) steamByUserId.set(p.userId, p.steam64)
+  }
+
+  // Source 5: individual /user/{id} fallback for any still-missing players
   const missingSteamIds = analysisPlayerIds.filter((id) => !steamByUserId.has(id))
   const steamLookupResults = await Promise.all(
     missingSteamIds.map(async (userId) => ({
