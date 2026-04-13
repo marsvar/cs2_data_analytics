@@ -470,6 +470,20 @@ export function deriveLandingAnalytics(
       away_od: round4(awayOd),
       delta: round4(homeOd - awayOd),
       source,
+      ct_split: homeStats.avg_ct_od != null && awayStats.avg_ct_od != null
+        ? {
+          home: round4(homeStats.avg_ct_od),
+          away: round4(awayStats.avg_ct_od),
+          delta: round4(homeStats.avg_ct_od - awayStats.avg_ct_od),
+        }
+        : undefined,
+      t_split: homeStats.avg_t_od != null && awayStats.avg_t_od != null
+        ? {
+          home: round4(homeStats.avg_t_od),
+          away: round4(awayStats.avg_t_od),
+          delta: round4(homeStats.avg_t_od - awayStats.avg_t_od),
+        }
+        : undefined,
     },
     trade_structure_edge: homeTradeKillRate != null && awayTradeKillRate != null
       ? {
