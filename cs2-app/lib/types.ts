@@ -99,6 +99,8 @@ export type LandingAnalytics = {
     away_od: number
     delta: number
     source: 'bl' | 'leetify' | 'combined'
+    ct_split?: { home: number; away: number; delta: number }
+    t_split?: { home: number; away: number; delta: number }
   }
   trade_structure_edge?: {
     home_trade_kill_rate: number
@@ -321,6 +323,15 @@ export type AnalyzeResponse = {
         damage_pressure_edge_dpr: number
         trade_structure_pp?: number
         survival_edge_pp?: number
+      }
+      signal_wins?: {
+        home: number
+        away: number
+        signals: Array<{
+          label: string
+          winner: 'home' | 'away' | 'even'
+          edge: number
+        }>
       }
       caveat: string
     }
