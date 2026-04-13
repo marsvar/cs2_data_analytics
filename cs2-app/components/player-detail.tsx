@@ -70,9 +70,9 @@ function LeetifyBar({ label, value, max = 100 }: { label: string; value: number;
 function ReactionTimeLabel(ms: number): string {
   if (ms <= 0) return '—'
   if (ms < 200) return 'Elite'
-  if (ms < 230) return 'Sterk'
-  if (ms < 260) return 'Gjennomsnitt'
-  return 'Treg'
+  if (ms < 230) return 'Strong'
+  if (ms < 260) return 'Average'
+  return 'Slow'
 }
 
 function ReactionTimeStat({ ms }: { ms: number }) {
@@ -110,7 +110,7 @@ function RankPills({
     <div className="flex flex-wrap gap-2 mt-2">
       {premier != null && (
         <span className="text-[10px] font-mono px-2 py-1 rounded border border-accent/40 bg-accent/10 text-accent tabular-nums">
-          Premier {premier.toLocaleString('nb-NO')}
+          Premier {premier.toLocaleString('en-GB')}
         </span>
       )}
       {(faceitLevel != null || faceitElo != null) && (
@@ -142,8 +142,8 @@ function SideSplit({ ct, t }: { ct: number; t: number }) {
   let verdict = 'Allsidig'
   if (ct > 0.55 && t < 0.45) verdict = 'Defensiv spesialist'
   else if (t > 0.55 && ct < 0.45) verdict = 'Aggressiv angriper'
-  else if (ct < 0.48 && t < 0.48) verdict = 'Under press begge sider'
-  else if (Math.abs(ct - t) > 0.1) verdict = ct > t ? 'Sterkest på CT' : 'Sterkest på T'
+  else if (ct < 0.48 && t < 0.48) verdict = 'Under pressure on both sides'
+  else if (Math.abs(ct - t) > 0.1) verdict = ct > t ? 'Strongest on CT' : 'Strongest on T'
 
   return (
     <div className="space-y-1.5">
@@ -189,7 +189,7 @@ function DataWeight({ player }: { player: PlayerAnalysis }) {
       </div>
       {player.effective_rounds != null && (
         <p className="mt-1 text-[9px] font-mono text-muted/70">
-          Effektive runder: {player.effective_rounds.toFixed(1)}
+          Effective rounds: {player.effective_rounds.toFixed(1)}
         </p>
       )}
     </div>
@@ -234,7 +234,7 @@ function RecentMatchTimeline({ matches }: { matches: LeetifyRecentMatch[] }) {
   function formatDate(iso: string): string {
     const d = new Date(iso)
     if (Number.isNaN(d.getTime())) return ''
-    return new Intl.DateTimeFormat('nb-NO', { month: 'short', day: 'numeric' }).format(d)
+    return new Intl.DateTimeFormat('en-GB', { month: 'short', day: 'numeric' }).format(d)
   }
 
   return (
@@ -314,7 +314,7 @@ export function PlayerDetail({
             <div className="mt-2 flex items-start gap-1.5 text-[9px] font-mono text-warning">
               <WarnIcon />
               <span>
-                Kun {player.rounds} runder — høy usikkerhet (±{player.ci.toFixed(1)})
+                Only {player.rounds} rounds — high uncertainty (±{player.ci.toFixed(1)})
               </span>
             </div>
           )}
@@ -346,7 +346,7 @@ export function PlayerDetail({
               <LeetifyBar label="Clutch" value={player.leetify!.clutch} max={10} />
             )}
             {player.leetify!.opening > 0 && (
-              <LeetifyBar label="Åpning (duell)" value={player.leetify!.opening} max={10} />
+              <LeetifyBar label="Opening (duel)" value={player.leetify!.opening} max={10} />
             )}
             <ReactionTimeStat ms={player.leetify!.reaction_time_ms} />
 

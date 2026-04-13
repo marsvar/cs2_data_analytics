@@ -2,6 +2,8 @@ import Link from 'next/link'
 import { getPlayerPageData, PlayerServiceError } from '@/lib/player-service'
 import { PlayerProfileError } from '@/lib/player-profile-service'
 import { PlayerProfileDisplay } from '@/components/player-profile-display'
+import { ErrorCard } from '@/components/ui/error-card'
+import { NavBreadcrumb } from '@/components/ui/nav-breadcrumb'
 
 export const dynamic = 'force-dynamic'
 
@@ -13,30 +15,13 @@ function dateLabel(value?: string | null): string {
   if (!value) return '—'
   const parsed = new Date(value)
   if (Number.isNaN(parsed.getTime())) return '—'
-  return new Intl.DateTimeFormat('nb-NO', {
+  return new Intl.DateTimeFormat('en-GB', {
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
   }).format(parsed)
-}
-
-function ErrorCard({ title, detail }: { title: string; detail: string }) {
-  return (
-    <section className="atlas-shell min-h-dvh">
-      <div className="atlas-topline" />
-      <div className="max-w-5xl mx-auto px-6 md:px-10 py-12">
-        <Link href="/" className="font-mono text-[11px] uppercase tracking-widest text-muted hover:text-text transition-colors">
-          ← Til søk
-        </Link>
-        <div className="mt-5 bg-surface border border-danger/40 rounded-lg p-5">
-          <h1 className="font-display text-sm tracking-widest uppercase text-danger mb-2">{title}</h1>
-          <p className="font-mono text-xs text-muted">{detail}</p>
-        </div>
-      </div>
-    </section>
-  )
 }
 
 export default async function PlayerPage({ params }: PlayerPageProps) {
@@ -46,8 +31,9 @@ export default async function PlayerPage({ params }: PlayerPageProps) {
   if (!Number.isInteger(userId) || userId <= 0) {
     return (
       <ErrorCard
-        title="Ugyldig spiller-ID"
-        detail="Fant ikke spilleren. Sjekk URL-en og prøv igjen."
+        title="Invalid player ID"
+        detail="Player not found. Check the URL and try again."
+        backLabel="← Back to search"
       />
     )
   }
@@ -57,8 +43,9 @@ export default async function PlayerPage({ params }: PlayerPageProps) {
     if (!pageData) {
       return (
         <ErrorCard
-          title="Spiller ikke funnet"
-          detail="Fant ikke spilleren. Sjekk URL-en og prøv igjen."
+          title="Player not found"
+          detail="Player not found. Check the URL and try again."
+          backLabel="← Back to search"
         />
       )
     }
@@ -69,19 +56,16 @@ export default async function PlayerPage({ params }: PlayerPageProps) {
       <section className="atlas-shell min-h-dvh">
         <div className="atlas-topline" />
         <div className="max-w-5xl mx-auto px-6 md:px-10 py-10">
-          <div className="flex items-center justify-between gap-3 mb-6 fx-rise">
-            <Link href="/" className="font-mono text-[11px] uppercase tracking-widest text-muted hover:text-text transition-colors">
-              ← Til søk
-            </Link>
-            <span className="font-mono text-[10px] uppercase tracking-widest text-muted/60">Spillerprofil</span>
+          <div className="fx-rise">
+            <NavBreadcrumb backHref="/" backLabel="← Back to search" contextLabel="Player Profile" />
           </div>
 
           {context && (
-            <div className="mb-6 bg-surface/92 border border-border/40 rounded-xl px-4 py-3 fx-rise fx-rise-d1">
+            <div className="mb-6 card-1 px-4 py-3 fx-rise fx-rise-d1">
               <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                 <div className="min-w-0">
                   <p className="font-mono text-[10px] uppercase tracking-widest text-muted/60 mb-1">
-                    Siste analyserte kampkontekst
+                    Latest Analyzed Match Context
                   </p>
                   <div className="flex flex-wrap items-center gap-2 text-sm">
                     <Link
@@ -101,13 +85,15 @@ export default async function PlayerPage({ params }: PlayerPageProps) {
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-mono text-[10px] text-muted/60">
-                    {context.match_status === 'played' ? dateLabel(context.match_finished_time ?? context.match_start_time) : dateLabel(context.match_start_time)}
+                    {context.match_status === 'played'
+                      ? dateLabel(context.match_finished_time ?? context.match_start_time)
+                      : dateLabel(context.match_start_time)}
                   </span>
                   <Link
                     href={`/match/${context.matchup_id}`}
                     className="font-mono text-[10px] uppercase tracking-widest text-accent hover:text-text transition-colors"
                   >
-                    Åpne kamp →
+                    Open Match →
                   </Link>
                 </div>
               </div>
@@ -119,20 +105,21 @@ export default async function PlayerPage({ params }: PlayerPageProps) {
       </section>
     )
   } catch (err) {
-    if (err instanceof PlayerProfileError || err instanceof PlayerServiceError) {
-      if (err.status === 404) {
-        return (
-          <ErrorCard
-            title="Spiller ikke funnet"
-            detail={err.message}
-          />
-        )
-      }
+    if ((err instanceof PlayerProfileError || err instanceof PlayerServiceError) && err.status === 404) {
+      return (
+        <ErrorCard
+          title="Player not found"
+          detail={err.message}
+          backLabel="← Back to search"
+        />
+      )
     }
+
     return (
       <ErrorCard
-        title="Uventet feil"
-        detail="Det oppstod en feil ved lasting av spillerprofilen. Prøv igjen om litt."
+        title="Unexpected error"
+        detail="An error occurred while loading the player profile. Please try again."
+        backLabel="← Back to search"
       />
     )
   }

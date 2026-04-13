@@ -19,6 +19,9 @@ const LEETIFY_BASE = 'https://api-public.cs-prod.leetify.com'
 const PROFILE_CACHE_TTL_MS = 6 * 60 * 60 * 1000
 const PROFILE_NOT_FOUND_TTL_MS = 60 * 60 * 1000
 const PROFILE_FETCH_CONCURRENCY = 3
+// Minimum gap between Leetify HTTP requests. The Python script used sleep(3),
+// and the API is documented as ~5 req/min. 3.2 s gives ~18 req/min headroom.
+const RATE_LIMIT_DELAY_MS = 3200
 
 type CachedProfileEntry = {
   value: LeetifyProfileWithRecent | null
@@ -34,6 +37,23 @@ type ProfileFetchOutcome = {
 
 const profileCache = new Map<string, CachedProfileEntry>()
 const profileInflight = new Map<string, Promise<ProfileFetchOutcome>>()
+
+// Rate-limiter state: track when the next request is allowed.
+// Node.js is single-threaded so the read-modify-write is atomic.
+let nextRequestAllowedAt = 0
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
+
+async function waitForRateLimit(): Promise<void> {
+  const now = Date.now()
+  if (now >= nextRequestAllowedAt) {
+    nextRequestAllowedAt = now + RATE_LIMIT_DELAY_MS
+  } else {
+    const wait = nextRequestAllowedAt - now
+    nextRequestAllowedAt += RATE_LIMIT_DELAY_MS
+    await sleep(wait)
+  }
+}
 
 function normaliseRatio(v: number | null | undefined): number {
   if (v == null || Number.isNaN(v)) return 0
@@ -212,7 +232,6 @@ export async function fetchProfiles(
   onProgress?: (completed: number, total: number) => void,
 ): Promise<Map<string, LeetifyProfileWithRecent>> {
   const results = new Map<string, LeetifyProfileWithRecent>()
-  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
   const uniqueSteamIds = Array.from(new Set(steamIds))
   let cursor = 0
   let completed = 0
@@ -234,8 +253,9 @@ export async function fetchProfiles(
       let attempts = 0
 
       try {
-        // Retry a few times on rate limit and let Retry-After drive the pacing.
+        // Enforce global rate limit before each request, then retry on 429.
         while (attempts < 3) {
+          await waitForRateLimit()
           const result = await getProfile(steam64, token)
           notFound = result.notFound
 

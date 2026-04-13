@@ -8,7 +8,7 @@ export async function GET(request: NextRequest) {
   const teamId = Number(param)
 
   if (!param || !Number.isInteger(teamId) || teamId <= 0) {
-    return NextResponse.json({ error: 'Ugyldig team_id' }, { status: 400 })
+    return NextResponse.json({ error: 'Invalid team_id' }, { status: 400 })
   }
 
   try {
@@ -19,6 +19,6 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: err.message }, { status: err.status })
     }
     console.error('[api/team] Unexpected error:', err)
-    return NextResponse.json({ error: 'Intern serverfeil' }, { status: 500 })
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

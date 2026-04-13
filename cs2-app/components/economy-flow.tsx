@@ -8,7 +8,7 @@ export function EconomyFlow({ notes }: EconomyFlowProps) {
   if (notes.length === 0) {
     return (
       <p className="font-mono text-xs text-muted/60 italic">
-        Økonomidata ikke tilgjengelig (BL API eksponerer ikke runde-økonomi direkte).
+        Economy data unavailable (BL API does not expose round economy directly).
       </p>
     )
   }

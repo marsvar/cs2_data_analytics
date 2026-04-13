@@ -1,7 +1,8 @@
-import Link from 'next/link'
 import { AnalysisDisplay } from '@/components/analysis-display'
 import { PlayerAvatar, TeamLogo } from '@/components/identity-badge'
 import { analyzeMatchup, AnalyzeServiceError } from '@/lib/analyze-service'
+import { ErrorCard } from '@/components/ui/error-card'
+import { NavBreadcrumb } from '@/components/ui/nav-breadcrumb'
 import type { AnalyzeResponse, PlayerAnalysis } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
@@ -15,38 +16,6 @@ function buildHomeHref(divisionId?: string): string {
   return divisionId ? `/?division=${encodeURIComponent(divisionId)}` : '/'
 }
 
-function ErrorCard({
-  title,
-  detail,
-  divisionId,
-}: {
-  title: string
-  detail: string
-  divisionId?: string
-}) {
-  return (
-    <section className="atlas-shell min-h-dvh">
-      <div className="atlas-topline" />
-      <div className="max-w-5xl mx-auto px-6 md:px-10 py-12">
-      <div className="mb-6">
-        <Link
-          href={buildHomeHref(divisionId)}
-          className="font-mono text-[11px] uppercase tracking-widest text-muted hover:text-text"
-        >
-          ← Til søk
-        </Link>
-      </div>
-      <div className="bg-surface border border-danger/40 rounded-lg p-5">
-        <h1 className="font-display text-sm tracking-widest uppercase text-danger mb-2">{title}</h1>
-        <p className="font-mono text-xs text-muted leading-relaxed">{detail}</p>
-      </div>
-      </div>
-    </section>
-  )
-}
-
-// ── Headline card ─────────────────────────────────────────────────────────────
-
 function topPlayer(players: PlayerAnalysis[]): PlayerAnalysis | null {
   return players.reduce<PlayerAnalysis | null>(
     (best, p) => (best == null || p.score > best.score ? p : best),
@@ -58,7 +27,13 @@ function formatDate(iso: string | null | undefined): string {
   if (!iso) return ''
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return ''
-  return new Intl.DateTimeFormat('nb-NO', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(d)
+  return new Intl.DateTimeFormat('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(d)
 }
 
 function TeamNameWithLogo({
@@ -100,11 +75,10 @@ function MatchHeadlineCard({ result }: { result: AnalyzeResponse }) {
     : null
 
   return (
-    <div className="bg-surface/85 border border-border/45 rounded-xl px-5 py-4 fx-pulse-glow">
-      {/* Status pill */}
+    <div className="card-1 px-5 py-4 fx-pulse-glow">
       <div className="flex items-center justify-between gap-3 mb-3">
         <p className="font-display text-[11px] uppercase tracking-[0.2em] text-accent">
-          {isPlayed ? 'Kampanalyse — spilt' : 'Pre-match analyse'}
+          {isPlayed ? 'Match Analysis — Played' : 'Pre-match Analysis'}
         </p>
         <div className="flex items-center gap-2">
           {(result.meta.match_start_time || result.meta.match_finished_time) && (
@@ -117,62 +91,59 @@ function MatchHeadlineCard({ result }: { result: AnalyzeResponse }) {
               ? 'border-border/40 text-muted bg-surface2/40'
               : 'border-accent/40 text-accent bg-accent/10'
           }`}>
-            {isPlayed ? 'Spilt' : 'Kommende'}
+            {isPlayed ? 'Played' : 'Upcoming'}
           </span>
         </div>
       </div>
 
-      {/* Team names */}
       <h1 className="font-display text-2xl md:text-3xl leading-none tracking-tight mb-4 flex items-center gap-3 flex-wrap">
-        <TeamNameWithLogo name={home.name || 'Hjemmelag'} logoUrl={home.logo_url} tone="home" />
+        <TeamNameWithLogo name={home.name || 'Home'} logoUrl={home.logo_url} tone="home" />
         <span className="text-muted/50 text-xl">vs</span>
-        <TeamNameWithLogo name={away.name || 'Bortelag'} logoUrl={away.logo_url} tone="away" />
+        <TeamNameWithLogo name={away.name || 'Away'} logoUrl={away.logo_url} tone="away" />
       </h1>
 
       {isPlayed && playedScore && (
         <p className="font-mono text-sm text-success mb-3 tabular-nums">
-          Sluttresultat: {playedScore}
+          Final score: {playedScore}
         </p>
       )}
 
-      {/* Win probability — only for upcoming */}
       {!isPlayed && tactical && (
-        <div className="flex items-stretch mb-4 border border-border/30 rounded-lg overflow-hidden">
-          <div className="flex-1 text-center py-3 border-r border-border/30">
+        <div className="flex items-stretch mb-4 border border-border/25 rounded-lg overflow-hidden">
+          <div className="flex-1 text-center py-3 border-r border-border/20">
             <div className="font-mono text-2xl font-bold tabular-nums leading-none text-accent">
               {tactical.home_win_pct}%
             </div>
             <div className="font-mono text-[9px] text-muted uppercase tracking-widest mt-1">
-              {home.name || 'Hjem'} seier
+              {home.name || 'Home'} win
             </div>
           </div>
           <div className="flex items-center px-3">
             <span className="font-mono text-[9px] text-muted/50">{tactical.confidence_note}</span>
           </div>
-          <div className="flex-1 text-center py-3 border-l border-border/30">
+          <div className="flex-1 text-center py-3 border-l border-border/20">
             <div className="font-mono text-2xl font-bold tabular-nums leading-none text-accent2">
               {tactical.away_win_pct}%
             </div>
             <div className="font-mono text-[9px] text-muted uppercase tracking-widest mt-1">
-              {away.name || 'Borte'} seier
+              {away.name || 'Away'} win
             </div>
           </div>
         </div>
       )}
 
       {!isPlayed && gamePlan.length > 0 && (
-        <div className="mb-4 rounded-lg border border-border/35 bg-surface2/25 px-3 py-2.5">
+        <div className="mb-4 card-2 px-3 py-2.5">
           <p className="font-mono text-[9px] uppercase tracking-widest text-muted/55 mb-1.5">Matchup read</p>
           <p className="font-mono text-[11px] text-text/90">{gamePlan[0]}</p>
         </div>
       )}
 
-      {/* Bottom row: key players + reliability */}
       <div className="flex items-end justify-between gap-4 flex-wrap mt-1">
         <div className="flex items-center gap-4">
           {homeTop && (
             <div className="flex items-center gap-1.5">
-              <span className="font-mono text-[9px] uppercase tracking-widest text-muted/60">Nøkkel:</span>
+              <span className="font-mono text-[9px] uppercase tracking-widest text-muted/60">Key:</span>
               <PlayerInlineAvatar player={homeTop} tone="home" />
               <span className="font-mono text-[10px] text-accent">{homeTop.name}</span>
               <span className="font-mono text-[9px] text-muted/50 tabular-nums">{(homeTop.score * 10).toFixed(1)}</span>
@@ -180,7 +151,7 @@ function MatchHeadlineCard({ result }: { result: AnalyzeResponse }) {
           )}
           {awayTop && (
             <div className="flex items-center gap-1.5">
-              <span className="font-mono text-[9px] uppercase tracking-widest text-muted/60">Nøkkel:</span>
+              <span className="font-mono text-[9px] uppercase tracking-widest text-muted/60">Key:</span>
               <PlayerInlineAvatar player={awayTop} tone="away" />
               <span className="font-mono text-[10px] text-accent2">{awayTop.name}</span>
               <span className="font-mono text-[9px] text-muted/50 tabular-nums">{(awayTop.score * 10).toFixed(1)}</span>
@@ -191,7 +162,7 @@ function MatchHeadlineCard({ result }: { result: AnalyzeResponse }) {
         <div className="flex items-center gap-3 font-mono text-[9px] text-muted/60">
           {reliability && (
             <span className={reliability.low_sample ? 'text-warning' : ''}>
-              {reliability.avg_rounds.toFixed(0)} runder snitt
+              {reliability.avg_rounds.toFixed(0)} avg rounds
             </span>
           )}
           <span>{result.meta.leetify_count}/{home.players.length + away.players.length} Leetify</span>
@@ -210,9 +181,10 @@ export default async function MatchPage({ params, searchParams }: MatchPageProps
   if (!Number.isInteger(matchupId) || matchupId <= 0) {
     return (
       <ErrorCard
-        title="Ugyldig kamp"
-        detail="Lenken peker ikke til en gyldig kamp."
-        divisionId={divisionId}
+        title="Invalid match"
+        detail="The link does not point to a valid match."
+        backHref={buildHomeHref(divisionId)}
+        backLabel="← Back to search"
       />
     )
   }
@@ -225,17 +197,11 @@ export default async function MatchPage({ params, searchParams }: MatchPageProps
         <div className="atlas-topline" />
         <div className="max-w-5xl mx-auto px-6 md:px-10 py-10">
           <div className="mb-7 fx-rise">
-            <div className="flex items-center justify-between gap-3 mb-5">
-              <Link
-                href={buildHomeHref(divisionId)}
-                className="font-mono text-[11px] uppercase tracking-widest text-muted hover:text-text"
-              >
-                ← Til søk
-              </Link>
-              <span className="font-mono text-[10px] uppercase tracking-widest text-muted/70">
-                Kamp #{matchupId}
-              </span>
-            </div>
+            <NavBreadcrumb
+              backHref={buildHomeHref(divisionId)}
+              backLabel="← Back to search"
+              contextLabel={`Match #${matchupId}`}
+            />
             <MatchHeadlineCard result={result} />
           </div>
 
@@ -247,13 +213,22 @@ export default async function MatchPage({ params, searchParams }: MatchPageProps
     )
   } catch (err) {
     if (err instanceof AnalyzeServiceError) {
-      return <ErrorCard title="Kunne ikke hente analyse" detail={err.message} divisionId={divisionId} />
+      return (
+        <ErrorCard
+          title="Could not load analysis"
+          detail={err.message}
+          backHref={buildHomeHref(divisionId)}
+          backLabel="← Back to search"
+        />
+      )
     }
+
     return (
       <ErrorCard
-        title="Uventet feil"
-        detail="Det oppstod en feil under lasting av analysen. Prøv igjen om litt."
-        divisionId={divisionId}
+        title="Unexpected error"
+        detail="An error occurred while loading the analysis. Please try again."
+        backHref={buildHomeHref(divisionId)}
+        backLabel="← Back to search"
       />
     )
   }

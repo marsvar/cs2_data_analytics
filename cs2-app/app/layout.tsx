@@ -15,7 +15,7 @@ const firaSans = Fira_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "CS2 Analyse",
+  title: "CS2 Analytics",
   description: "Bedriftsligaen CS2 match analysis — Bayesian weighting, BL API + Leetify",
 };
 
@@ -26,7 +26,7 @@ export default function RootLayout({
 }>) {
   return (
     <html
-      lang="no"
+      lang="en"
       className={`${firaCode.variable} ${firaSans.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">{children}</body>

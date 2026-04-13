@@ -43,20 +43,20 @@ function playerFormTone(rate: number): {
     return {
       bucket: 'good',
       avatarClass: 'ring-2 ring-success/75 shadow-[0_0_0_3px_rgba(79,202,122,0.14)]',
-      label: 'Sterk',
+      label: 'Strong',
     }
   }
   if (rate >= 0.45) {
     return {
       bucket: 'neutral',
       avatarClass: 'ring-2 ring-warning/75 shadow-[0_0_0_3px_rgba(247,200,79,0.14)]',
-      label: 'Middels',
+      label: 'Average',
     }
   }
   return {
     bucket: 'bad',
     avatarClass: 'ring-2 ring-danger/75 shadow-[0_0_0_3px_rgba(247,95,95,0.14)]',
-    label: 'Svak',
+    label: 'Weak',
   }
 }
 
@@ -171,9 +171,9 @@ function PlayerMapDrilldown({
   return (
     <div className="mt-2 rounded border border-border/25 bg-surface2/20 px-3 py-2.5">
       <div className="space-y-2">
-        <BucketRow bucket="good" label="Bra" players={groups.good} />
-        <BucketRow bucket="neutral" label="Midt" players={groups.neutral} />
-        <BucketRow bucket="bad" label="Svak" players={groups.bad} />
+        <BucketRow bucket="good" label="Good" players={groups.good} />
+        <BucketRow bucket="neutral" label="Average" players={groups.neutral} />
+        <BucketRow bucket="bad" label="Weak" players={groups.bad} />
       </div>
     </div>
   )
@@ -320,7 +320,7 @@ export function MapPoolInsights({
 
       {!mapPool && (
         <p className="font-mono text-[11px] text-muted">
-          For lite BL map-data tilgjengelig for denne kampen.
+          Not enough BL map data available for this match.
         </p>
       )}
 
@@ -328,7 +328,7 @@ export function MapPoolInsights({
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           {([
             {
-              label: homeName || 'Hjem',
+              label: homeName || 'Home',
               pool: mapPool.home,
               accentLabel: 'text-accent',
               expandedMap: expandedHome,
@@ -337,7 +337,7 @@ export function MapPoolInsights({
               playersById: homePlayersById,
             },
             {
-              label: awayName || 'Borte',
+              label: awayName || 'Away',
               pool: mapPool.away,
               accentLabel: 'text-accent2',
               expandedMap: expandedAway,
@@ -354,19 +354,19 @@ export function MapPoolInsights({
                 <div className="flex items-center justify-between mb-3">
                   <p className={`font-mono text-xs font-medium ${entry.accentLabel}`}>{entry.label}</p>
                   <span className="font-mono text-[9px] text-muted/50">
-                    {entry.pool.included_players} serier med kartdata
-                    {entry.pool.excluded_players > 0 && ` · ${entry.pool.excluded_players} uten kart`}
+                    {entry.pool.included_players} series with map data
+                    {entry.pool.excluded_players > 0 && ` · ${entry.pool.excluded_players} without map data`}
                   </span>
                 </div>
 
                 {entry.pool.maps.length === 0 ? (
-                  <p className="font-mono text-[11px] text-muted">Ingen kvalifiserte map-observasjoner.</p>
+                  <p className="font-mono text-[11px] text-muted">No qualifying map observations.</p>
                 ) : (
                   <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
                     <div className="min-w-0">
                       <p className="font-mono text-[9px] uppercase tracking-widest text-success/70 mb-2 flex items-center gap-1">
                         <span className="inline-block w-1.5 h-1.5 rounded-full bg-success/60" />
-                        Sterkest
+                        Strongest
                       </p>
                       <div className="space-y-1.5">
                         {strongest.map((map) => (
@@ -386,7 +386,7 @@ export function MapPoolInsights({
                     <div className="min-w-0">
                       <p className="font-mono text-[9px] uppercase tracking-widest text-danger/70 mb-2 flex items-center gap-1">
                         <span className="inline-block w-1.5 h-1.5 rounded-full bg-danger/60" />
-                        Svakest
+                        Weakest
                       </p>
                       <div className="space-y-1.5">
                         {weakest.map((map) => (
