@@ -68,7 +68,7 @@ export async function getUpcomingPreview(matchupId: number): Promise<UpcomingMat
   const inflight = upcomingPreviewInflight.get(matchupId)
   if (inflight) return inflight
 
-  const request = analyzeMatchup(matchupId)
+  const request = analyzeMatchup(matchupId, { includeLeetify: false })
     .then((result) => {
       const preview = buildUpcomingPreview(result)
       upcomingPreviewCache.set(matchupId, {

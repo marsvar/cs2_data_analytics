@@ -185,6 +185,8 @@ export function buildPlayerAnalysis(
     dpr: Math.round(dpr * 10) / 10,
     hs: Math.round(hs * 10000) / 10000,
     od_rate: Math.round(odRate * 10000) / 10000,
+    bl_weight: leetify ? Math.round(blWeight(wRounds) * 10000) / 10000 : undefined,
+    effective_rounds: Math.round(wRounds * 10) / 10,
     leetify,
     data_source: dataSource,
   }

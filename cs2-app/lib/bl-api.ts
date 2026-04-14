@@ -632,7 +632,6 @@ type CompetitionLineupEntry = {
   status?: string
   active?: boolean
 }
-
 function normalizeTeamMembershipRole(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined
   const normalized = value.trim().toLowerCase()
@@ -644,7 +643,6 @@ function normalizeLineupRole(value: unknown): string | undefined {
   const normalized = value.trim().toLowerCase()
   return normalized.length > 0 ? normalized : undefined
 }
-
 function isVisibleTeamMembershipRole(role?: string): boolean {
   if (!role) return true
 

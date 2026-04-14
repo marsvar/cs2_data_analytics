@@ -550,7 +550,7 @@ function EarlyRoundAndFormPanel({
             Math.abs(edgeDelta) < 0.03 ? 'text-muted' : edgeDelta > 0 ? 'text-accent' : 'text-accent2'
           }`}>
             {Math.abs(edgeDelta * 100) < 3
-              ? 'Likt fordelt'
+              ? 'Even'
               : `${edgeDelta > 0 ? home.name || 'Home' : away.name || 'Away'} +${Math.abs(edgeDelta * 100).toFixed(1)} pp`}
           </span>
         </div>
@@ -561,6 +561,32 @@ function EarlyRoundAndFormPanel({
           awayLabel={`${toPercent(awayTeamOd)} ${away.name || 'Away'}`}
           centerLabel="weighted opening"
         />
+        {landing?.early_round_edge.ct_split != null && landing?.early_round_edge.t_split != null && (
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            <div className="rounded border border-border/20 bg-surface/25 px-2.5 py-1.5">
+              <p className="font-mono text-[8px] uppercase tracking-widest text-muted/50 mb-1.5">CT-side OD%</p>
+              <HeadToHeadBar
+                homeShare={landing.early_round_edge.ct_split.home * 100}
+                awayShare={landing.early_round_edge.ct_split.away * 100}
+                homeLabel={`${Math.round(landing.early_round_edge.ct_split.home * 100)}%`}
+                awayLabel={`${Math.round(landing.early_round_edge.ct_split.away * 100)}%`}
+                centerLabel={Math.abs(landing.early_round_edge.ct_split.delta) < 0.01 ? 'even' : `${landing.early_round_edge.ct_split.delta > 0 ? '+' : ''}${(landing.early_round_edge.ct_split.delta * 100).toFixed(1)} pp`}
+                heightClassName="h-1.5"
+              />
+            </div>
+            <div className="rounded border border-border/20 bg-surface/25 px-2.5 py-1.5">
+              <p className="font-mono text-[8px] uppercase tracking-widest text-muted/50 mb-1.5">T-side OD%</p>
+              <HeadToHeadBar
+                homeShare={landing.early_round_edge.t_split.home * 100}
+                awayShare={landing.early_round_edge.t_split.away * 100}
+                homeLabel={`${Math.round(landing.early_round_edge.t_split.home * 100)}%`}
+                awayLabel={`${Math.round(landing.early_round_edge.t_split.away * 100)}%`}
+                centerLabel={Math.abs(landing.early_round_edge.t_split.delta) < 0.01 ? 'even' : `${landing.early_round_edge.t_split.delta > 0 ? '+' : ''}${(landing.early_round_edge.t_split.delta * 100).toFixed(1)} pp`}
+                heightClassName="h-1.5"
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="mb-4 grid gap-2 md:grid-cols-2">
@@ -687,6 +713,14 @@ function PlayerRow({
                 CT{ctPct}%·T{tPct}%
               </span>
             )}
+            {player.bl_weight != null && player.bl_weight < 0.4 && (
+              <span
+                className="text-[8px] font-mono text-warning/70"
+                title={`Low data quality — BL weight ${(player.bl_weight * 100).toFixed(0)}% (below 40%). CI estimate is unreliable.`}
+              >
+                ~low
+              </span>
+            )}
           </div>
         </div>
 
@@ -809,7 +843,7 @@ function MetaBar({ meta }: { meta: AnalyzeResponse['meta'] }) {
         <span className="text-text/70">Rounds</span>{' '}
         <span className="tabular-nums">{meta.rounds_fetched}</span>
       </span>
-      <span title={meta.leetify_count === 0 && meta.leetify_attempts > 0 ? '404 — no Leetify profiles found for these players' : undefined}>
+      <span title={meta.leetify_count === 0 && meta.leetify_attempts > 0 ? 'No public Leetify profiles were returned for these players' : undefined}>
         <span className="text-text/70">Leetify</span>{' '}
         <span className={`tabular-nums ${meta.leetify_count === 0 && meta.leetify_attempts > 0 ? 'text-warning' : ''}`}>
           {meta.leetify_count}/{meta.leetify_attempts}
@@ -1644,6 +1678,34 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
             >
               <p className="font-mono text-[11px] text-text mb-3">{post.economy_proxies.summary}</p>
 
+              {post.economy_proxies.signal_wins != null && (() => {
+                const sw = post.economy_proxies.signal_wins!
+                const winnerText = sw.home > sw.away
+                  ? `${hl} won ${sw.home}/${sw.signals.length} signals`
+                  : sw.away > sw.home
+                    ? `${al} won ${sw.away}/${sw.signals.length} signals`
+                    : `Even (${sw.home}/${sw.signals.length})`
+                const winnerColorClass = sw.home > sw.away ? 'text-accent' : sw.away > sw.home ? 'text-accent2' : 'text-muted/60'
+                return (
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="flex items-center gap-1.5" title="Each dot = one economy signal. Blue = home team, purple = away team, grey = even.">
+                      {sw.signals.map((s, i) => (
+                        <div
+                          key={i}
+                          title={`${s.label}: ${s.winner === 'even' ? 'Even' : s.winner === 'home' ? hl : al} (${s.edge >= 0 ? '+' : ''}${s.edge.toFixed(1)})`}
+                          className={`w-2 h-2 rounded-full ${
+                            s.winner === 'home' ? 'bg-accent' : s.winner === 'away' ? 'bg-accent2' : 'bg-muted/30'
+                          }`}
+                        />
+                      ))}
+                    </div>
+                    <span className={`font-mono text-[9px] ${winnerColorClass}`}>
+                      {winnerText}
+                    </span>
+                  </div>
+                )
+              })()}
+
               {/* Primary signals */}
               <div className="space-y-2.5 rounded-lg border border-border/25 bg-surface/40 p-2.5 mb-2">
                 <p className="font-mono text-[9px] uppercase tracking-widest text-muted/60 pb-1 border-b border-border/20">Primary Signals</p>
@@ -2221,8 +2283,8 @@ export function AnalysisDisplay({
   const isUpcoming = result.meta.match_status === 'upcoming'
 
   const lineupSize = result.simulation?.lineup_size ?? 5
-  const homePool = result.teams.home.players
-  const awayPool = result.teams.away.players
+  const homePool = result.simulation?.home_pool ?? result.teams.home.players
+  const awayPool = result.simulation?.away_pool ?? result.teams.away.players
 
   const getDefaultIds = (players: PlayerAnalysis[]) =>
     new Set(
