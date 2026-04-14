@@ -18,11 +18,13 @@ import type { BLMatchupStats, BLPlayerStats } from './types'
 import { normalizeBlImageUrl } from './bl-image-url'
 
 const BL_BASE = 'https://app.bedriftsligaen.no/api/paradise/v2'
+const BL_LEGACY_BASE = 'https://app.bedriftsligaen.no/api/paradise'
 const MATCHUP_STATS_TTL_MS = 5 * 60 * 1000
 const MATCHUP_META_TTL_MS = 5 * 60 * 1000
 const DIVISION_MATCHUPS_TTL_MS = 2 * 60 * 1000
 const TEAM_MATCHUPS_TTL_MS = 5 * 60 * 1000
 const TEAM_PLAYERS_TTL_MS = 15 * 60 * 1000
+const COMPETITION_LINEUP_TTL_MS = 2 * 60 * 1000
 const USER_PROFILE_TTL_MS = 6 * 60 * 60 * 1000
 const COMPETITIONS_TTL_MS = 30 * 60 * 1000
 const COMPETITION_SIGNUPS_TTL_MS = 30 * 60 * 1000
@@ -54,6 +56,59 @@ async function blGet<T>(
 
   const request = (async () => {
     const res = await fetch(`${BL_BASE}${endpoint}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(15000),
+      cache: 'no-store',
+    })
+    if (!res.ok) throw new Error(`BL API ${res.status}: ${endpoint}`)
+    const data = await res.json() as T
+
+    if (ttlMs > 0) {
+      blResponseCache.set(cacheKey, {
+        value: data,
+        expiresAt: Date.now() + ttlMs,
+      })
+    }
+
+    return data
+  })()
+
+  if (ttlMs <= 0) {
+    return request
+  }
+
+  blInflight.set(cacheKey, request as Promise<unknown>)
+  try {
+    return await request
+  } finally {
+    blInflight.delete(cacheKey)
+  }
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function blGetLegacy<T>(
+  endpoint: string,
+  token: string,
+  options?: { ttlMs?: number },
+): Promise<T> {
+  const ttlMs = options?.ttlMs ?? 0
+  const cacheKey = `${token}:${BL_LEGACY_BASE}:${endpoint}`
+  const now = Date.now()
+
+  if (ttlMs > 0) {
+    const cached = blResponseCache.get(cacheKey)
+    if (cached && cached.expiresAt > now) {
+      return cached.value as T
+    }
+
+    const inflight = blInflight.get(cacheKey)
+    if (inflight) {
+      return inflight as Promise<T>
+    }
+  }
+
+  const request = (async () => {
+    const res = await fetch(`${BL_LEGACY_BASE}${endpoint}`, {
       headers: { Authorization: `Bearer ${token}` },
       signal: AbortSignal.timeout(15000),
       cache: 'no-store',
@@ -420,6 +475,7 @@ export async function getMatchupStats(
 }
 
 export type MatchupMeta = {
+  competitionId: number | null
   bestOf: number | null
   divisionId: number | null
   roundNumber: number | null
@@ -469,6 +525,12 @@ export async function getMatchupMeta(
     const awayTeamId = toOptionalNumber(awayTeam.id) ?? undefined
     const homeScore = toOptionalNumber(raw?.home_score)
     const awayScore = toOptionalNumber(raw?.away_score)
+    const competitionId = toOptionalNumber(
+      raw?.competition_id ??
+      raw?.competition?.id ??
+      raw?.matchupable?.competition_id ??
+      raw?.matchupable?.competition?.id,
+    )
     const winner = parseWinner(
       raw?.winner_id ?? raw?.winner_team_id ?? raw?.winner,
       homeTeamId,
@@ -510,6 +572,7 @@ export async function getMatchupMeta(
     }
 
     return {
+      competitionId,
       bestOf: toOptionalNumber(raw?.best_of),
       divisionId: raw?.matchupable_id ?? null,
       roundNumber: raw?.round?.number ?? raw?.round_number ?? null,
@@ -563,12 +626,23 @@ export type TeamPlayerRef = {
   membershipRole?: string
 }
 
+type CompetitionLineupEntry = {
+  user_id?: number
+  role?: string
+  status?: string
+  active?: boolean
+}
 function normalizeTeamMembershipRole(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined
   const normalized = value.trim().toLowerCase()
   return normalized.length > 0 ? normalized : undefined
 }
 
+function normalizeLineupRole(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const normalized = value.trim().toLowerCase()
+  return normalized.length > 0 ? normalized : undefined
+}
 function isVisibleTeamMembershipRole(role?: string): boolean {
   if (!role) return true
 
@@ -629,6 +703,35 @@ export async function getTeamPlayers(
       ))
   } catch {
     return []
+  }
+}
+
+/**
+ * Fetch competition-scoped team lineup roles (player/substitute).
+ */
+export async function getCompetitionTeamLineupRoles(
+  competitionId: number,
+  teamId: number,
+  token: string,
+): Promise<Map<number, string>> {
+  if (!competitionId || !teamId) return new Map()
+  try {
+    const raw = await blGetLegacy<{ data?: CompetitionLineupEntry[] }>(
+      `/competition/${competitionId}/team/${teamId}/lineup`,
+      token,
+      { ttlMs: COMPETITION_LINEUP_TTL_MS },
+    )
+    const rows = Array.isArray(raw?.data) ? raw.data : []
+    const roles = new Map<number, string>()
+    for (const row of rows) {
+      const userId = row?.user_id
+      if (typeof userId !== 'number' || userId <= 0) continue
+      const role = normalizeLineupRole(row?.role)
+      if (role) roles.set(userId, role)
+    }
+    return roles
+  } catch {
+    return new Map()
   }
 }
 
@@ -720,6 +823,7 @@ export async function getUserMatchups(
   token: string,
   options?: {
     divisionId?: number
+    competitionId?: number
   },
 ): Promise<Array<{
   id: number
@@ -729,20 +833,37 @@ export async function getUserMatchups(
   signups?: unknown[]
 }>> {
   type Raw = { data?: unknown[] } | unknown[]
-  const params = new URLSearchParams({
-    user_id: String(userId),
-    limit: '100',
-  })
-  if (options?.divisionId != null && options.divisionId > 0) {
-    params.set('division_id', String(options.divisionId))
+  const buildParams = (key: 'user_id' | 'paradise_user_id'): string => {
+    const params = new URLSearchParams({
+      [key]: String(userId),
+      limit: '100',
+    })
+    if (options?.divisionId != null && options.divisionId > 0) {
+      params.set('division_id', String(options.divisionId))
+    }
+    if (options?.competitionId != null && options.competitionId > 0) {
+      params.set('competition_id', String(options.competitionId))
+    }
+    return params.toString()
   }
-  const data = await blGet<Raw>(
-    `/matchup?${params.toString()}`,
-    token,
-  )
-  const arr = Array.isArray(data) ? data : ((data as { data?: unknown[] }).data ?? [])
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return arr as any[]
+
+  for (const key of ['user_id', 'paradise_user_id'] as const) {
+    try {
+      const data = await blGet<Raw>(
+        `/matchup?${buildParams(key)}`,
+        token,
+      )
+      const arr = Array.isArray(data) ? data : ((data as { data?: unknown[] }).data ?? [])
+      const filtered = (arr as Array<{ id?: number }>).filter((row) =>
+        Number.isInteger(row?.id) && (row?.id ?? 0) > 0,
+      )
+      if (filtered.length > 0) return filtered as any[]
+    } catch {
+      // try next key
+    }
+  }
+
+  return []
 }
 
 export type CompetitionDivision = {
@@ -897,6 +1018,24 @@ export async function getUserImageUrl(
   try {
     const raw = await getRawUser(userId, token)
     return normalizeBlImageUrl(raw?.image?.url, raw?.image?.relative_url) ?? undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Fetch the display name for a BL user.
+ * Uses /user/{id} which returns user_name.
+ */
+export async function getUserProfileName(
+  userId: number,
+  token: string,
+): Promise<string | undefined> {
+  try {
+    const raw = await getRawUser(userId, token)
+    const name = raw?.user_name ?? raw?.name
+    if (typeof name === 'string' && name.trim() !== '') return name.trim()
+    return undefined
   } catch {
     return undefined
   }

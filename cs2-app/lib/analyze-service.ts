@@ -4,8 +4,11 @@ import {
   type MatchupMeta,
   getCompetitions,
   getCompetitionSignupTeams,
+  getCompetitionTeamLineupRoles,
+  getMatchupTeamPlayers,
   getTeamPlayers,
   getTeamMatchups,
+  getUserImageUrl,
   getDivisionMatchups,
 } from '@/lib/bl-api'
 import { fetchProfiles } from '@/lib/leetify-api'
@@ -812,81 +815,167 @@ export async function analyzeMatchup(
       }
     }
 
+    // ── Division-based active lineup resolution ───────────────────────────────
+    // For upcoming matches, matchup_users may contain stale registrations from
+    // previous tournaments. Resolve the real lineup by finding who has actually
+    // played for each team in this division during the current season.
+    const divisionPlayerImages = new Map<number, string>() // userId → imageUrl
+    const divisionActivePlayers = new Map<number, Set<number>>() // teamId → Set<userId>
+
+    if (matchStatus === 'upcoming' && matchupMeta?.divisionId && relevantTeamIds.size > 0) {
+      try {
+        // Fetch completed division matchups and use their matchup_users for accurate
+        // team membership. This avoids the stats-based home/away attribution which
+        // relies on array order and can mis-assign players.
+        const divisionMatchups = await getDivisionMatchupRows()
+        if (!divisionMatchups) throw new Error('Missing division matchups')
+        const completedIds = divisionMatchups
+          .filter((m) => Boolean(m.finished_at) && matchupIncludesAnyTeam(m, relevantTeamIds))
+          .map((m) => m.id)
+
+        const teamPlayerResults = await Promise.allSettled(
+          completedIds.map((id) => getMatchupTeamPlayers(id, blToken)),
+        )
+
+        for (const r of teamPlayerResults) {
+          if (r.status !== 'fulfilled') continue
+          for (const player of r.value) {
+            if (!relevantTeamIds.has(player.teamId)) continue
+            const set = divisionActivePlayers.get(player.teamId) ?? new Set<number>()
+            set.add(player.userId)
+            divisionActivePlayers.set(player.teamId, set)
+            if (player.avatarUrl && !divisionPlayerImages.has(player.userId)) {
+              divisionPlayerImages.set(player.userId, player.avatarUrl)
+            }
+          }
+        }
+      } catch {
+        // Non-fatal: fall back to matchup_users lineup
+      }
+    }
+
+    // ── Lineup ID resolution ───────────────────────────────────────────────────
+    // Prefer competition lineup roles; fall back to division-based active players,
+    // then matchup_users registrations.
+
     // Always fetch team rosters: for upcoming matches they drive lineup candidates;
     // for played matches they supply steam64 IDs (2 calls vs one-per-player).
     const [homeTeamRoster, awayTeamRoster] = await Promise.all([
       matchupMeta?.home.id ? getTeamPlayers(matchupMeta.home.id, blToken) : Promise.resolve([]),
       matchupMeta?.away.id ? getTeamPlayers(matchupMeta.away.id, blToken) : Promise.resolve([]),
     ])
+    const [homeLineupRoles, awayLineupRoles] = matchStatus === 'upcoming' && matchupMeta?.competitionId
+      ? await Promise.all([
+        matchupMeta?.home.id
+          ? getCompetitionTeamLineupRoles(matchupMeta.competitionId, matchupMeta.home.id, blToken)
+          : Promise.resolve(new Map()),
+        matchupMeta?.away.id
+          ? getCompetitionTeamLineupRoles(matchupMeta.competitionId, matchupMeta.away.id, blToken)
+          : Promise.resolve(new Map()),
+      ])
+      : [new Map<number, string>(), new Map<number, string>()]
+
+    const filterRosterByLineupRole = <T extends { userId: number }>(
+      roster: T[],
+      lineupRoles: Map<number, string>,
+    ): T[] => {
+      if (lineupRoles.size === 0) return roster
+      const filtered = roster.filter((p) => lineupRoles.get(p.userId) === 'player')
+      return filtered.length > 0 ? filtered : roster
+    }
+
+    const resolveLineupIds = (teamId: number, lineupRoles: Map<number, string>): number[] => {
+      if (lineupRoles.size > 0) {
+        const roleIds = Array.from(lineupRoles.entries())
+          .filter(([, role]) => role === 'player')
+          .map(([userId]) => userId)
+        if (roleIds.length > 0) return roleIds
+      }
+      const divisionSet = divisionActivePlayers.get(teamId)
+      if (divisionSet && divisionSet.size > 0) {
+        return Array.from(divisionSet)
+      }
+      // Fall back to matchup_users
+      return matchupMeta
+        ? Array.from(matchupMeta.playerTeams.entries())
+          .filter(([, tid]) => tid === teamId)
+          .map(([userId]) => userId)
+        : []
+    }
+
+    const filteredHomeTeamRoster = matchStatus === 'upcoming'
+      ? filterRosterByLineupRole(homeTeamRoster, homeLineupRoles)
+      : homeTeamRoster
+    const filteredAwayTeamRoster = matchStatus === 'upcoming'
+      ? filterRosterByLineupRole(awayTeamRoster, awayLineupRoles)
+      : awayTeamRoster
     const homeRosterByUserId = new Map(homeTeamRoster.map((p) => [p.userId, p]))
     const awayRosterByUserId = new Map(awayTeamRoster.map((p) => [p.userId, p]))
 
-  const homeLineupIds = matchupMeta?.home.id
-    ? Array.from(matchupMeta.playerTeams.entries())
-      .filter(([, tid]) => tid === matchupMeta.home.id)
-      .map(([userId]) => userId)
-    : []
-  const awayLineupIds = matchupMeta?.away.id
-    ? Array.from(matchupMeta.playerTeams.entries())
-      .filter(([, tid]) => tid === matchupMeta.away.id)
-      .map(([userId]) => userId)
-    : []
+    const homeLineupIds = matchupMeta?.home.id
+      ? resolveLineupIds(matchupMeta.home.id, homeLineupRoles)
+      : []
+    const awayLineupIds = matchupMeta?.away.id
+      ? resolveLineupIds(matchupMeta.away.id, awayLineupRoles)
+      : []
 
-  // Helper: resolve avatarUrl for a userId — prefers matchup_users data,
-  // then falls back to roster-provided avatars.
-  const getAvatarUrl = (userId: number): string | undefined =>
-    matchupMeta?.playerImages.get(userId) ??
-    homeRosterByUserId.get(userId)?.avatarUrl ??
-    awayRosterByUserId.get(userId)?.avatarUrl
+    // Helper: resolve avatarUrl for a userId — prefers matchup_users data,
+    // falls back to divisionPlayerImages (fetched below for division-discovered players),
+    // then roster-provided avatars.
+    const getAvatarUrl = (userId: number): string | undefined =>
+      matchupMeta?.playerImages.get(userId) ??
+      divisionPlayerImages.get(userId) ??
+      homeRosterByUserId.get(userId)?.avatarUrl ??
+      awayRosterByUserId.get(userId)?.avatarUrl
 
-  const buildLineupCandidates = (
-    lineupIds: number[],
-    rosterByUserId: Map<number, { userId: number; userName: string; steam64?: string; avatarUrl?: string }>,
-    teamRoster: Array<{ userId: number; userName: string; steam64?: string; avatarUrl?: string }>,
-  ): PlayerCandidate[] => {
-    if (teamRoster.length > 0) {
-      return teamRoster.map((p) => ({
-        userId: p.userId,
-        name: p.userName,
-        steam64: p.steam64,
-        avatarUrl: getAvatarUrl(p.userId),
-      }))
+    const buildLineupCandidates = (
+      lineupIds: number[],
+      rosterByUserId: Map<number, { userId: number; userName: string; steam64?: string }>,
+      teamRoster: Array<{ userId: number; userName: string; steam64?: string }>,
+    ): PlayerCandidate[] => {
+      if (lineupIds.length > 0) {
+        return Array.from(new Set(lineupIds))
+          .filter((id) => id > 0)
+          .map((userId) => {
+            const roster = rosterByUserId.get(userId)
+            return {
+              userId,
+              name: roster?.userName,
+              steam64: roster?.steam64,
+              avatarUrl: getAvatarUrl(userId),
+            } satisfies PlayerCandidate
+          })
+      }
+      if (teamRoster.length > 0) {
+        return teamRoster.map((p) => ({
+          userId: p.userId,
+          name: p.userName,
+          steam64: p.steam64,
+          avatarUrl: getAvatarUrl(p.userId),
+        }))
+      }
+      return []
     }
-    if (lineupIds.length > 0) {
-      return Array.from(new Set(lineupIds))
-        .filter((id) => id > 0)
-        .map((userId) => {
-          const roster = rosterByUserId.get(userId)
-          return {
-            userId,
-            name: roster?.userName,
-            steam64: roster?.steam64,
-            avatarUrl: getAvatarUrl(userId),
-          } satisfies PlayerCandidate
-        })
-    }
-    return []
-  }
 
-  const homeCandidates: PlayerCandidate[] = hasMatchPlayers
-    ? matchupStats.home_players
-      .filter((p) => p.paradise_user_id > 0)
-      .map((p) => ({
-        userId: p.paradise_user_id,
-        base: p,
-        avatarUrl: getAvatarUrl(p.paradise_user_id),
-      }))
-    : buildLineupCandidates(homeLineupIds, homeRosterByUserId, homeTeamRoster)
+    const homeCandidates: PlayerCandidate[] = hasMatchPlayers
+      ? matchupStats.home_players
+        .filter((p) => p.paradise_user_id > 0)
+        .map((p) => ({
+          userId: p.paradise_user_id,
+          base: p,
+          avatarUrl: getAvatarUrl(p.paradise_user_id),
+        }))
+      : buildLineupCandidates(homeLineupIds, homeRosterByUserId, filteredHomeTeamRoster)
 
-  const awayCandidates: PlayerCandidate[] = hasMatchPlayers
-    ? matchupStats.away_players
-      .filter((p) => p.paradise_user_id > 0)
-      .map((p) => ({
-        userId: p.paradise_user_id,
-        base: p,
-        avatarUrl: getAvatarUrl(p.paradise_user_id),
-      }))
-    : buildLineupCandidates(awayLineupIds, awayRosterByUserId, awayTeamRoster)
+    const awayCandidates: PlayerCandidate[] = hasMatchPlayers
+      ? matchupStats.away_players
+        .filter((p) => p.paradise_user_id > 0)
+        .map((p) => ({
+          userId: p.paradise_user_id,
+          base: p,
+          avatarUrl: getAvatarUrl(p.paradise_user_id),
+        }))
+      : buildLineupCandidates(awayLineupIds, awayRosterByUserId, filteredAwayTeamRoster)
 
   const hasRecentBlData = (userId: number): boolean => {
     const history = playerAccumulator.get(userId)
@@ -979,36 +1068,36 @@ export async function analyzeMatchup(
     ))
     const steamByUserId = new Map<number, string>()
 
-  // Source 1: steam64 already on the candidate (lineup path for upcoming matches)
-  for (const candidate of allEligibleCandidates) {
-    if (candidate.steam64) steamByUserId.set(candidate.userId, candidate.steam64)
-  }
-
-  // Source 2: static hardcoded map
-  for (const userId of analysisPlayerIds) {
-    const staticSteam = STEAM_BY_USER_ID[userId]
-    if (staticSteam && !steamByUserId.has(userId)) steamByUserId.set(userId, staticSteam)
-  }
-
-  // Source 3: matchup_users embed (accounts may be included in the BL response)
-  if (matchupMeta) {
-    for (const [userId, steam64] of matchupMeta.playerSteam64) {
-      if (!steamByUserId.has(userId)) steamByUserId.set(userId, steam64)
+    // Source 1: steam64 already on the candidate (lineup path for upcoming matches)
+    for (const candidate of allEligibleCandidates) {
+      if (candidate.steam64) steamByUserId.set(candidate.userId, candidate.steam64)
     }
-  }
 
-  // Source 4: team roster — 2 API calls instead of one per player
-  for (const p of [...homeTeamRoster, ...awayTeamRoster]) {
-    if (p.steam64 && !steamByUserId.has(p.userId)) steamByUserId.set(p.userId, p.steam64)
-  }
+    // Source 2: static hardcoded map
+    for (const userId of analysisPlayerIds) {
+      const staticSteam = STEAM_BY_USER_ID[userId]
+      if (staticSteam && !steamByUserId.has(userId)) steamByUserId.set(userId, staticSteam)
+    }
 
-  const analysisSteamIds = Array.from(new Set(
-    analysisPlayerIds
-      .map((userId) => steamByUserId.get(userId))
-      .filter((steam64): steam64 is string => Boolean(steam64)),
-  ))
-  const steamIds = analysisSteamIds
-  const leetifyAttempts = leetifyToken ? steamIds.length : 0
+    // Source 3: matchup_users embed (accounts may be included in the BL response)
+    if (matchupMeta) {
+      for (const [userId, steam64] of matchupMeta.playerSteam64) {
+        if (!steamByUserId.has(userId)) steamByUserId.set(userId, steam64)
+      }
+    }
+
+    // Source 4: team roster — 2 API calls instead of one per player
+    for (const p of [...homeTeamRoster, ...awayTeamRoster]) {
+      if (p.steam64 && !steamByUserId.has(p.userId)) steamByUserId.set(p.userId, p.steam64)
+    }
+
+    const analysisSteamIds = Array.from(new Set(
+      analysisPlayerIds
+        .map((userId) => steamByUserId.get(userId))
+        .filter((steam64): steam64 is string => Boolean(steam64)),
+    ))
+    const steamIds = analysisSteamIds
+    const leetifyAttempts = leetifyToken ? steamIds.length : 0
 
   let leetifyProfiles: Awaited<ReturnType<typeof fetchProfiles>>
   if (!leetifyToken || steamIds.length === 0) {

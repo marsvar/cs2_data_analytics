@@ -11,6 +11,7 @@ import {
   getTeamMatchups,
   getMatchupStats,
   getMatchupMeta,
+  getCompetitionTeamLineupRoles,
 } from '@/lib/bl-api'
 import { fetchProfiles } from '@/lib/leetify-api'
 import { compositeScore, blWeight, ci90 } from '@/lib/aggregation'
@@ -41,6 +42,8 @@ const teamCache = new Map<number, CachedEntry>()
 
 const BL_TOKEN = process.env.BL_TOKEN ?? ''
 const LEETIFY_TOKEN = process.env.LEETIFY_TOKEN ?? ''
+const COMPETITION_ID = Number.parseInt(process.env.COMPETITION_ID ?? '', 10)
+const CURRENT_COMPETITION_ID = Number.isFinite(COMPETITION_ID) ? COMPETITION_ID : null
 
 function resolveTeamSide(
   teamId: number,
@@ -71,6 +74,13 @@ export async function buildTeamProfile(
     getTeamPlayers(teamId, BL_TOKEN),
     getTeamMatchups(teamId, BL_TOKEN),
   ])
+  const lineupRoles = CURRENT_COMPETITION_ID
+    ? await getCompetitionTeamLineupRoles(CURRENT_COMPETITION_ID, teamId, BL_TOKEN)
+    : new Map<number, string>()
+  const filteredRoster = lineupRoles.size > 0
+    ? roster.filter((player) => lineupRoles.get(player.userId) === 'player')
+    : roster
+  const rosterSource = filteredRoster.length > 0 ? filteredRoster : roster
 
   const finishedMatchups = allMatchups.filter((m) => m.finished_at && m.id > 0)
 
@@ -104,11 +114,11 @@ export async function buildTeamProfile(
   }
 
   // 4. Fetch Leetify profiles for roster members
-  const steamIds = roster.map((p) => p.steam64).filter((s): s is string => Boolean(s))
+  const steamIds = rosterSource.map((p) => p.steam64).filter((s): s is string => Boolean(s))
   const leetifyProfiles = steamIds.length > 0
     ? await fetchProfiles(steamIds, LEETIFY_TOKEN)
     : new Map()
-  const rosterByUserId = new Map(roster.map((player) => [player.userId, player]))
+  const rosterByUserId = new Map(rosterSource.map((player) => [player.userId, player]))
   const rosterUserIds = new Set(rosterByUserId.keys())
 
   // 5. Build per-player aggregated stats
@@ -178,15 +188,15 @@ export async function buildTeamProfile(
   // 6. Build roster member list with role inference.
   // Prefer the current BL roster as the source of truth for who appears.
   const rosterMembers: RosterMember[] = []
-  const rosterSource = roster.length > 0
-    ? roster
+  const rosterFallback = rosterSource.length > 0
+    ? rosterSource
     : Array.from(playerAccs.values()).map((acc) => ({
       userId: acc.userId,
       userName: acc.name,
       steam64: acc.steam64,
     }))
 
-  for (const rosterEntry of rosterSource) {
+  for (const rosterEntry of rosterFallback) {
     const acc = playerAccs.get(rosterEntry.userId)
 
     if (!acc) {

@@ -11,6 +11,8 @@ import {
   getMatchupStats,
   getMatchupMeta,
   getUserImageUrl,
+  getTeamMatchups,
+  getUserProfileName,
 } from '@/lib/bl-api'
 import { fetchProfiles } from '@/lib/leetify-api'
 import { compositeScore, blWeight, ci90 } from '@/lib/aggregation'
@@ -36,67 +38,78 @@ export class PlayerProfileError extends Error {
 const PROFILE_CACHE_TTL_MS = 10 * 60 * 1000
 
 type CachedEntry = { value: PlayerProfileResponse; expiresAt: number }
-const profileCache = new Map<number, CachedEntry>()
+const profileCache = new Map<string, CachedEntry>()
 
 const BL_TOKEN = process.env.BL_TOKEN ?? ''
 const LEETIFY_TOKEN = process.env.LEETIFY_TOKEN ?? ''
+const COMPETITION_ID = Number.parseInt(process.env.COMPETITION_ID ?? '', 10)
+const CURRENT_COMPETITION_ID = Number.isFinite(COMPETITION_ID) ? COMPETITION_ID : null
 
 export async function buildPlayerProfile(
   userId: number,
+  options?: { teamId?: number },
 ): Promise<PlayerProfileResponse> {
-  const cached = profileCache.get(userId)
+  const cacheKey = `${userId}:${options?.teamId ?? 'none'}`
+  const cached = profileCache.get(cacheKey)
   if (cached && cached.expiresAt > Date.now()) return cached.value
 
-  const [steam64, avatarUrl] = await Promise.all([
+  const [steam64, avatarUrl, userName] = await Promise.all([
     getUserSteamId(userId, BL_TOKEN),
     getUserImageUrl(userId, BL_TOKEN),
+    getUserProfileName(userId, BL_TOKEN),
   ])
 
-  const allMatchups = await getUserMatchups(userId, BL_TOKEN)
-  const finishedMatchups = allMatchups.filter(
-    (m) => m.finished_at && m.id > 0,
+  const buildEmptyProfile = (name = ''): PlayerProfileResponse => ({
+    paradise_user_id: userId,
+    name,
+    avatar_url: avatarUrl,
+    steam64: steam64 ?? undefined,
+    total_rounds: 0,
+    total_matches: 0,
+    kd: 0,
+    kast: 0,
+    dpr: 0,
+    hs: 0,
+    od_rate: 0,
+    flash_assists_per_round: null,
+    utility_dmg_per_round: null,
+    clutch_win_pct: null,
+    first_death_rate: null,
+    multi_kills: null,
+    side_split: null,
+    score: 0,
+    ci: 0,
+    role: 'hybrid',
+    role_confidence: 'low',
+    role_signals: [],
+    trend: { last5: [], last10: [], last20: [] },
+    map_records: [],
+    data_source: 'bl',
+    fetched_at: new Date().toISOString(),
+  })
+
+  let allMatchups = await getUserMatchups(userId, BL_TOKEN, {
+    competitionId: CURRENT_COMPETITION_ID ?? undefined,
+  })
+  if (allMatchups.length === 0 && CURRENT_COMPETITION_ID != null) {
+    allMatchups = await getUserMatchups(userId, BL_TOKEN)
+  }
+  const candidateMatchups = allMatchups.filter(
+    (m) => m.id > 0 && (m.finished_at || m.start_time),
   )
 
-  if (finishedMatchups.length === 0) {
-    const emptyProfile: PlayerProfileResponse = {
-      paradise_user_id: userId,
-      name: '',
-      avatar_url: avatarUrl,
-      steam64: steam64 ?? undefined,
-      total_rounds: 0,
-      total_matches: 0,
-      kd: 0,
-      kast: 0,
-      dpr: 0,
-      hs: 0,
-      od_rate: 0,
-      flash_assists_per_round: null,
-      utility_dmg_per_round: null,
-      clutch_win_pct: null,
-      first_death_rate: null,
-      multi_kills: null,
-      side_split: null,
-      score: 0,
-      ci: 0,
-      role: 'hybrid',
-      role_confidence: 'low',
-      role_signals: [],
-      trend: { last5: [], last10: [], last20: [] },
-      map_records: [],
-      data_source: 'bl',
-      fetched_at: new Date().toISOString(),
-    }
-    return emptyProfile
+  if (candidateMatchups.length === 0) {
+    return buildEmptyProfile()
   }
 
   const results = await Promise.allSettled(
-    finishedMatchups.map(async (m) => {
+    candidateMatchups.map(async (m) => {
       try {
         const [stats, meta] = await Promise.all([
           getMatchupStats(m.id, BL_TOKEN),
           getMatchupMeta(m.id, BL_TOKEN),
         ])
-        return { matchupId: m.id, stats, meta, finishedAt: m.finished_at }
+        return { matchupId: m.id, stats, meta, finishedAt: m.finished_at ?? m.start_time }
       } catch {
         return null
       }
@@ -113,14 +126,36 @@ export async function buildPlayerProfile(
   }
 
   const matchEntries: MatchEntry[] = []
-  let displayName = ''
+  let displayName = userName ?? ''
+
+  const normalizeName = (value?: string | null): string =>
+    (value ?? '')
+      .trim()
+      .toLowerCase()
+      .normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^\p{L}\p{N}]+/gu, '')
+
+  const resolvePlayer = (
+    allPlayers: BLPlayerStats[],
+    targetId: number,
+    targetName?: string,
+  ): BLPlayerStats | undefined => {
+    const byId = allPlayers.find((p) => p.paradise_user_id === targetId)
+    if (byId) return byId
+    if (!targetName) return undefined
+    const normalizedTarget = normalizeName(targetName)
+    if (!normalizedTarget) return undefined
+    const matches = allPlayers.filter((p) => normalizeName(p.name) === normalizedTarget)
+    return matches.length === 1 ? matches[0] : undefined
+  }
 
   for (const r of results) {
     if (r.status !== 'fulfilled' || r.value === null) continue
     const { matchupId, stats, meta, finishedAt } = r.value
 
     const allPlayers = [...stats.home_players, ...stats.away_players]
-    const player = allPlayers.find((p) => p.paradise_user_id === userId)
+    const player = resolvePlayer(allPlayers, userId, userName)
     if (!player) continue
 
     if (!displayName && player.name) displayName = player.name
@@ -143,8 +178,62 @@ export async function buildPlayerProfile(
     matchEntries.push({ matchupId, player, date, won, mapName, isHome })
   }
 
+  if (matchEntries.length === 0 && options?.teamId) {
+    try {
+      const teamMatchups = await getTeamMatchups(options.teamId, BL_TOKEN)
+      const finishedTeamMatchups = teamMatchups
+        .filter((m) => (m.finished_at || m.start_time) && m.id > 0)
+        .filter((m) => !candidateMatchups.some((fm) => fm.id === m.id))
+        .slice(0, 60)
+
+      const teamResults = await Promise.allSettled(
+        finishedTeamMatchups.map(async (m) => {
+          try {
+            const [stats, meta] = await Promise.all([
+              getMatchupStats(m.id, BL_TOKEN),
+              getMatchupMeta(m.id, BL_TOKEN),
+            ])
+            return { matchupId: m.id, stats, meta, finishedAt: m.finished_at ?? m.start_time }
+          } catch {
+            return null
+          }
+        }),
+      )
+
+      for (const r of teamResults) {
+        if (r.status !== 'fulfilled' || r.value === null) continue
+        const { matchupId, stats, meta, finishedAt } = r.value
+
+        const allPlayers = [...stats.home_players, ...stats.away_players]
+        const player = resolvePlayer(allPlayers, userId, userName)
+        if (!player) continue
+
+        if (!displayName && player.name) displayName = player.name
+
+        const isHome = stats.home_players.some((p) => p.paradise_user_id === userId)
+        let won: boolean | null = null
+        let mapName: string | undefined
+        const date = (finishedAt as string | undefined) ?? meta?.finishedAt ?? null
+
+        if (meta) {
+          if (meta.winner === 'home') won = isHome
+          else if (meta.winner === 'away') won = !isHome
+          else won = null
+
+          if (meta.maps.length > 0 && meta.maps[0].name) {
+            mapName = normalizeActiveDutyMap(meta.maps[0].name) ?? undefined
+          }
+        }
+
+        matchEntries.push({ matchupId, player, date, won, mapName, isHome })
+      }
+    } catch {
+      // Ignore fallback failures.
+    }
+  }
+
   if (matchEntries.length === 0) {
-    throw new PlayerProfileError('No match data found for this player', 404)
+    return buildEmptyProfile(displayName)
   }
 
   let leetifyData = undefined
@@ -359,6 +448,6 @@ export async function buildPlayerProfile(
     fetched_at: new Date().toISOString(),
   }
 
-  profileCache.set(userId, { value: profile, expiresAt: Date.now() + PROFILE_CACHE_TTL_MS })
+  profileCache.set(cacheKey, { value: profile, expiresAt: Date.now() + PROFILE_CACHE_TTL_MS })
   return profile
 }
