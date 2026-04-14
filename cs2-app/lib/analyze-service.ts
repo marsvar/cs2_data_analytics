@@ -5,6 +5,7 @@ import {
   getCompetitions,
   getCompetitionSignupTeams,
   getCompetitionTeamLineupRoles,
+  getMatchupTeamPlayers,
   getTeamPlayers,
   getTeamMatchups,
   getUserImageUrl,
