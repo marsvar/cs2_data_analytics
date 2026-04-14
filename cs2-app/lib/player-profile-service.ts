@@ -11,6 +11,7 @@ import {
   getMatchupStats,
   getMatchupMeta,
   getUserImageUrl,
+  getTeamMatchups,
 } from '@/lib/bl-api'
 import { fetchProfiles } from '@/lib/leetify-api'
 import { compositeScore, blWeight, ci90 } from '@/lib/aggregation'
@@ -36,7 +37,7 @@ export class PlayerProfileError extends Error {
 const PROFILE_CACHE_TTL_MS = 10 * 60 * 1000
 
 type CachedEntry = { value: PlayerProfileResponse; expiresAt: number }
-const profileCache = new Map<number, CachedEntry>()
+const profileCache = new Map<string, CachedEntry>()
 
 const BL_TOKEN = process.env.BL_TOKEN ?? ''
 const LEETIFY_TOKEN = process.env.LEETIFY_TOKEN ?? ''
@@ -45,8 +46,10 @@ const CURRENT_COMPETITION_ID = Number.isFinite(COMPETITION_ID) ? COMPETITION_ID 
 
 export async function buildPlayerProfile(
   userId: number,
+  options?: { teamId?: number },
 ): Promise<PlayerProfileResponse> {
-  const cached = profileCache.get(userId)
+  const cacheKey = `${userId}:${options?.teamId ?? 'none'}`
+  const cached = profileCache.get(cacheKey)
   if (cached && cached.expiresAt > Date.now()) return cached.value
 
   const [steam64, avatarUrl] = await Promise.all([
@@ -149,6 +152,60 @@ export async function buildPlayerProfile(
     }
 
     matchEntries.push({ matchupId, player, date, won, mapName, isHome })
+  }
+
+  if (matchEntries.length === 0 && options?.teamId) {
+    try {
+      const teamMatchups = await getTeamMatchups(options.teamId, BL_TOKEN)
+      const finishedTeamMatchups = teamMatchups
+        .filter((m) => m.finished_at && m.id > 0)
+        .filter((m) => !finishedMatchups.some((fm) => fm.id === m.id))
+        .slice(0, 60)
+
+      const teamResults = await Promise.allSettled(
+        finishedTeamMatchups.map(async (m) => {
+          try {
+            const [stats, meta] = await Promise.all([
+              getMatchupStats(m.id, BL_TOKEN),
+              getMatchupMeta(m.id, BL_TOKEN),
+            ])
+            return { matchupId: m.id, stats, meta, finishedAt: m.finished_at }
+          } catch {
+            return null
+          }
+        }),
+      )
+
+      for (const r of teamResults) {
+        if (r.status !== 'fulfilled' || r.value === null) continue
+        const { matchupId, stats, meta, finishedAt } = r.value
+
+        const allPlayers = [...stats.home_players, ...stats.away_players]
+        const player = allPlayers.find((p) => p.paradise_user_id === userId)
+        if (!player) continue
+
+        if (!displayName && player.name) displayName = player.name
+
+        const isHome = stats.home_players.some((p) => p.paradise_user_id === userId)
+        let won: boolean | null = null
+        let mapName: string | undefined
+        const date = (finishedAt as string | undefined) ?? meta?.finishedAt ?? null
+
+        if (meta) {
+          if (meta.winner === 'home') won = isHome
+          else if (meta.winner === 'away') won = !isHome
+          else won = null
+
+          if (meta.maps.length > 0 && meta.maps[0].name) {
+            mapName = normalizeActiveDutyMap(meta.maps[0].name) ?? undefined
+          }
+        }
+
+        matchEntries.push({ matchupId, player, date, won, mapName, isHome })
+      }
+    } catch {
+      // Ignore fallback failures.
+    }
   }
 
   if (matchEntries.length === 0) {
@@ -367,6 +424,6 @@ export async function buildPlayerProfile(
     fetched_at: new Date().toISOString(),
   }
 
-  profileCache.set(userId, { value: profile, expiresAt: Date.now() + PROFILE_CACHE_TTL_MS })
+  profileCache.set(cacheKey, { value: profile, expiresAt: Date.now() + PROFILE_CACHE_TTL_MS })
   return profile
 }

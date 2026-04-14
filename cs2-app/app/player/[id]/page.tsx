@@ -9,6 +9,7 @@ export const dynamic = 'force-dynamic'
 
 type PlayerPageProps = {
   params: Promise<{ id: string }>
+  searchParams?: Promise<{ team_id?: string }>
 }
 
 function dateLabel(value?: string | null): string {
@@ -24,9 +25,12 @@ function dateLabel(value?: string | null): string {
   }).format(parsed)
 }
 
-export default async function PlayerPage({ params }: PlayerPageProps) {
+export default async function PlayerPage({ params, searchParams }: PlayerPageProps) {
   const { id } = await params
+  const resolvedSearchParams = searchParams ? await searchParams : undefined
   const userId = Number(id)
+  const teamId = resolvedSearchParams?.team_id ? Number(resolvedSearchParams.team_id) : undefined
+  const resolvedTeamId = Number.isInteger(teamId) && (teamId ?? 0) > 0 ? teamId : undefined
 
   if (!Number.isInteger(userId) || userId <= 0) {
     return (
@@ -39,7 +43,7 @@ export default async function PlayerPage({ params }: PlayerPageProps) {
   }
 
   try {
-    const pageData = await getPlayerPageData(userId)
+    const pageData = await getPlayerPageData(userId, { teamId: resolvedTeamId })
     if (!pageData) {
       return (
         <ErrorCard

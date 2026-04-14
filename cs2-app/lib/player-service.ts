@@ -36,7 +36,7 @@ type CachedEntry = { value: PlayerPageData; expiresAt: number }
 
 const PLAYER_PAGE_CACHE_TTL_MS = 10 * 60 * 1000
 const MAX_CONTEXT_MATCHUPS = 12
-const playerPageCache = new Map<number, CachedEntry>()
+const playerPageCache = new Map<string, CachedEntry>()
 
 function requireBlToken(): string {
   const blToken = process.env.BL_TOKEN
@@ -92,17 +92,21 @@ function findPlayer(
   return null
 }
 
-export async function getPlayerPageData(userId: number): Promise<PlayerPageData | null> {
+export async function getPlayerPageData(
+  userId: number,
+  options?: { teamId?: number },
+): Promise<PlayerPageData | null> {
   if (!Number.isInteger(userId) || userId <= 0) {
     throw new PlayerServiceError('player_id must be a positive integer', 400)
   }
 
-  const cached = playerPageCache.get(userId)
+  const cacheKey = `${userId}:${options?.teamId ?? 'none'}`
+  const cached = playerPageCache.get(cacheKey)
   if (cached && cached.expiresAt > Date.now()) return cached.value
 
   const blToken = requireBlToken()
 
-  const profile = await buildPlayerProfile(userId)
+  const profile = await buildPlayerProfile(userId, { teamId: options?.teamId })
 
   let matchups: UserMatchupRef[]
   try {
@@ -144,6 +148,6 @@ export async function getPlayerPageData(userId: number): Promise<PlayerPageData 
     profile,
     context,
   }
-  playerPageCache.set(userId, { value: pageData, expiresAt: Date.now() + PLAYER_PAGE_CACHE_TTL_MS })
+  playerPageCache.set(cacheKey, { value: pageData, expiresAt: Date.now() + PLAYER_PAGE_CACHE_TTL_MS })
   return pageData
 }
