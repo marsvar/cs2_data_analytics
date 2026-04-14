@@ -54,6 +54,35 @@ export async function buildPlayerProfile(
     getUserImageUrl(userId, BL_TOKEN),
   ])
 
+  const buildEmptyProfile = (name = ''): PlayerProfileResponse => ({
+    paradise_user_id: userId,
+    name,
+    avatar_url: avatarUrl,
+    steam64: steam64 ?? undefined,
+    total_rounds: 0,
+    total_matches: 0,
+    kd: 0,
+    kast: 0,
+    dpr: 0,
+    hs: 0,
+    od_rate: 0,
+    flash_assists_per_round: null,
+    utility_dmg_per_round: null,
+    clutch_win_pct: null,
+    first_death_rate: null,
+    multi_kills: null,
+    side_split: null,
+    score: 0,
+    ci: 0,
+    role: 'hybrid',
+    role_confidence: 'low',
+    role_signals: [],
+    trend: { last5: [], last10: [], last20: [] },
+    map_records: [],
+    data_source: 'bl',
+    fetched_at: new Date().toISOString(),
+  })
+
   let allMatchups = await getUserMatchups(userId, BL_TOKEN, {
     competitionId: CURRENT_COMPETITION_ID ?? undefined,
   })
@@ -65,35 +94,7 @@ export async function buildPlayerProfile(
   )
 
   if (finishedMatchups.length === 0) {
-    const emptyProfile: PlayerProfileResponse = {
-      paradise_user_id: userId,
-      name: '',
-      avatar_url: avatarUrl,
-      steam64: steam64 ?? undefined,
-      total_rounds: 0,
-      total_matches: 0,
-      kd: 0,
-      kast: 0,
-      dpr: 0,
-      hs: 0,
-      od_rate: 0,
-      flash_assists_per_round: null,
-      utility_dmg_per_round: null,
-      clutch_win_pct: null,
-      first_death_rate: null,
-      multi_kills: null,
-      side_split: null,
-      score: 0,
-      ci: 0,
-      role: 'hybrid',
-      role_confidence: 'low',
-      role_signals: [],
-      trend: { last5: [], last10: [], last20: [] },
-      map_records: [],
-      data_source: 'bl',
-      fetched_at: new Date().toISOString(),
-    }
-    return emptyProfile
+    return buildEmptyProfile()
   }
 
   const results = await Promise.allSettled(
@@ -151,7 +152,7 @@ export async function buildPlayerProfile(
   }
 
   if (matchEntries.length === 0) {
-    throw new PlayerProfileError('No match data found for this player', 404)
+    return buildEmptyProfile(displayName)
   }
 
   let leetifyData = undefined
