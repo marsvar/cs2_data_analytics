@@ -7,7 +7,6 @@ import {
   getCompetitionTeamLineupRoles,
   getTeamPlayers,
   getTeamMatchups,
-  getUserSteamId,
   getUserImageUrl,
   getDivisionMatchups,
   getMatchupTeamPlayers,
@@ -1008,32 +1007,18 @@ export async function analyzeMatchup(matchupId: number): Promise<AnalyzeResponse
     })
   }
 
-    const analysisPlayerIds = Array.from(new Set([
-      ...eligibleHomeCandidates.map((c) => c.userId),
-      ...eligibleAwayCandidates.map((c) => c.userId),
-    ]))
+    const allEligibleCandidates = [
+      ...eligibleHomeCandidates,
+      ...eligibleAwayCandidates,
+    ]
+    const analyzableCandidates = allEligibleCandidates.filter((candidate) =>
+      candidate.base || (playerAccumulator.get(candidate.userId)?.rawRounds ?? 0) > 0,
+    )
+    const analysisPlayerIds = Array.from(new Set(
+      analyzableCandidates.map((candidate) => candidate.userId),
+    ))
     const steamByUserId = new Map<number, string>()
 
-  for (const candidate of [...eligibleHomeCandidates, ...eligibleAwayCandidates]) {
-    if (candidate.steam64) steamByUserId.set(candidate.userId, candidate.steam64)
-  }
-
-  for (const userId of analysisPlayerIds) {
-    const staticSteam = STEAM_BY_USER_ID[userId]
-    if (staticSteam && !steamByUserId.has(userId)) steamByUserId.set(userId, staticSteam)
-  }
-
-  const missingSteamIds = analysisPlayerIds.filter((id) => !steamByUserId.has(id))
-  const steamLookupResults = await Promise.all(
-    missingSteamIds.map(async (userId) => ({
-      userId,
-      steam64: await getUserSteamId(userId, blToken),
-    })),
-  )
-
-  for (const row of steamLookupResults) {
-    if (row.steam64) steamByUserId.set(row.userId, row.steam64)
-  }
     // Source 1: steam64 already on the candidate (lineup path for upcoming matches)
     for (const candidate of allEligibleCandidates) {
       if (candidate.steam64) steamByUserId.set(candidate.userId, candidate.steam64)
@@ -1062,8 +1047,8 @@ export async function analyzeMatchup(matchupId: number): Promise<AnalyzeResponse
         .map((userId) => steamByUserId.get(userId))
         .filter((steam64): steam64 is string => Boolean(steam64)),
     ))
-  const steamIds = analysisSteamIds
-  const leetifyAttempts = leetifyToken ? steamIds.length : 0
+    const steamIds = analysisSteamIds
+    const leetifyAttempts = leetifyToken ? steamIds.length : 0
 
   let leetifyProfiles: Awaited<ReturnType<typeof fetchProfiles>>
   if (!leetifyToken || steamIds.length === 0) {
