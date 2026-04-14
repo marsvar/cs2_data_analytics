@@ -94,22 +94,22 @@ export async function buildPlayerProfile(
   if (allMatchups.length === 0 && CURRENT_COMPETITION_ID != null) {
     allMatchups = await getUserMatchups(userId, BL_TOKEN)
   }
-  const finishedMatchups = allMatchups.filter(
-    (m) => m.finished_at && m.id > 0,
+  const candidateMatchups = allMatchups.filter(
+    (m) => m.id > 0 && (m.finished_at || m.start_time),
   )
 
-  if (finishedMatchups.length === 0) {
+  if (candidateMatchups.length === 0) {
     return buildEmptyProfile()
   }
 
   const results = await Promise.allSettled(
-    finishedMatchups.map(async (m) => {
+    candidateMatchups.map(async (m) => {
       try {
         const [stats, meta] = await Promise.all([
           getMatchupStats(m.id, BL_TOKEN),
           getMatchupMeta(m.id, BL_TOKEN),
         ])
-        return { matchupId: m.id, stats, meta, finishedAt: m.finished_at }
+        return { matchupId: m.id, stats, meta, finishedAt: m.finished_at ?? m.start_time }
       } catch {
         return null
       }
@@ -129,7 +129,12 @@ export async function buildPlayerProfile(
   let displayName = userName ?? ''
 
   const normalizeName = (value?: string | null): string =>
-    (value ?? '').trim().toLowerCase()
+    (value ?? '')
+      .trim()
+      .toLowerCase()
+      .normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^\p{L}\p{N}]+/gu, '')
 
   const resolvePlayer = (
     allPlayers: BLPlayerStats[],
@@ -177,8 +182,8 @@ export async function buildPlayerProfile(
     try {
       const teamMatchups = await getTeamMatchups(options.teamId, BL_TOKEN)
       const finishedTeamMatchups = teamMatchups
-        .filter((m) => m.finished_at && m.id > 0)
-        .filter((m) => !finishedMatchups.some((fm) => fm.id === m.id))
+        .filter((m) => (m.finished_at || m.start_time) && m.id > 0)
+        .filter((m) => !candidateMatchups.some((fm) => fm.id === m.id))
         .slice(0, 60)
 
       const teamResults = await Promise.allSettled(
@@ -188,7 +193,7 @@ export async function buildPlayerProfile(
               getMatchupStats(m.id, BL_TOKEN),
               getMatchupMeta(m.id, BL_TOKEN),
             ])
-            return { matchupId: m.id, stats, meta, finishedAt: m.finished_at }
+            return { matchupId: m.id, stats, meta, finishedAt: m.finished_at ?? m.start_time }
           } catch {
             return null
           }
