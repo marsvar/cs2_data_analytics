@@ -12,6 +12,7 @@ import {
   getMatchupMeta,
   getUserImageUrl,
   getTeamMatchups,
+  getUserProfileName,
 } from '@/lib/bl-api'
 import { fetchProfiles } from '@/lib/leetify-api'
 import { compositeScore, blWeight, ci90 } from '@/lib/aggregation'
@@ -52,9 +53,10 @@ export async function buildPlayerProfile(
   const cached = profileCache.get(cacheKey)
   if (cached && cached.expiresAt > Date.now()) return cached.value
 
-  const [steam64, avatarUrl] = await Promise.all([
+  const [steam64, avatarUrl, userName] = await Promise.all([
     getUserSteamId(userId, BL_TOKEN),
     getUserImageUrl(userId, BL_TOKEN),
+    getUserProfileName(userId, BL_TOKEN),
   ])
 
   const buildEmptyProfile = (name = ''): PlayerProfileResponse => ({
@@ -124,14 +126,31 @@ export async function buildPlayerProfile(
   }
 
   const matchEntries: MatchEntry[] = []
-  let displayName = ''
+  let displayName = userName ?? ''
+
+  const normalizeName = (value?: string | null): string =>
+    (value ?? '').trim().toLowerCase()
+
+  const resolvePlayer = (
+    allPlayers: BLPlayerStats[],
+    targetId: number,
+    targetName?: string,
+  ): BLPlayerStats | undefined => {
+    const byId = allPlayers.find((p) => p.paradise_user_id === targetId)
+    if (byId) return byId
+    if (!targetName) return undefined
+    const normalizedTarget = normalizeName(targetName)
+    if (!normalizedTarget) return undefined
+    const matches = allPlayers.filter((p) => normalizeName(p.name) === normalizedTarget)
+    return matches.length === 1 ? matches[0] : undefined
+  }
 
   for (const r of results) {
     if (r.status !== 'fulfilled' || r.value === null) continue
     const { matchupId, stats, meta, finishedAt } = r.value
 
     const allPlayers = [...stats.home_players, ...stats.away_players]
-    const player = allPlayers.find((p) => p.paradise_user_id === userId)
+    const player = resolvePlayer(allPlayers, userId, userName)
     if (!player) continue
 
     if (!displayName && player.name) displayName = player.name
@@ -181,7 +200,7 @@ export async function buildPlayerProfile(
         const { matchupId, stats, meta, finishedAt } = r.value
 
         const allPlayers = [...stats.home_players, ...stats.away_players]
-        const player = allPlayers.find((p) => p.paradise_user_id === userId)
+        const player = resolvePlayer(allPlayers, userId, userName)
         if (!player) continue
 
         if (!displayName && player.name) displayName = player.name

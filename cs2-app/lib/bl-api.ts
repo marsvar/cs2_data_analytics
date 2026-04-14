@@ -1024,6 +1024,24 @@ export async function getUserImageUrl(
 }
 
 /**
+ * Fetch the display name for a BL user.
+ * Uses /user/{id} which returns user_name.
+ */
+export async function getUserProfileName(
+  userId: number,
+  token: string,
+): Promise<string | undefined> {
+  try {
+    const raw = await getRawUser(userId, token)
+    const name = raw?.user_name ?? raw?.name
+    if (typeof name === 'string' && name.trim() !== '') return name.trim()
+    return undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
  * Fetch the team ID for a BL user from their active signup.
  * Returns null if the user has no team or on any error.
  */
