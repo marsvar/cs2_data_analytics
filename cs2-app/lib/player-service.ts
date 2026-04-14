@@ -106,7 +106,14 @@ export async function getPlayerPageData(userId: number): Promise<PlayerPageData 
 
   let matchups: UserMatchupRef[]
   try {
-    matchups = await getUserMatchups(userId, blToken)
+    const competitionId = Number.parseInt(process.env.COMPETITION_ID ?? '', 10)
+    const resolvedCompetitionId = Number.isFinite(competitionId) ? competitionId : null
+    matchups = await getUserMatchups(userId, blToken, {
+      competitionId: resolvedCompetitionId ?? undefined,
+    })
+    if (matchups.length === 0 && resolvedCompetitionId != null) {
+      matchups = await getUserMatchups(userId, blToken)
+    }
   } catch (err) {
     throw new PlayerServiceError(`Failed to fetch matchups for player ${userId}: ${err}`, 502)
   }

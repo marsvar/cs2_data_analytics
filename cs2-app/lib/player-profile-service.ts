@@ -40,6 +40,8 @@ const profileCache = new Map<number, CachedEntry>()
 
 const BL_TOKEN = process.env.BL_TOKEN ?? ''
 const LEETIFY_TOKEN = process.env.LEETIFY_TOKEN ?? ''
+const COMPETITION_ID = Number.parseInt(process.env.COMPETITION_ID ?? '', 10)
+const CURRENT_COMPETITION_ID = Number.isFinite(COMPETITION_ID) ? COMPETITION_ID : null
 
 export async function buildPlayerProfile(
   userId: number,
@@ -52,7 +54,12 @@ export async function buildPlayerProfile(
     getUserImageUrl(userId, BL_TOKEN),
   ])
 
-  const allMatchups = await getUserMatchups(userId, BL_TOKEN)
+  let allMatchups = await getUserMatchups(userId, BL_TOKEN, {
+    competitionId: CURRENT_COMPETITION_ID ?? undefined,
+  })
+  if (allMatchups.length === 0 && CURRENT_COMPETITION_ID != null) {
+    allMatchups = await getUserMatchups(userId, BL_TOKEN)
+  }
   const finishedMatchups = allMatchups.filter(
     (m) => m.finished_at && m.id > 0,
   )
