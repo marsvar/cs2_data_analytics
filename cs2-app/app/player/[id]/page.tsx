@@ -10,22 +10,6 @@ type PlayerPageProps = {
   searchParams: Promise<{ team_id?: string }>
 }
 
-function ErrorCard({ title, detail }: { title: string; detail: string }) {
-  return (
-    <section className="atlas-shell min-h-dvh">
-      <div className="atlas-topline" />
-      <div className="max-w-5xl mx-auto px-6 md:px-10 py-12">
-        <Link href="/" className="font-mono text-[11px] uppercase tracking-widest text-muted hover:text-text transition-colors">
-          ← Til søk
-        </Link>
-        <div className="mt-5 bg-surface border border-danger/40 rounded-lg p-5">
-          <h1 className="font-display text-sm tracking-widest uppercase text-danger mb-2">{title}</h1>
-          <p className="font-mono text-xs text-muted">{detail}</p>
-        </div>
-      </div>
-    </section>
-  )
-}
 
 export default async function PlayerPage({ params, searchParams }: PlayerPageProps) {
   const [{ id }, { team_id }] = await Promise.all([params, searchParams])
