@@ -179,6 +179,24 @@ export function buildPostAnalysis(teams: { home: Team; away: Team }): PostAnalys
     ? homeStats.avg_explosive_rounds_per_map - awayStats.avg_explosive_rounds_per_map
     : undefined
 
+  const signalWinner = (edge: number, threshold: number): 'home' | 'away' | 'even' => {
+    if (edge > threshold) return 'home'
+    if (edge < -threshold) return 'away'
+    return 'even'
+  }
+  const econSignals = [
+    { label: 'Opening Duels', edge: round2(openingEdge), winner: signalWinner(openingEdge, 2) },
+    { label: 'KAST', edge: round2(stabilityEdge), winner: signalWinner(stabilityEdge, 3) },
+    { label: 'Damage Pressure', edge: round2(pressureEdge), winner: signalWinner(pressureEdge, 3) },
+    { label: 'Trade Kills', edge: round2(tradeKillEdge), winner: signalWinner(tradeKillEdge, 2) },
+    { label: 'Survival', edge: round2(survivalEdge), winner: signalWinner(survivalEdge, 2) },
+  ]
+  const signalWins = {
+    home: econSignals.filter((s) => s.winner === 'home').length,
+    away: econSignals.filter((s) => s.winner === 'away').length,
+    signals: econSignals,
+  }
+
   const tacticalWinner =
     Math.abs(openingEdge) + Math.abs(tradeKillEdge) >= Math.abs(stabilityEdge)
       ? (openingEdge + tradeKillEdge >= 0 ? 'home' : 'away')
@@ -386,6 +404,7 @@ export function buildPostAnalysis(teams: { home: Team; away: Team }): PostAnalys
         trade_structure_pp: round2(tradeKillEdge),
         survival_edge_pp: round2(survivalEdge),
       },
+      signal_wins: signalWins,
       caveat: 'BL signals lead when available. Without full buy and utility telemetry, OD, KAST, and DPR still act as economy proxies.',
     },
     teamplay_control: {

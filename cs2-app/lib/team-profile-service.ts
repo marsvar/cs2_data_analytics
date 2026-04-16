@@ -11,6 +11,7 @@ import {
   getTeamMatchups,
   getMatchupStats,
   getMatchupMeta,
+  getCompetitionTeamLineupRoles,
 } from '@/lib/bl-api'
 import { fetchProfiles } from '@/lib/leetify-api'
 import { compositeScore, blWeight, ci90 } from '@/lib/aggregation'
@@ -41,6 +42,24 @@ const teamCache = new Map<number, CachedEntry>()
 
 const BL_TOKEN = process.env.BL_TOKEN ?? ''
 const LEETIFY_TOKEN = process.env.LEETIFY_TOKEN ?? ''
+const COMPETITION_ID = Number.parseInt(process.env.COMPETITION_ID ?? '', 10)
+const CURRENT_COMPETITION_ID = Number.isFinite(COMPETITION_ID) ? COMPETITION_ID : null
+
+function resolveTeamSide(
+  teamId: number,
+  meta: Awaited<ReturnType<typeof getMatchupMeta>> | null,
+  stats: Awaited<ReturnType<typeof getMatchupStats>>,
+): 'home' | 'away' | null {
+  if (meta) {
+    if (meta.home.id === teamId) return 'home'
+    if (meta.away.id === teamId) return 'away'
+  }
+
+  if (stats.home_team.id === teamId) return 'home'
+  if (stats.away_team.id === teamId) return 'away'
+
+  return null
+}
 
 export async function buildTeamProfile(
   teamId: number,
@@ -55,6 +74,13 @@ export async function buildTeamProfile(
     getTeamPlayers(teamId, BL_TOKEN),
     getTeamMatchups(teamId, BL_TOKEN),
   ])
+  const lineupRoles = CURRENT_COMPETITION_ID
+    ? await getCompetitionTeamLineupRoles(CURRENT_COMPETITION_ID, teamId, BL_TOKEN)
+    : new Map<number, string>()
+  const filteredRoster = lineupRoles.size > 0
+    ? roster.filter((player) => lineupRoles.get(player.userId) === 'player')
+    : roster
+  const rosterSource = filteredRoster.length > 0 ? filteredRoster : roster
 
   const finishedMatchups = allMatchups.filter((m) => m.finished_at && m.id > 0)
 
@@ -88,10 +114,12 @@ export async function buildTeamProfile(
   }
 
   // 4. Fetch Leetify profiles for roster members
-  const steamIds = roster.map((p) => p.steam64).filter((s): s is string => Boolean(s))
+  const steamIds = rosterSource.map((p) => p.steam64).filter((s): s is string => Boolean(s))
   const leetifyProfiles = steamIds.length > 0
     ? await fetchProfiles(steamIds, LEETIFY_TOKEN)
     : new Map()
+  const rosterByUserId = new Map(rosterSource.map((player) => [player.userId, player]))
+  const rosterUserIds = new Set(rosterByUserId.keys())
 
   // 5. Build per-player aggregated stats
   type PlayerAcc = {
@@ -117,14 +145,18 @@ export async function buildTeamProfile(
 
   for (const r of matchResults) {
     if (r.status !== 'fulfilled') continue
-    const { stats } = r.value
-    const isHome = stats.home_team.id === teamId ||
-      (stats.home_team.id === 0 && stats.home_players.length > 0)
-    const teamPlayers = isHome ? stats.home_players : stats.away_players
+    const { stats, meta } = r.value
+    const teamSide = resolveTeamSide(teamId, meta, stats)
+    if (!teamSide) continue
+
+    const teamPlayers = (teamSide === 'home' ? stats.home_players : stats.away_players)
+      .filter((player) => (
+        rosterUserIds.size === 0 || rosterUserIds.has(player.paradise_user_id)
+      ))
 
     for (const p of teamPlayers) {
       if (!playerAccs.has(p.paradise_user_id)) {
-        const rosterEntry = roster.find((r) => r.userId === p.paradise_user_id)
+        const rosterEntry = rosterByUserId.get(p.paradise_user_id)
         playerAccs.set(p.paradise_user_id, {
           userId: p.paradise_user_id,
           name: p.name,
@@ -153,10 +185,37 @@ export async function buildTeamProfile(
     }
   }
 
-  // 6. Build roster member list with role inference
+  // 6. Build roster member list with role inference.
+  // Prefer the current BL roster as the source of truth for who appears.
   const rosterMembers: RosterMember[] = []
+  const rosterFallback = rosterSource.length > 0
+    ? rosterSource
+    : Array.from(playerAccs.values()).map((acc) => ({
+      userId: acc.userId,
+      userName: acc.name,
+      steam64: acc.steam64,
+    }))
 
-  for (const [userId, acc] of playerAccs) {
+  for (const rosterEntry of rosterFallback) {
+    const acc = playerAccs.get(rosterEntry.userId)
+
+    if (!acc) {
+      rosterMembers.push({
+        paradise_user_id: rosterEntry.userId,
+        name: rosterEntry.userName,
+        steam64: rosterEntry.steam64,
+        role: null,
+        score: null,
+        rounds: 0,
+        kd: null,
+        dpr: null,
+        kast: null,
+        hs: null,
+        od_rate: null,
+      })
+      continue
+    }
+
     const kd = acc.deaths > 0 ? acc.kills / acc.deaths : acc.kills
     const dpr = acc.rounds > 0 ? acc.damage / acc.rounds : 0
     const kast = acc.rounds > 0 ? acc.weightedKast / acc.rounds : 0
@@ -172,10 +231,9 @@ export async function buildTeamProfile(
       finalScore = w * score + (1 - w) * prior
     }
 
-    // Build minimal PlayerAnalysis for role inference
     const aggPlayer = {
       name: acc.name,
-      paradise_user_id: userId,
+      paradise_user_id: rosterEntry.userId,
       steam64: acc.steam64,
       score: finalScore,
       ci: ci90(kast, odRate, dpr, kd, acc.rounds, acc.odAttempts),
@@ -194,20 +252,27 @@ export async function buildTeamProfile(
 
     const roleResult = inferProfileRole(aggPlayer, acc.matchCount)
 
-    // Find avatar from roster
-    const rosterEntry = roster.find((r) => r.userId === userId)
     rosterMembers.push({
-      paradise_user_id: userId,
-      name: acc.name,
+      paradise_user_id: rosterEntry.userId,
+      name: rosterEntry.userName ?? acc.name,
       steam64: acc.steam64,
       role: roleResult.role,
       score: Math.round(finalScore * 10000) / 10000,
       rounds: acc.rounds,
+      kd: Math.round(kd * 1000) / 1000,
+      dpr: Math.round(dpr * 10) / 10,
+      kast: Math.round(kast * 10000) / 10000,
+      hs: Math.round(hs * 10000) / 10000,
+      od_rate: Math.round(odRate * 10000) / 10000,
     })
   }
 
-  // Sort roster by score descending
-  rosterMembers.sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+  rosterMembers.sort((a, b) => {
+    if (a.score == null && b.score == null) return a.name.localeCompare(b.name)
+    if (a.score == null) return 1
+    if (b.score == null) return -1
+    return b.score - a.score
+  })
 
   // 7. Role distribution and composition notes
   const roleDist: Partial<Record<PlayerRole, number>> = {}
@@ -216,11 +281,11 @@ export async function buildTeamProfile(
   }
 
   const compositionNotes: string[] = []
-  if ((roleDist.entry ?? 0) >= 2) compositionNotes.push('2 entry-spillere — aggressiv åpningsstil')
-  if (!roleDist.awper) compositionNotes.push('Ingen dedikert AWPer identifisert')
-  if (!roleDist.support && rosterMembers.length >= 4) compositionNotes.push('Ingen tydelig support-rolle')
-  if ((roleDist.igl ?? 0) >= 1) compositionNotes.push('IGL-profil identifisert')
-  if (rosterMembers.length < 5) compositionNotes.push(`Kun ${rosterMembers.length} spillere med kampdata`)
+  if ((roleDist.entry ?? 0) >= 2) compositionNotes.push('2 entry fraggers — aggressive opening style')
+  if (!roleDist.awper) compositionNotes.push('No dedicated AWPer identified')
+  if (!roleDist.support && rosterMembers.length >= 4) compositionNotes.push('No clear support role')
+  if ((roleDist.igl ?? 0) >= 1) compositionNotes.push('IGL profile identified')
+  if (rosterMembers.length < 5) compositionNotes.push(`Only ${rosterMembers.length} players with match data`)
 
   // 8. Map pool from matchup metadata
   type MapGroup = { wins: number; losses: number; count: number }
@@ -232,8 +297,9 @@ export async function buildTeamProfile(
     if (r.status !== 'fulfilled') continue
     const { matchupId, stats, meta, finishedAt } = r.value
 
-    const isHome = stats.home_team.id === teamId ||
-      (stats.home_team.id === 0 && stats.home_players.length > 0)
+    const teamSide = resolveTeamSide(teamId, meta, stats)
+    if (!teamSide) continue
+    const isHome = teamSide === 'home'
 
     let won: boolean | null = null
     let opponentName = ''
@@ -310,24 +376,24 @@ export async function buildTeamProfile(
     const avgFirstkillRate = allPlayers.reduce((s, p) => s + (p.rounds > 0 ? p.firstkills / p.rounds : 0), 0) / allPlayers.length
     const avgKast = allPlayers.reduce((s, p) => s + (p.rounds > 0 ? p.weightedKast / p.rounds : 0), 0) / allPlayers.length
 
-    if (avgOdRate > 0.52) economyNotes.push(`Høy OD-rate (${(avgOdRate * 100).toFixed(0)}%) — aggressiv opening-økonomi`)
-    else if (avgOdRate < 0.44) economyNotes.push(`Lav OD-rate (${(avgOdRate * 100).toFixed(0)}%) — defensiv spillestil`)
+    if (avgOdRate > 0.52) economyNotes.push(`High OD rate (${(avgOdRate * 100).toFixed(0)}%) — aggressive opening economy`)
+    else if (avgOdRate < 0.44) economyNotes.push(`Low OD rate (${(avgOdRate * 100).toFixed(0)}%) — defensive playstyle`)
 
-    if (avgFirstkillRate > 0.08) economyNotes.push(`Høy first-kill rate (${(avgFirstkillRate * 100).toFixed(1)}%) — sterke eco-runder`)
-    if (avgKast > 0.74) economyNotes.push(`Høy KAST (${(avgKast * 100).toFixed(0)}%) — effektiv rounds utnyttelse`)
+    if (avgFirstkillRate > 0.08) economyNotes.push(`High first-kill rate (${(avgFirstkillRate * 100).toFixed(1)}%) — strong eco rounds`)
+    if (avgKast > 0.74) economyNotes.push(`High KAST (${(avgKast * 100).toFixed(0)}%) — efficient round utilisation`)
   }
 
   // 11. Playstyle summary
   const dominantRole = Object.entries(roleDist).sort(([, a], [, b]) => b - a)[0]?.[0] as PlayerRole | undefined
   let playstyleSummary = ''
-  if (winRate > 0.65) playstyleSummary = `Dominerende lag med ${(winRate * 100).toFixed(0)}% vinnprosent. `
-  else if (winRate > 0.5) playstyleSummary = `Konsistent lag over .500. `
-  else playstyleSummary = `Lag under utvikling. `
+  if (winRate > 0.65) playstyleSummary = `Dominant team at ${(winRate * 100).toFixed(0)}% win rate. `
+  else if (winRate > 0.5) playstyleSummary = `Consistent team above .500. `
+  else playstyleSummary = `Developing team. `
 
-  if (dominantRole === 'entry') playstyleSummary += 'Aggressiv, entry-fokusert spillestil.'
-  else if (dominantRole === 'support') playstyleSummary += 'Team-orientert spillestil med sterk utility-bruk.'
-  else if (dominantRole === 'awper') playstyleSummary += 'Presisjonsfokusert med AWP-spesialister.'
-  else playstyleSummary += 'Allsidig spillestil.'
+  if (dominantRole === 'entry') playstyleSummary += 'Aggressive, entry-focused playstyle.'
+  else if (dominantRole === 'support') playstyleSummary += 'Team-oriented playstyle with strong utility usage.'
+  else if (dominantRole === 'awper') playstyleSummary += 'Precision-focused with AWP specialists.'
+  else playstyleSummary += 'Versatile playstyle.'
 
   const profile: TeamProfileResponse = {
     team_id: teamId,

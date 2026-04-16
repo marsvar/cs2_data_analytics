@@ -99,6 +99,8 @@ export type LandingAnalytics = {
     away_od: number
     delta: number
     source: 'bl' | 'leetify' | 'combined'
+    ct_split?: { home: number; away: number; delta: number }
+    t_split?: { home: number; away: number; delta: number }
   }
   trade_structure_edge?: {
     home_trade_kill_rate: number
@@ -322,6 +324,15 @@ export type AnalyzeResponse = {
         trade_structure_pp?: number
         survival_edge_pp?: number
       }
+      signal_wins?: {
+        home: number
+        away: number
+        signals: Array<{
+          label: string
+          winner: 'home' | 'away' | 'even'
+          edge: number
+        }>
+      }
       caveat: string
     }
     teamplay_control?: {
@@ -385,6 +396,8 @@ export type AnalyzeResponse = {
   simulation?: {
     lineup_size: number
     active_maps: string[]
+    home_pool: PlayerAnalysis[]
+    away_pool: PlayerAnalysis[]
     map_pool: {
       recent_days: number
       min_matches_per_player: number
@@ -521,6 +534,11 @@ export type RosterMember = {
   role: PlayerRole | null
   score: number | null
   rounds: number
+  kd: number | null
+  dpr: number | null
+  kast: number | null
+  hs: number | null
+  od_rate: number | null
 }
 
 export type TeamMapPoolEntry = {

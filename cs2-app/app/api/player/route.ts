@@ -8,7 +8,7 @@ export async function GET(request: NextRequest) {
   const userId = Number(param)
 
   if (!param || !Number.isInteger(userId) || userId <= 0) {
-    return NextResponse.json({ error: 'Ugyldig user_id' }, { status: 400 })
+    return NextResponse.json({ error: 'Invalid user_id' }, { status: 400 })
   }
 
   try {
@@ -19,6 +19,6 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: err.message }, { status: err.status })
     }
     console.error('[api/player] Unexpected error:', err)
-    return NextResponse.json({ error: 'Intern serverfeil' }, { status: 500 })
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

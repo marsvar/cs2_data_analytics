@@ -5,8 +5,8 @@ import type { AnalyzeResponse, PlayerAnalysis, Team } from '@/lib/types'
 function formatDate(meta: AnalyzeResponse['meta']): string {
   const value = meta.match_start_time ?? meta.match_finished_time ?? meta.fetched_at
   const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return 'Ukjent tid'
-  return new Intl.DateTimeFormat('nb-NO', {
+  if (Number.isNaN(date.getTime())) return 'Unknown time'
+  return new Intl.DateTimeFormat('en-GB', {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -35,7 +35,7 @@ function teamSection(team: Team): string {
   const sorted = [...team.players].sort((a, b) => b.score - a.score)
 
   const lines = [
-    `${team.name || 'Ukjent lag'} (styrke: ${(stats.avg_score * 10).toFixed(1)} ±${avgCi.toFixed(1)})`,
+    `${team.name || 'Unknown team'} (strength: ${(stats.avg_score * 10).toFixed(1)} ±${avgCi.toFixed(1)})`,
     ...sorted.map(playerLine),
   ]
 
@@ -46,40 +46,40 @@ export function formatReport(result: AnalyzeResponse): string {
   if (result.meta.match_status === 'played') {
     const winnerLabel =
       result.result_summary?.winner === 'home'
-        ? result.teams.home.name || 'Hjem'
+        ? result.teams.home.name || 'Home'
         : result.result_summary?.winner === 'away'
-          ? result.teams.away.name || 'Borte'
+          ? result.teams.away.name || 'Away'
           : result.result_summary?.winner === 'draw'
-            ? 'Uavgjort'
-            : 'Ukjent'
+            ? 'Draw'
+            : 'Unknown'
 
     const scoreLabel = (
       result.result_summary?.home_score != null &&
       result.result_summary?.away_score != null
     )
       ? `${result.result_summary.home_score}-${result.result_summary.away_score}`
-      : 'Ukjent score'
+      : 'Unknown score'
 
     const mapLines = (() => {
       const maps = result.maps_played
-      if (!maps) return ['Kart: Ikke tilgjengelig']
+      if (!maps) return ['Maps: Not available']
       if (maps.maps.length === 0) {
         return [
-          `Kart: ${maps.total_maps > 0 ? `${maps.total_maps} (uten detaljer)` : 'Ikke tilgjengelig'}`,
-          ...(maps.note ? [`Notat: ${maps.note}`] : []),
+          `Maps: ${maps.total_maps > 0 ? `${maps.total_maps} (without details)` : 'Not available'}`,
+          ...(maps.note ? [`Note: ${maps.note}`] : []),
         ]
       }
       return [
-        `Kart (${maps.total_maps}):`,
+        `Maps (${maps.total_maps}):`,
         ...maps.maps.map((map, index) => {
           const mapName = map.name ?? `Map ${index + 1}`
           const mapScore = map.home_score != null && map.away_score != null
             ? ` ${map.home_score}-${map.away_score}`
             : ''
-          const source = map.source === 'derived' ? ' (estimert)' : ''
+          const source = map.source === 'derived' ? ' (estimated)' : ''
           return `  - ${mapName}${mapScore}${source}`
         }),
-        ...(maps.note ? [`Notat: ${maps.note}`] : []),
+        ...(maps.note ? [`Note: ${maps.note}`] : []),
       ]
     })()
 
@@ -92,8 +92,8 @@ export function formatReport(result: AnalyzeResponse): string {
     const coach = result.post_analysis?.coach_recommendations ?? []
 
     const lines = [
-      'CS2 ETTERANALYSE',
-      `${result.teams.home.name || 'Ukjent lag'} vs ${result.teams.away.name || 'Ukjent lag'} — ${formatDate(result.meta)}`,
+      'CS2 POST-MATCH ANALYSIS',
+      `${result.teams.home.name || 'Unknown team'} vs ${result.teams.away.name || 'Unknown team'} — ${formatDate(result.meta)}`,
       '',
       `Resultat: ${scoreLabel} (${winnerLabel})`,
       ...mapLines,
@@ -111,7 +111,7 @@ export function formatReport(result: AnalyzeResponse): string {
         ? `Round Stability: ${stability.summary} (${stability.indicators.survival_edge_pp != null ? `survival ${stability.indicators.survival_edge_pp.toFixed(1)}pp, ` : ''}KAST ${stability.indicators.kast_edge_pp.toFixed(1)}pp${stability.indicators.survival_minus_kast_edge_pp != null ? `, survival-KAST ${stability.indicators.survival_minus_kast_edge_pp.toFixed(1)}pp` : ''})`
         : 'Round Stability: Not available',
       lateRound
-        ? `Late-round impact: ${lateRound.summary} (${lateRound.metrics.clutch_wins_per_map ? `clutch ${lateRound.metrics.clutch_wins_per_map.home.toFixed(2)} vs ${lateRound.metrics.clutch_wins_per_map.away.toFixed(2)}/map, ` : ''}${lateRound.metrics.one_v_x_wins_per_map ? `1vX ${lateRound.metrics.one_v_x_wins_per_map.home.toFixed(2)} vs ${lateRound.metrics.one_v_x_wins_per_map.away.toFixed(2)}/map, ` : ''}${lateRound.metrics.explosive_rounds_per_map ? `explosive ${lateRound.metrics.explosive_rounds_per_map.home.toFixed(2)} vs ${lateRound.metrics.explosive_rounds_per_map.away.toFixed(2)}/map` : 'høy varians'})`
+        ? `Late-round impact: ${lateRound.summary} (${lateRound.metrics.clutch_wins_per_map ? `clutch ${lateRound.metrics.clutch_wins_per_map.home.toFixed(2)} vs ${lateRound.metrics.clutch_wins_per_map.away.toFixed(2)}/map, ` : ''}${lateRound.metrics.one_v_x_wins_per_map ? `1vX ${lateRound.metrics.one_v_x_wins_per_map.home.toFixed(2)} vs ${lateRound.metrics.one_v_x_wins_per_map.away.toFixed(2)}/map, ` : ''}${lateRound.metrics.explosive_rounds_per_map ? `explosive ${lateRound.metrics.explosive_rounds_per_map.home.toFixed(2)} vs ${lateRound.metrics.explosive_rounds_per_map.away.toFixed(2)}/map` : 'high variance'})`
         : 'Late-round impact: Not available',
       '',
       teamSection(result.teams.home),
@@ -122,7 +122,7 @@ export function formatReport(result: AnalyzeResponse): string {
         ? [
           'Player Development:',
           ...dev.focus_players.map((p) =>
-            `  - ${p.player_name} (${p.team === 'home' ? (result.teams.home.name || 'Hjem') : (result.teams.away.name || 'Borte')}): ${p.note} Tiltak: ${p.action}`,
+            `  - ${p.player_name} (${p.team === 'home' ? (result.teams.home.name || 'Home') : (result.teams.away.name || 'Away')}): ${p.note} Action: ${p.action}`,
           ),
           '',
         ]
@@ -155,25 +155,25 @@ export function formatReport(result: AnalyzeResponse): string {
     .some((p) => p.ci > (p.score * 10) / 2)
 
   const favoredTeam = homeWinPct >= 50
-    ? result.teams.home.name || 'Hjemmelag'
-    : result.teams.away.name || 'Bortelag'
+    ? result.teams.home.name || 'Home'
+    : result.teams.away.name || 'Away'
 
   const confidenceBits: string[] = []
-  if (avgRounds < 50) confidenceBits.push('<50 runder/spiller')
-  if (hasLargeUncertainty) confidenceBits.push('høy CI på nøkkelspillere')
+  if (avgRounds < 50) confidenceBits.push('<50 rounds/player')
+  if (hasLargeUncertainty) confidenceBits.push('high CI on key players')
   const confidenceText = confidenceBits.length > 0
-    ? `lav konfidans, ${confidenceBits.join(', ')}`
-    : 'normal konfidans'
+    ? `low confidence, ${confidenceBits.join(', ')}`
+    : 'normal confidence'
 
   const lines = [
-    'CS2 ANALYSE',
-    `${result.teams.home.name || 'Ukjent lag'} vs ${result.teams.away.name || 'Ukjent lag'} — ${formatDate(result.meta)}`,
+    'CS2 ANALYSIS',
+    `${result.teams.home.name || 'Unknown team'} vs ${result.teams.away.name || 'Unknown team'} — ${formatDate(result.meta)}`,
     '',
     teamSection(result.teams.home),
     '',
     teamSection(result.teams.away),
     '',
-    `Fordel: ${favoredTeam} (${homeWinPct}%/${100 - homeWinPct}% — ${confidenceText})`,
+    `Edge: ${favoredTeam} (${homeWinPct}%/${100 - homeWinPct}% — ${confidenceText})`,
   ]
 
   return lines.join('\n')

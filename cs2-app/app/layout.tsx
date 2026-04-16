@@ -27,7 +27,7 @@ const spaceGrotesk = Space_Grotesk({
 });
 
 export const metadata: Metadata = {
-  title: "CS2 Analyse",
+  title: "CS2 Analytics",
   description: "Bedriftsligaen CS2 match analysis — Bayesian weighting, BL API + Leetify",
 };
 

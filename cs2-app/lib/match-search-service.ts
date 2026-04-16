@@ -64,7 +64,7 @@ function toSearchLabel(match: {
   if (!match.date) return `${match.home_team} vs ${match.away_team}`
   const date = new Date(match.date)
   if (Number.isNaN(date.getTime())) return `${match.home_team} vs ${match.away_team}`
-  return `${match.home_team} vs ${match.away_team} · ${new Intl.DateTimeFormat('nb-NO', {
+  return `${match.home_team} vs ${match.away_team} · ${new Intl.DateTimeFormat('en-GB', {
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
@@ -95,7 +95,7 @@ export async function searchMatchesByName({
 
   const resolvedDivision = resolveDivisionReference(division ?? DEFAULT_DIVISION.slug)
   if (!resolvedDivision) {
-    throw new MatchSearchServiceError('Ukjent divisjon.', 400)
+    throw new MatchSearchServiceError('Unknown division.', 400)
   }
 
   let overview
@@ -105,7 +105,7 @@ export async function searchMatchesByName({
     if (err instanceof DivisionServiceError) {
       throw new MatchSearchServiceError(err.message, err.status)
     }
-    throw new MatchSearchServiceError('Kunne ikke hente kamper for søk.', 502)
+    throw new MatchSearchServiceError('Failed to fetch matches for search.', 502)
   }
 
   const tokens = tokenize(trimmedQuery)

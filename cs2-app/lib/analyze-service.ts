@@ -4,12 +4,12 @@ import {
   type MatchupMeta,
   getCompetitions,
   getCompetitionSignupTeams,
+  getCompetitionTeamLineupRoles,
+  getMatchupTeamPlayers,
   getTeamPlayers,
   getTeamMatchups,
-  getUserSteamId,
   getUserImageUrl,
   getDivisionMatchups,
-  getMatchupTeamPlayers,
 } from '@/lib/bl-api'
 import { fetchProfiles } from '@/lib/leetify-api'
 import {
@@ -102,8 +102,17 @@ type CachedAnalyzeEntry = {
   expiresAt: number
 }
 
-const analyzeCache = new Map<number, CachedAnalyzeEntry>()
-const analyzeInflight = new Map<number, Promise<AnalyzeResponse>>()
+type AnalyzeOptions = {
+  includeLeetify?: boolean
+}
+
+const analyzeCache = new Map<string, CachedAnalyzeEntry>()
+const analyzeInflight = new Map<string, Promise<AnalyzeResponse>>()
+
+function getAnalyzeCacheKey(matchupId: number, options?: AnalyzeOptions): string {
+  const includeLeetify = options?.includeLeetify !== false
+  return `${matchupId}:${includeLeetify ? 'leetify' : 'bl-only'}`
+}
 
 function cachedPlayedMapsMissingImages(result: AnalyzeResponse): boolean {
   if (result.meta.match_status !== 'played') return false
@@ -180,11 +189,37 @@ function toOptionalNumber(value: unknown): number | null {
   return null
 }
 
-function extractTeamSeriesMaps(
+function getMatchupTeamIds(matchup: TeamMatchup): number[] {
+  const row = matchup as TeamMatchup & {
+    home_signup?: { team?: { id?: unknown } }
+    away_signup?: { team?: { id?: unknown } }
+    signups?: Array<{ team?: { id?: unknown } }>
+  }
+
+  const ids = [
+    toOptionalNumber(row.home_signup?.team?.id),
+    toOptionalNumber(row.away_signup?.team?.id),
+    ...(Array.isArray(row.signups)
+      ? row.signups.map((signup: { team?: { id?: unknown } }) =>
+        toOptionalNumber(signup.team?.id),
+      )
+      : []),
+  ].filter((id): id is number => id != null && id > 0)
+
+  return Array.from(new Set(ids))
+}
+
+function matchupIncludesAnyTeam(
+  matchup: TeamMatchup,
+  teamIds: ReadonlySet<number>,
+): boolean {
+  return getMatchupTeamIds(matchup).some((teamId) => teamIds.has(teamId))
+}
+
+function extractDirectTeamSeriesMaps(
   matchup: TeamMatchup,
   teamId: number,
-  metaByMatchupId: Map<number, MatchupMeta | null>,
-): Array<{ map: string; won: boolean }> {
+): Array<{ map: string; won: boolean }> | null {
   const row = matchup as TeamMatchup & {
     home_score?: unknown
     away_score?: unknown
@@ -218,11 +253,7 @@ function extractTeamSeriesMaps(
 
   const homeTeamId = toOptionalNumber(row.home_signup?.team?.id)
   const awayTeamId = toOptionalNumber(row.away_signup?.team?.id)
-  const signupTeamIds = Array.isArray(row.signups)
-    ? row.signups
-      .map((signup: { team?: { id?: unknown } }) => toOptionalNumber(signup.team?.id))
-      .filter((id): id is number => id != null && id > 0)
-    : []
+  const signupTeamIds = getMatchupTeamIds(matchup)
 
   const inferredIsHome =
     homeTeamId != null && awayTeamId != null
@@ -246,6 +277,17 @@ function extractTeamSeriesMaps(
       }]
     }
   }
+
+  return null
+}
+
+function extractTeamSeriesMaps(
+  matchup: TeamMatchup,
+  teamId: number,
+  metaByMatchupId: Map<number, MatchupMeta | null>,
+): Array<{ map: string; won: boolean }> {
+  const direct = extractDirectTeamSeriesMaps(matchup, teamId)
+  if (direct) return direct
 
   const meta = metaByMatchupId.get(matchup.id)
   if (!meta) return []
@@ -542,13 +584,18 @@ function deriveVetoHint(
   return Object.values(result).some(Boolean) ? result : undefined
 }
 
-export async function analyzeMatchup(matchupId: number): Promise<AnalyzeResponse> {
+export async function analyzeMatchup(
+  matchupId: number,
+  options?: AnalyzeOptions,
+): Promise<AnalyzeResponse> {
   if (!Number.isInteger(matchupId) || matchupId <= 0) {
     throw new AnalyzeServiceError('matchup_id must be a positive integer', 400)
   }
 
+  const includeLeetify = options?.includeLeetify !== false
+  const cacheKey = getAnalyzeCacheKey(matchupId, options)
   const now = Date.now()
-  const cached = analyzeCache.get(matchupId)
+  const cached = analyzeCache.get(cacheKey)
   if (
     cached &&
     cached.expiresAt > now &&
@@ -558,13 +605,12 @@ export async function analyzeMatchup(matchupId: number): Promise<AnalyzeResponse
     return cached.value
   }
 
-  const inflight = analyzeInflight.get(matchupId)
+  const inflight = analyzeInflight.get(cacheKey)
   if (inflight) return inflight
 
   const task = (async (): Promise<AnalyzeResponse> => {
     const start = Date.now()
     const blToken = requireBlToken()
-    const leetifyToken = process.env.LEETIFY_TOKEN
 
     let matchupStats: Awaited<ReturnType<typeof getMatchupStats>>
     let matchupMeta: Awaited<ReturnType<typeof getMatchupMeta>>
@@ -578,12 +624,44 @@ export async function analyzeMatchup(matchupId: number): Promise<AnalyzeResponse
     } catch (err) {
       throw new AnalyzeServiceError(`Failed to fetch matchup ${matchupId}: ${err}`, 502)
     }
+
+    // Reconcile stats home/away with meta home/away.
+    // getMatchupStats assigns sides by "first side seen in flat array", which may be
+    // the away team if the API returns them first. Cross-check using playerTeams from
+    // meta (derived from matchup_users, which has explicit team_id per player).
+    if (
+      matchupMeta &&
+      matchupStats.home_players.length > 0 &&
+      matchupStats.away_players.length > 0
+    ) {
+      const homeMetaId = matchupMeta.home.id
+      const awayMetaId = matchupMeta.away.id
+      if (homeMetaId && awayMetaId) {
+        // Count how many "home" stats players actually belong to the away meta team
+        let homeMisassigned = 0
+        for (const p of matchupStats.home_players) {
+          const teamId = matchupMeta.playerTeams.get(p.paradise_user_id)
+          if (teamId === awayMetaId) homeMisassigned++
+        }
+        // If the majority of home_players are on the away team, flip the sides
+        if (homeMisassigned > matchupStats.home_players.length / 2) {
+          const tmp = matchupStats.home_players
+          matchupStats.home_players = matchupStats.away_players
+          matchupStats.away_players = tmp
+        }
+      }
+    }
+
     const hasMatchPlayers =
       matchupStats.home_players.length + matchupStats.away_players.length > 0
     // BL /stats can sometimes expose non-finalized player rows before a match is
     // actually completed, so we only trust finished_at for played/upcoming state.
     const matchStatus: AnalyzeResponse['meta']['match_status'] =
       inferAnalyzeMatchStatus(matchupMeta?.finishedAt)
+    const leetifyToken =
+      includeLeetify && matchStatus === 'upcoming'
+        ? process.env.LEETIFY_TOKEN
+        : undefined
 
     const relevantTeamIds = new Set<number>([
       matchupMeta?.home.id ?? 0,
@@ -599,6 +677,15 @@ export async function analyzeMatchup(matchupId: number): Promise<AnalyzeResponse
       safeDate(matchupMeta?.startTime) ??
       safeDate(matchupMeta?.finishedAt) ??
       new Date()
+    let divisionMatchupsPromise: Promise<Awaited<ReturnType<typeof getDivisionMatchups>>> | null = null
+
+    const getDivisionMatchupRows = async () => {
+      if (!matchupMeta?.divisionId) return null
+      if (!divisionMatchupsPromise) {
+        divisionMatchupsPromise = getDivisionMatchups(matchupMeta.divisionId, blToken)
+      }
+      return divisionMatchupsPromise
+    }
 
     if (currentTeams.length > 0) {
       try {
@@ -654,29 +741,11 @@ export async function analyzeMatchup(matchupId: number): Promise<AnalyzeResponse
     // lineup resolution always sees the players who have actually played this season.
     if (matchupMeta?.divisionId && relevantTeamIds.size > 0) {
       try {
-        const divisionMatchups = await getDivisionMatchups(matchupMeta.divisionId, blToken)
+        const divisionMatchups = await getDivisionMatchupRows()
+        if (!divisionMatchups) throw new Error('Missing division matchups')
         for (const matchup of divisionMatchups) {
           if (!matchup.finished_at) continue
-
-          const signups = Array.isArray(matchup.signups) ? matchup.signups : []
-          const teamIds = signups
-            .map((signup) => {
-              if (
-                signup &&
-                typeof signup === 'object' &&
-                'team' in signup &&
-                signup.team &&
-                typeof signup.team === 'object' &&
-                'id' in signup.team &&
-                typeof signup.team.id === 'number'
-              ) {
-                return signup.team.id
-              }
-              return undefined
-            })
-            .filter((id): id is number => id != null && id > 0)
-
-          if (!teamIds.some((teamId) => relevantTeamIds.has(teamId))) continue
+          if (!matchupIncludesAnyTeam(matchup, relevantTeamIds)) continue
 
           const finishedAt = safeDate(matchup.finished_at)
           if (!finishedAt || finishedAt > referenceTime) continue
@@ -758,9 +827,10 @@ export async function analyzeMatchup(matchupId: number): Promise<AnalyzeResponse
         // Fetch completed division matchups and use their matchup_users for accurate
         // team membership. This avoids the stats-based home/away attribution which
         // relies on array order and can mis-assign players.
-        const divisionMatchups = await getDivisionMatchups(matchupMeta.divisionId, blToken)
+        const divisionMatchups = await getDivisionMatchupRows()
+        if (!divisionMatchups) throw new Error('Missing division matchups')
         const completedIds = divisionMatchups
-          .filter((m) => Boolean(m.finished_at))
+          .filter((m) => Boolean(m.finished_at) && matchupIncludesAnyTeam(m, relevantTeamIds))
           .map((m) => m.id)
 
         const teamPlayerResults = await Promise.allSettled(
@@ -785,9 +855,42 @@ export async function analyzeMatchup(matchupId: number): Promise<AnalyzeResponse
     }
 
     // ── Lineup ID resolution ───────────────────────────────────────────────────
-    // Prefer division-based active players; fall back to matchup_users registrations.
+    // Prefer competition lineup roles; fall back to division-based active players,
+    // then matchup_users registrations.
 
-    const resolveLineupIds = (teamId: number): number[] => {
+    // Always fetch team rosters: for upcoming matches they drive lineup candidates;
+    // for played matches they supply steam64 IDs (2 calls vs one-per-player).
+    const [homeTeamRoster, awayTeamRoster] = await Promise.all([
+      matchupMeta?.home.id ? getTeamPlayers(matchupMeta.home.id, blToken) : Promise.resolve([]),
+      matchupMeta?.away.id ? getTeamPlayers(matchupMeta.away.id, blToken) : Promise.resolve([]),
+    ])
+    const [homeLineupRoles, awayLineupRoles] = matchStatus === 'upcoming' && matchupMeta?.competitionId
+      ? await Promise.all([
+        matchupMeta?.home.id
+          ? getCompetitionTeamLineupRoles(matchupMeta.competitionId, matchupMeta.home.id, blToken)
+          : Promise.resolve(new Map()),
+        matchupMeta?.away.id
+          ? getCompetitionTeamLineupRoles(matchupMeta.competitionId, matchupMeta.away.id, blToken)
+          : Promise.resolve(new Map()),
+      ])
+      : [new Map<number, string>(), new Map<number, string>()]
+
+    const filterRosterByLineupRole = <T extends { userId: number }>(
+      roster: T[],
+      lineupRoles: Map<number, string>,
+    ): T[] => {
+      if (lineupRoles.size === 0) return roster
+      const filtered = roster.filter((p) => lineupRoles.get(p.userId) === 'player')
+      return filtered.length > 0 ? filtered : roster
+    }
+
+    const resolveLineupIds = (teamId: number, lineupRoles: Map<number, string>): number[] => {
+      if (lineupRoles.size > 0) {
+        const roleIds = Array.from(lineupRoles.entries())
+          .filter(([, role]) => role === 'player')
+          .map(([userId]) => userId)
+        if (roleIds.length > 0) return roleIds
+      }
       const divisionSet = divisionActivePlayers.get(teamId)
       if (divisionSet && divisionSet.size > 0) {
         return Array.from(divisionSet)
@@ -800,98 +903,79 @@ export async function analyzeMatchup(matchupId: number): Promise<AnalyzeResponse
         : []
     }
 
-    const homeLineupIds = matchupMeta?.home.id ? resolveLineupIds(matchupMeta.home.id) : []
-    const awayLineupIds = matchupMeta?.away.id ? resolveLineupIds(matchupMeta.away.id) : []
-
-    const [homeTeamRoster, awayTeamRoster] = !hasMatchPlayers
-      ? await Promise.all([
-        matchupMeta?.home.id ? getTeamPlayers(matchupMeta.home.id, blToken) : Promise.resolve([]),
-        matchupMeta?.away.id ? getTeamPlayers(matchupMeta.away.id, blToken) : Promise.resolve([]),
-      ])
-      : [[], []]
+    const filteredHomeTeamRoster = matchStatus === 'upcoming'
+      ? filterRosterByLineupRole(homeTeamRoster, homeLineupRoles)
+      : homeTeamRoster
+    const filteredAwayTeamRoster = matchStatus === 'upcoming'
+      ? filterRosterByLineupRole(awayTeamRoster, awayLineupRoles)
+      : awayTeamRoster
     const homeRosterByUserId = new Map(homeTeamRoster.map((p) => [p.userId, p]))
     const awayRosterByUserId = new Map(awayTeamRoster.map((p) => [p.userId, p]))
 
-  // Helper: resolve avatarUrl for a userId — prefers matchup_users data,
-  // falls back to divisionPlayerImages (fetched below for division-discovered players).
-  const getAvatarUrl = (userId: number): string | undefined =>
-    matchupMeta?.playerImages.get(userId) ?? divisionPlayerImages.get(userId)
+    const homeLineupIds = matchupMeta?.home.id
+      ? resolveLineupIds(matchupMeta.home.id, homeLineupRoles)
+      : []
+    const awayLineupIds = matchupMeta?.away.id
+      ? resolveLineupIds(matchupMeta.away.id, awayLineupRoles)
+      : []
 
-  const buildLineupCandidates = (
-    lineupIds: number[],
-    rosterByUserId: Map<number, { userId: number; userName: string; steam64?: string }>,
-    teamRoster: Array<{ userId: number; userName: string; steam64?: string }>,
-  ): PlayerCandidate[] => {
-    if (lineupIds.length > 0) {
-      return Array.from(new Set(lineupIds))
-        .filter((id) => id > 0)
-        .map((userId) => {
-          const roster = rosterByUserId.get(userId)
-          return {
-            userId,
-            name: roster?.userName,
-            steam64: roster?.steam64,
-            avatarUrl: getAvatarUrl(userId),
-          } satisfies PlayerCandidate
-        })
-    }
-    return teamRoster.map((p) => ({
-      userId: p.userId,
-      name: p.userName,
-      steam64: p.steam64,
-      avatarUrl: getAvatarUrl(p.userId),
-    }))
-  }
+    // Helper: resolve avatarUrl for a userId — prefers matchup_users data,
+    // falls back to divisionPlayerImages (fetched below for division-discovered players),
+    // then roster-provided avatars.
+    const getAvatarUrl = (userId: number): string | undefined =>
+      matchupMeta?.playerImages.get(userId) ??
+      divisionPlayerImages.get(userId) ??
+      homeRosterByUserId.get(userId)?.avatarUrl ??
+      awayRosterByUserId.get(userId)?.avatarUrl
 
-  const homeCandidates: PlayerCandidate[] = hasMatchPlayers
-    ? matchupStats.home_players
-      .filter((p) => p.paradise_user_id > 0)
-      .map((p) => ({
-        userId: p.paradise_user_id,
-        base: p,
-        avatarUrl: getAvatarUrl(p.paradise_user_id),
-      }))
-    : buildLineupCandidates(homeLineupIds, homeRosterByUserId, homeTeamRoster)
-
-  const awayCandidates: PlayerCandidate[] = hasMatchPlayers
-    ? matchupStats.away_players
-      .filter((p) => p.paradise_user_id > 0)
-      .map((p) => ({
-        userId: p.paradise_user_id,
-        base: p,
-        avatarUrl: getAvatarUrl(p.paradise_user_id),
-      }))
-    : buildLineupCandidates(awayLineupIds, awayRosterByUserId, awayTeamRoster)
-
-  // Fetch avatars for lineup players not covered by matchup_users.
-  // These are players discovered from division history — their avatars must be
-  // fetched individually from /user/{id}.
-  if (matchStatus === 'upcoming') {
-    const missingAvatarIds = [...homeCandidates, ...awayCandidates]
-      .filter((c) => !c.avatarUrl)
-      .map((c) => c.userId)
-      .filter((id, i, arr) => arr.indexOf(id) === i) // deduplicate
-
-    if (missingAvatarIds.length > 0) {
-      const avatarResults = await Promise.allSettled(
-        missingAvatarIds.map(async (userId) => ({
-          userId,
-          imageUrl: await getUserImageUrl(userId, blToken),
-        })),
-      )
-      for (const r of avatarResults) {
-        if (r.status === 'fulfilled' && r.value.imageUrl) {
-          divisionPlayerImages.set(r.value.userId, r.value.imageUrl)
-        }
+    const buildLineupCandidates = (
+      lineupIds: number[],
+      rosterByUserId: Map<number, { userId: number; userName: string; steam64?: string }>,
+      teamRoster: Array<{ userId: number; userName: string; steam64?: string }>,
+    ): PlayerCandidate[] => {
+      if (lineupIds.length > 0) {
+        return Array.from(new Set(lineupIds))
+          .filter((id) => id > 0)
+          .map((userId) => {
+            const roster = rosterByUserId.get(userId)
+            return {
+              userId,
+              name: roster?.userName,
+              steam64: roster?.steam64,
+              avatarUrl: getAvatarUrl(userId),
+            } satisfies PlayerCandidate
+          })
       }
-      // Patch candidates with newly-fetched avatars
-      for (const c of [...homeCandidates, ...awayCandidates]) {
-        if (!c.avatarUrl) {
-          c.avatarUrl = divisionPlayerImages.get(c.userId)
-        }
+      if (teamRoster.length > 0) {
+        return teamRoster.map((p) => ({
+          userId: p.userId,
+          name: p.userName,
+          steam64: p.steam64,
+          avatarUrl: getAvatarUrl(p.userId),
+        }))
       }
+      return []
     }
-  }
+
+    const homeCandidates: PlayerCandidate[] = hasMatchPlayers
+      ? matchupStats.home_players
+        .filter((p) => p.paradise_user_id > 0)
+        .map((p) => ({
+          userId: p.paradise_user_id,
+          base: p,
+          avatarUrl: getAvatarUrl(p.paradise_user_id),
+        }))
+      : buildLineupCandidates(homeLineupIds, homeRosterByUserId, filteredHomeTeamRoster)
+
+    const awayCandidates: PlayerCandidate[] = hasMatchPlayers
+      ? matchupStats.away_players
+        .filter((p) => p.paradise_user_id > 0)
+        .map((p) => ({
+          userId: p.paradise_user_id,
+          base: p,
+          avatarUrl: getAvatarUrl(p.paradise_user_id),
+        }))
+      : buildLineupCandidates(awayLineupIds, awayRosterByUserId, filteredAwayTeamRoster)
 
   const hasRecentBlData = (userId: number): boolean => {
     const history = playerAccumulator.get(userId)
@@ -909,13 +993,40 @@ export async function analyzeMatchup(matchupId: number): Promise<AnalyzeResponse
 
   // Return all candidates with any BL data. If any have recent data, that's a
   // signal the lineup is real, but we include all with ANY data so newer team
-  // members (fewer rounds) are not silently dropped. Fall back to all candidates
-  // only when nobody has data.
+  // members (fewer rounds) are not silently dropped. For amateur leagues, the
+  // relevant pool can be larger than five players, so we rank candidates by
+  // evidence strength but leave the full pool available for the lineup simulator.
   const selectEligibleCandidates = (candidates: PlayerCandidate[]): PlayerCandidate[] => {
     const withData = candidates.filter((c) =>
       c.base ? true : hasAnyBlData(c.userId),
     )
-    return withData.length > 0 ? withData : candidates
+    const selected = withData.length > 0 ? withData : candidates
+    if (matchStatus !== 'upcoming' || selected.length <= 1) {
+      return selected
+    }
+
+    return selected
+      .map((candidate, index) => {
+        const history = playerAccumulator.get(candidate.userId)
+        return {
+          candidate,
+          index,
+          hasRecent: hasRecentBlData(candidate.userId),
+          hasAny: hasAnyBlData(candidate.userId),
+          rounds90: history?.effectiveRounds90 ?? 0,
+          rounds180: history?.effectiveRounds180 ?? 0,
+          rawRounds: history?.rawRounds ?? 0,
+        }
+      })
+      .sort((a, b) => {
+        if (a.hasRecent !== b.hasRecent) return Number(b.hasRecent) - Number(a.hasRecent)
+        if (a.hasAny !== b.hasAny) return Number(b.hasAny) - Number(a.hasAny)
+        if (b.rounds90 !== a.rounds90) return b.rounds90 - a.rounds90
+        if (b.rounds180 !== a.rounds180) return b.rounds180 - a.rounds180
+        if (b.rawRounds !== a.rawRounds) return b.rawRounds - a.rawRounds
+        return a.index - b.index
+      })
+      .map((entry) => entry.candidate)
   }
 
   const eligibleHomeCandidates = selectEligibleCandidates(homeCandidates)
@@ -945,40 +1056,48 @@ export async function analyzeMatchup(matchupId: number): Promise<AnalyzeResponse
     })
   }
 
-    const analysisPlayerIds = Array.from(new Set([
-      ...eligibleHomeCandidates.map((c) => c.userId),
-      ...eligibleAwayCandidates.map((c) => c.userId),
-    ]))
+    const allEligibleCandidates = [
+      ...eligibleHomeCandidates,
+      ...eligibleAwayCandidates,
+    ]
+    const analyzableCandidates = allEligibleCandidates.filter((candidate) =>
+      candidate.base || (playerAccumulator.get(candidate.userId)?.rawRounds ?? 0) > 0,
+    )
+    const analysisPlayerIds = Array.from(new Set(
+      analyzableCandidates.map((candidate) => candidate.userId),
+    ))
     const steamByUserId = new Map<number, string>()
 
-  for (const candidate of [...eligibleHomeCandidates, ...eligibleAwayCandidates]) {
-    if (candidate.steam64) steamByUserId.set(candidate.userId, candidate.steam64)
-  }
+    // Source 1: steam64 already on the candidate (lineup path for upcoming matches)
+    for (const candidate of allEligibleCandidates) {
+      if (candidate.steam64) steamByUserId.set(candidate.userId, candidate.steam64)
+    }
 
-  for (const userId of analysisPlayerIds) {
-    const staticSteam = STEAM_BY_USER_ID[userId]
-    if (staticSteam && !steamByUserId.has(userId)) steamByUserId.set(userId, staticSteam)
-  }
+    // Source 2: static hardcoded map
+    for (const userId of analysisPlayerIds) {
+      const staticSteam = STEAM_BY_USER_ID[userId]
+      if (staticSteam && !steamByUserId.has(userId)) steamByUserId.set(userId, staticSteam)
+    }
 
-  const missingSteamIds = analysisPlayerIds.filter((id) => !steamByUserId.has(id))
-  const steamLookupResults = await Promise.all(
-    missingSteamIds.map(async (userId) => ({
-      userId,
-      steam64: await getUserSteamId(userId, blToken),
-    })),
-  )
+    // Source 3: matchup_users embed (accounts may be included in the BL response)
+    if (matchupMeta) {
+      for (const [userId, steam64] of matchupMeta.playerSteam64) {
+        if (!steamByUserId.has(userId)) steamByUserId.set(userId, steam64)
+      }
+    }
 
-  for (const row of steamLookupResults) {
-    if (row.steam64) steamByUserId.set(row.userId, row.steam64)
-  }
+    // Source 4: team roster — 2 API calls instead of one per player
+    for (const p of [...homeTeamRoster, ...awayTeamRoster]) {
+      if (p.steam64 && !steamByUserId.has(p.userId)) steamByUserId.set(p.userId, p.steam64)
+    }
 
-  const analysisSteamIds = Array.from(new Set(
-    analysisPlayerIds
-      .map((userId) => steamByUserId.get(userId))
-      .filter((steam64): steam64 is string => Boolean(steam64)),
-  ))
-  const steamIds = analysisSteamIds
-  const leetifyAttempts = leetifyToken ? steamIds.length : 0
+    const analysisSteamIds = Array.from(new Set(
+      analysisPlayerIds
+        .map((userId) => steamByUserId.get(userId))
+        .filter((steam64): steam64 is string => Boolean(steam64)),
+    ))
+    const steamIds = analysisSteamIds
+    const leetifyAttempts = leetifyToken ? steamIds.length : 0
 
   let leetifyProfiles: Awaited<ReturnType<typeof fetchProfiles>>
   if (!leetifyToken || steamIds.length === 0) {
@@ -1158,6 +1277,38 @@ export async function analyzeMatchup(matchupId: number): Promise<AnalyzeResponse
       .map((candidate) => analyzeCandidate(candidate))
       .filter((p): p is PlayerAnalysis => p != null)
 
+  const buildSimulationFallback = (candidate: PlayerCandidate): PlayerAnalysis => ({
+    name:
+      candidate.base?.name ??
+      candidate.name ??
+      `User ${candidate.userId}`,
+    paradise_user_id: candidate.userId,
+    steam64: steamByUserId.get(candidate.userId),
+    avatar_url: candidate.avatarUrl,
+    score: 0,
+    bl_weight: 0,
+    effective_rounds: 0,
+    ci: 1,
+    rounds: 0,
+    assists: 0,
+    kd: 0,
+    kast: 0,
+    dpr: 0,
+    hs: 0,
+    od_rate: 0,
+    data_source: 'bl',
+  })
+
+  const buildSimulationPool = (candidates: PlayerCandidate[]): PlayerAnalysis[] =>
+    candidates.map((candidate) => analyzeCandidate(candidate) ?? buildSimulationFallback(candidate))
+
+  const simulationHomePool = matchStatus === 'upcoming'
+    ? buildSimulationPool(eligibleHomeCandidates)
+    : undefined
+  const simulationAwayPool = matchStatus === 'upcoming'
+    ? buildSimulationPool(eligibleAwayCandidates)
+    : undefined
+
   const teams = {
     home: {
       id: matchupMeta?.home.id ?? matchupStats.home_team.id,
@@ -1173,9 +1324,24 @@ export async function analyzeMatchup(matchupId: number): Promise<AnalyzeResponse
     },
   }
 
+  const currentTeamIds = [teams.home.id, teams.away.id].filter((teamId): teamId is number => teamId > 0)
   const historicalMapMetaResults = matchStatus === 'upcoming'
     ? await Promise.allSettled(
-      historicalMatchups.map(async (matchup) => ({
+      historicalMatchups
+        .filter((matchup) => {
+          const matchupTeamIds = getMatchupTeamIds(matchup)
+          if (matchupTeamIds.length === 0) return true
+
+          const relevantCurrentTeamIds = currentTeamIds.filter((teamId) =>
+            matchupTeamIds.includes(teamId),
+          )
+          if (relevantCurrentTeamIds.length === 0) return false
+
+          return relevantCurrentTeamIds.some((teamId) =>
+            extractDirectTeamSeriesMaps(matchup, teamId) == null,
+          )
+        })
+        .map(async (matchup) => ({
         matchupId: matchup.id,
         meta: await getMatchupMeta(matchup.id, blToken),
       })),
@@ -1274,6 +1440,8 @@ export async function analyzeMatchup(matchupId: number): Promise<AnalyzeResponse
         ? {
           lineup_size: LINEUP_SIZE,
           active_maps: getActiveDutyMaps(),
+          home_pool: simulationHomePool ?? [],
+          away_pool: simulationAwayPool ?? [],
           map_pool: {
             recent_days: MAP_POOL_RECENT_DAYS,
             min_matches_per_player: 0,
@@ -1296,15 +1464,15 @@ export async function analyzeMatchup(matchupId: number): Promise<AnalyzeResponse
     }
   })()
 
-  analyzeInflight.set(matchupId, task)
+  analyzeInflight.set(cacheKey, task)
   try {
     const result = await task
-    analyzeCache.set(matchupId, {
+    analyzeCache.set(cacheKey, {
       value: result,
       expiresAt: Date.now() + ANALYZE_CACHE_TTL_MS,
     })
     return result
   } finally {
-    analyzeInflight.delete(matchupId)
+    analyzeInflight.delete(cacheKey)
   }
 }

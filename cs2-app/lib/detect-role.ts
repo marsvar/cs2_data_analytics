@@ -25,11 +25,11 @@ export const ROLE_META: Record<
   Role,
   { label: string; desc: string; colorClass: string }
 > = {
-  ENTRY: { label: 'ENTRY', desc: 'Åpner runder, høy OD-rate', colorClass: 'text-accent2' },
-  AWP:   { label: 'AWP',   desc: 'Høy presisjon, stor DPR',    colorClass: 'text-success' },
-  SUPP:  { label: 'SUPP',  desc: 'Høy KAST, teamspiller',       colorClass: 'text-accent' },
-  FRAG:  { label: 'FRAG',  desc: 'Konsistent draper',           colorClass: 'text-warning' },
-  ANCH:  { label: 'ANCH',  desc: 'CT-spesialist',               colorClass: 'text-muted' },
+  ENTRY: { label: 'ENTRY', desc: 'Opens rounds, high OD rate',  colorClass: 'text-accent2' },
+  AWP:   { label: 'AWP',   desc: 'High precision, large DPR',   colorClass: 'text-success' },
+  SUPP:  { label: 'SUPP',  desc: 'High KAST, team player',       colorClass: 'text-accent' },
+  FRAG:  { label: 'FRAG',  desc: 'Consistent fragger',           colorClass: 'text-warning' },
+  ANCH:  { label: 'ANCH',  desc: 'CT specialist',                colorClass: 'text-muted' },
 }
 
 // ── Profile role inference (6-role system for player/team profile pages) ──────
@@ -38,12 +38,12 @@ export const ROLE_META_PROFILE: Record<
   PlayerRole,
   { label: string; desc: string; colorClass: string }
 > = {
-  entry:   { label: 'ENTRY',   desc: 'Åpner runder, høy OD-rate',     colorClass: 'text-accent2' },
-  support: { label: 'SUPPORT', desc: 'Høy KAST, utility-fokus',        colorClass: 'text-accent' },
-  lurker:  { label: 'LURKER',  desc: 'Trade-kills, passiv posisjon',   colorClass: 'text-muted' },
-  awper:   { label: 'AWPER',   desc: 'Høy HS%, ett-skudd-kills',       colorClass: 'text-success' },
-  igl:     { label: 'IGL',     desc: 'Taktisk profil, lav OD',         colorClass: 'text-warning' },
-  hybrid:  { label: 'HYBRID',  desc: 'Allsidig, ingen klar rolle',     colorClass: 'text-text' },
+  entry:   { label: 'ENTRY',   desc: 'Opens rounds, high OD rate',     colorClass: 'text-accent2' },
+  support: { label: 'SUPPORT', desc: 'High KAST, utility-focused',      colorClass: 'text-accent' },
+  lurker:  { label: 'LURKER',  desc: 'Trade kills, passive positioning', colorClass: 'text-muted' },
+  awper:   { label: 'AWPER',   desc: 'High HS%, one-shot kills',         colorClass: 'text-success' },
+  igl:     { label: 'IGL',     desc: 'Tactical profile, low OD',         colorClass: 'text-warning' },
+  hybrid:  { label: 'HYBRID',  desc: 'Versatile, no clear role',         colorClass: 'text-text' },
 }
 
 /**
@@ -65,9 +65,9 @@ export function inferProfileRole(
   // Entry: aggressive opener
   if (p.od_rate > 0.52 || firstkillRate > 0.09) {
     const signals: string[] = []
-    if (p.od_rate > 0.52) signals.push(`Høy OD-rate (${(p.od_rate * 100).toFixed(0)}%)`)
-    if (firstkillRate > 0.09) signals.push(`Høy first-kill rate (${(firstkillRate * 100).toFixed(1)}%)`)
-    if (p.kast < 0.72) signals.push(`Lav KAST (${(p.kast * 100).toFixed(0)}%)`)
+    if (p.od_rate > 0.52) signals.push(`High OD rate (${(p.od_rate * 100).toFixed(0)}%)`)
+    if (firstkillRate > 0.09) signals.push(`High first-kill rate (${(firstkillRate * 100).toFixed(1)}%)`)
+    if (p.kast < 0.72) signals.push(`Low KAST (${(p.kast * 100).toFixed(0)}%)`)
     return { role: 'entry', confidence, signals: signals.slice(0, 2) }
   }
 
@@ -77,8 +77,8 @@ export function inferProfileRole(
       role: 'awper',
       confidence,
       signals: [
-        `Høy headshot-rate (${(p.hs * 100).toFixed(0)}%)`,
-        `Høy DPR (${p.dpr.toFixed(0)})`,
+        `High headshot rate (${(p.hs * 100).toFixed(0)}%)`,
+        `High DPR (${p.dpr.toFixed(0)})`,
       ],
     }
   }
@@ -89,19 +89,19 @@ export function inferProfileRole(
       role: 'support',
       confidence,
       signals: [
-        `Høy KAST (${(p.kast * 100).toFixed(0)}%)`,
-        `Mange assists per runde (${assistsPerRound.toFixed(2)})`,
+        `High KAST (${(p.kast * 100).toFixed(0)}%)`,
+        `Many assists per round (${assistsPerRound.toFixed(2)})`,
       ],
     }
   }
 
   // Lurker: high trade kills, asymmetric OD
   if (tradeKillsPerRound > 0.12) {
-    const signals: string[] = [`Høy trade-kill rate (${(tradeKillsPerRound * 100).toFixed(1)}%)`]
+    const signals: string[] = [`High trade-kill rate (${(tradeKillsPerRound * 100).toFixed(1)}%)`]
     if (p.leetify && Math.abs(p.leetify.ct_od - p.leetify.t_od) > 0.15) {
-      signals.push(`Asymmetrisk CT/T-OD split`)
+      signals.push(`Asymmetric CT/T OD split`)
     } else {
-      signals.push(`Passiv posisjonering`)
+      signals.push(`Passive positioning`)
     }
     return { role: 'lurker', confidence, signals }
   }
@@ -112,11 +112,11 @@ export function inferProfileRole(
       role: 'igl',
       confidence,
       signals: [
-        `Lav OD-rate (${(p.od_rate * 100).toFixed(0)}%)`,
-        `Høy KAST (${(p.kast * 100).toFixed(0)}%) til tross for lav K/D`,
+        `Low OD rate (${(p.od_rate * 100).toFixed(0)}%)`,
+        `High KAST (${(p.kast * 100).toFixed(0)}%) despite low K/D`,
       ],
     }
   }
 
-  return { role: 'hybrid', confidence, signals: ['Ingen dominerende profil identifisert'] }
+  return { role: 'hybrid', confidence, signals: ['No dominant profile identified'] }
 }

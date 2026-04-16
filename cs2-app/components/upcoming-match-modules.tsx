@@ -6,7 +6,6 @@ import { HeadToHeadBar } from '@/components/head-to-head-bar'
 import { PlayerAvatar, TeamLogo } from '@/components/identity-badge'
 import { ChartContainer, ChartTooltip } from '@/components/ui/chart'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { localMapImageForName } from '@/lib/map-images'
 import { normalizeActiveDutyMap } from '@/lib/map-pool'
 import type { AnalyzeResponse, PlayerAnalysis, Team } from '@/lib/types'
 import {
@@ -22,7 +21,7 @@ type MatchupAxis = NonNullable<Landing['matchup_axes']>[number]
 type WatchItem = NonNullable<Landing['watchlist']>['home']['initiators'][number]
 type WatchCategory = 'initiators' | 'form_players' | 'risk_players'
 
-const PRE_MATCH_CONTROL_TOOLTIP = 'Disse aksene er valgt fordi de er de mest stabile pre-match-signalene vi har før første pistolrunde: opening duels setter tidlig tempo, trade structure og survival discipline sier noe om hvor robust laget er over flere runder, entry pressure fanger initiativ, og map leverage kobler rosteren til veto-bildet. Samlet gir de et mer pålitelig kampbilde enn enkeltstående highlight-stats.'
+const PRE_MATCH_CONTROL_TOOLTIP = 'These axes are selected because they are the most stable pre-match signals available before the first pistol round: opening duels set early tempo, trade structure and survival discipline indicate how robust a team is over multiple rounds, entry pressure captures initiative, and map leverage ties the roster to the veto picture. Together they provide a more reliable match read than individual highlight stats.'
 
 function formatMapName(map: string): string {
   const normalized = map.replace(/^de_/, '')
@@ -62,24 +61,24 @@ function mapPressureRead(params: {
 
   if (homeWinRate == null && awayWinRate == null) {
     return {
-      headline: 'Ingen lesning',
-      detail: 'Ingen av lagene har brukbar kartdata her ennå.',
+      headline: 'No read',
+      detail: 'Neither team has usable map data yet.',
       tone: 'muted',
     }
   }
 
   if (homeWinRate != null && awayWinRate == null) {
     return {
-      headline: `${homeName} ensidig read`,
-      detail: `${homeName} har data på ${homeSampleSize} map${homeSampleSize === 1 ? '' : 's'}, men ${awayName} mangler sammenligningsgrunnlag.`,
+      headline: `${homeName} one-sided read`,
+      detail: `${homeName} has data on ${homeSampleSize} map${homeSampleSize === 1 ? '' : 's'}, but ${awayName} has no comparison baseline.`,
       tone: 'home',
     }
   }
 
   if (homeWinRate == null && awayWinRate != null) {
     return {
-      headline: `${awayName} ensidig read`,
-      detail: `${awayName} har data på ${awaySampleSize} map${awaySampleSize === 1 ? '' : 's'}, men ${homeName} mangler sammenligningsgrunnlag.`,
+      headline: `${awayName} one-sided read`,
+      detail: `${awayName} has data on ${awaySampleSize} map${awaySampleSize === 1 ? '' : 's'}, but ${homeName} has no comparison baseline.`,
       tone: 'away',
     }
   }
@@ -89,8 +88,8 @@ function mapPressureRead(params: {
 
   if (delta < 3.5) {
     return {
-      headline: 'Jevnt pressure map',
-      detail: `Begge lag ligger tett her. Dette kartet ser mer ut som coinflip enn et tydelig pick.`,
+      headline: 'Even pressure map',
+      detail: `Both teams are close here. This map looks more like a coinflip than a clear pick.`,
       tone: 'even',
     }
   }
@@ -98,7 +97,7 @@ function mapPressureRead(params: {
   const leader = edge > 0 ? homeName : awayName
   return {
     headline: `${leader} +${delta.toFixed(0)} pp`,
-    detail: `Lesningen bygger på ${homeSampleSize + awaySampleSize} registrerte maps totalt og bør veies mot confidence-nivået.`,
+    detail: `Read builds on ${homeSampleSize + awaySampleSize} recorded maps total — weight against the confidence level.`,
     tone: edge > 0 ? 'home' : 'away',
   }
 }
@@ -129,22 +128,18 @@ function mapEdgeFromPlayers(homePlayers: PlayerAnalysis[], awayPlayers: PlayerAn
 
 function confidenceChip(confidence: MatchupAxis['confidence']) {
   if (confidence === 'high') {
-    return { label: 'Sterk', className: 'border-success/35 bg-success/10 text-success' }
+    return { label: 'Strong', className: 'border-success/35 bg-success/10 text-success' }
   }
   if (confidence === 'medium') {
-    return { label: 'Moderat', className: 'border-warning/35 bg-warning/10 text-warning' }
+    return { label: 'Moderate', className: 'border-warning/35 bg-warning/10 text-warning' }
   }
-  return { label: 'Tynn', className: 'border-border/45 bg-surface2/50 text-muted' }
+  return { label: 'Thin', className: 'border-border/45 bg-surface2/50 text-muted' }
 }
 
-function mapConfidenceChip(confidence: 'low' | 'medium' | 'high') {
-  if (confidence === 'high') {
-    return { label: 'Sterk', className: 'border-success/35 bg-success/10 text-success' }
-  }
-  if (confidence === 'medium') {
-    return { label: 'OK', className: 'border-warning/35 bg-warning/10 text-warning' }
-  }
-  return { label: 'Tynn', className: 'border-border/45 bg-surface2/50 text-muted' }
+function mapConfidenceDot(confidence: 'low' | 'medium' | 'high'): string {
+  if (confidence === 'high') return 'text-success'
+  if (confidence === 'medium') return 'text-warning'
+  return 'text-muted/40'
 }
 
 function metricChips(category: WatchCategory, player: PlayerAnalysis | undefined, item: WatchItem): string[] {
@@ -163,7 +158,7 @@ function metricChips(category: WatchCategory, player: PlayerAnalysis | undefined
 
   if (category === 'form_players') {
     const chips = [
-      `Nå ${(player.score * 10).toFixed(1)}`,
+      `Now ${(player.score * 10).toFixed(1)}`,
       item.display_value,
     ]
     if (player.leetify_prior != null) {
@@ -174,7 +169,7 @@ function metricChips(category: WatchCategory, player: PlayerAnalysis | undefined
 
   return [
     `CI ${player.ci.toFixed(2)}`,
-    `${player.rounds} runder`,
+    `${player.rounds} rounds`,
     `Score ${(player.score * 10).toFixed(1)}`,
   ]
 }
@@ -197,7 +192,7 @@ function PlayerStoryGroup({
       <p className="mb-2 font-mono text-[9px] uppercase tracking-[0.18em] text-muted/55">{title}</p>
       <div className="space-y-2">
         {items.length === 0 ? (
-          <p className="font-mono text-[11px] text-muted">Ingen tydelige signaler.</p>
+          <p className="font-mono text-[11px] text-muted">No clear signals.</p>
         ) : (
           items.map((item) => {
             const player = players.find((entry) => entry.paradise_user_id === item.paradise_user_id)
@@ -300,8 +295,8 @@ export function UpcomingMatchModules({
   usingLiveLineup: boolean
 }) {
   const axes = landing.matchup_axes ?? []
-  const homeName = home.name || 'Hjem'
-  const awayName = away.name || 'Borte'
+  const homeName = home.name || 'Home'
+  const awayName = away.name || 'Away'
 
   const lineupDelta = useMemo(() => {
     const changed =
@@ -358,7 +353,7 @@ export function UpcomingMatchModules({
     <div className="space-y-4">
       <AnalysisSection
         title="Matchup Story"
-        description="Lesningen samler projected win band, signalstyrke og de viktigste pre-match-driverne."
+        description="Combines projected win band, signal strength, and the key pre-match drivers."
         className="border-border/45 bg-surface p-3.5 md:p-4"
         headerRight={(
           <div className="flex flex-wrap items-center gap-2">
@@ -376,8 +371,8 @@ export function UpcomingMatchModules({
         <div className="max-w-2xl">
           <p className="font-display text-lg leading-tight">
             {landing.tactical_edge.favored === 'even'
-              ? `${homeName} og ${awayName} går inn i kampen med små marginer.`
-              : `${landing.tactical_edge.favored === 'home' ? homeName : awayName} har pre-match edge før veto og startside.`}
+              ? `${homeName} and ${awayName} enter this match with small margins.`
+              : `${landing.tactical_edge.favored === 'home' ? homeName : awayName} holds the pre-match edge before veto and starting side.`}
           </p>
           <p className="mt-2 font-mono text-[11px] text-muted">{landing.tactical_edge.confidence_note}</p>
         </div>
@@ -388,19 +383,19 @@ export function UpcomingMatchModules({
             <p className="mt-1 font-display text-lg leading-none text-text tabular-nums">
               {landing.tactical_edge.home_win_pct}%
             </p>
-            <p className="mt-1 font-mono text-[10px] text-muted/70">modellert seierssjanse</p>
+            <p className="mt-1 font-mono text-[10px] text-muted/70">modelled win chance</p>
           </div>
           <div className="rounded-lg border border-border/30 bg-surface2/20 p-2.5 text-center">
             <p className="font-mono text-[9px] uppercase tracking-widest text-muted/55">Edge read</p>
             <p className="mt-1 font-display text-sm leading-none text-text">
               {landing.tactical_edge.favored === 'even'
-                ? 'Tett matchup'
+                ? 'Close matchup'
                 : `${Math.abs(landing.tactical_edge.home_win_pct - landing.tactical_edge.away_win_pct)} pp edge`}
             </p>
             <p className="mt-1 font-mono text-[10px] text-muted/70">
               {landing.tactical_edge.favored === 'even'
-                ? 'Begge lag ligger tett før veto.'
-                : `${landing.tactical_edge.favored === 'home' ? homeName : awayName} starter foran.`}
+                ? 'Both teams are close before veto.'
+                : `${landing.tactical_edge.favored === 'home' ? homeName : awayName} starts ahead.`}
             </p>
           </div>
           <div className="rounded-lg border border-accent2/20 bg-accent2/6 p-2.5 text-right">
@@ -408,13 +403,13 @@ export function UpcomingMatchModules({
             <p className="mt-1 font-display text-lg leading-none text-text tabular-nums">
               {landing.tactical_edge.away_win_pct}%
             </p>
-            <p className="mt-1 font-mono text-[10px] text-muted/70">modellert seierssjanse</p>
+            <p className="mt-1 font-mono text-[10px] text-muted/70">modelled win chance</p>
           </div>
         </div>
 
         <div className="mt-3 grid gap-2.5 lg:grid-cols-[1.25fr_0.95fr]">
           <div className="rounded-lg border border-border/30 bg-surface2/20 p-2.5">
-            <p className="mb-1.5 font-mono text-[9px] uppercase tracking-widest text-muted/55">Hvorfor</p>
+            <p className="mb-1.5 font-mono text-[9px] uppercase tracking-widest text-muted/55">Why</p>
             <ol className="space-y-1.5">
               {(landing.game_plan ?? []).map((line, index) => (
                 <li key={`plan-${index}`} className="flex items-start gap-2">
@@ -458,7 +453,7 @@ export function UpcomingMatchModules({
               </div>
             ) : (
               <p className="font-mono text-[11px] text-muted">
-                Standardfemmeren brukes fortsatt. Bytt spillere under for å se hvordan projeksjonen flytter seg.
+                Default five still in use. Swap players below to see how the projection shifts.
               </p>
             )}
           </div>
@@ -467,7 +462,7 @@ export function UpcomingMatchModules({
 
       <AnalysisSection
         title="Pre-match Control"
-        description="Normaliserte akser viser kontrollsplitten i matchupen. Noen akser er blendede kontrollsignaler, mens sideetiketter og noter viser råtallene bak."
+        description="Normalised axes show the control split in the matchup. Some axes are blended control signals; side labels and notes show the raw numbers behind them."
         className="border-border/45 bg-surface p-3.5 md:p-4"
         headerRight={(
           <div className="flex flex-wrap items-center gap-2">
@@ -476,13 +471,13 @@ export function UpcomingMatchModules({
                 <TooltipTrigger asChild>
                   <button
                     type="button"
-                    aria-label="Hvorfor disse parameterne brukes i pre-match control"
+                    aria-label="Why these parameters are used in pre-match control"
                     className="inline-flex items-center gap-1 rounded border border-border/35 bg-surface2/40 px-2 py-1 font-mono text-[10px] text-muted transition-colors hover:border-accent/35 hover:text-text"
                   >
                     <span className="flex h-3.5 w-3.5 items-center justify-center rounded-full border border-current text-[9px] leading-none">
                       ?
                     </span>
-                    Hvorfor disse?
+                    Why these?
                   </button>
                 </TooltipTrigger>
                 <TooltipContent side="top" className="max-w-[320px] border-border bg-surface2 font-mono text-[10px] leading-relaxed text-text">
@@ -576,133 +571,92 @@ export function UpcomingMatchModules({
 
       <AnalysisSection
         title="Veto & Pressure Map"
-        description="Kartbildet viser hvilke maps som trekker matchupen mot hjemmelaget, bortelaget eller et jevnt veto."
+        description="Shows which maps favor each team or result in an even veto."
         className="border-border/45 bg-surface p-3.5 md:p-4"
       >
         {landing.map_battlefield && landing.map_battlefield.maps.length > 0 ? (
           <>
-            <div className="space-y-2.5">
-              {sortedMaps.map((map) => {
-                const image = localMapImageForName(map.map)
-                const confidenceMeta = mapConfidenceChip(map.confidence)
-                const totalSamples = map.home_sample_size + map.away_sample_size
-                const read = mapPressureRead({
-                  homeWinRate: map.home_win_rate,
-                  awayWinRate: map.away_win_rate,
-                  homeSampleSize: map.home_sample_size,
-                  awaySampleSize: map.away_sample_size,
-                  homeName,
-                  awayName,
-                })
-                const favoredClass =
-                  map.favored === 'home'
-                    ? 'text-accent border-accent/25'
-                    : map.favored === 'away'
-                      ? 'text-accent2 border-accent2/25'
-                      : 'text-muted border-border/35'
-                return (
-                  <div key={map.map} className="overflow-hidden rounded-lg border border-border/30 bg-surface2/15">
-                    <div className="grid gap-0 md:grid-cols-[96px_1fr]">
-                      <div className="relative h-20 md:h-full">
-                        {image ? (
-                          <img src={image} alt={formatMapName(map.map)} className="h-full w-full object-cover" />
-                        ) : (
-                          <div className="h-full w-full bg-surface2" />
-                        )}
-                        <div className="absolute inset-0 bg-gradient-to-t from-bg via-bg/35 to-transparent" />
-                        <div className="absolute left-3 top-3 rounded bg-bg/75 px-2 py-1 font-mono text-[9px] uppercase tracking-widest text-text">
-                          {formatMapName(map.map)}
-                        </div>
-                      </div>
-                      <div className="p-2.5">
-                        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className={`rounded border px-2 py-1 font-mono text-[9px] uppercase tracking-widest ${confidenceMeta.className}`}>
-                              {confidenceMeta.label}
-                            </span>
-                            <span className="rounded border border-border/35 bg-surface px-2 py-1 font-mono text-[9px] uppercase tracking-widest text-muted/75">
-                              {totalSamples} sample
-                            </span>
-                          </div>
-                          <div className={`rounded border bg-surface px-2 py-1 font-mono text-[9px] uppercase tracking-widest ${favoredClass}`}>
-                            {map.favored === 'even' ? 'Jevnt' : map.favored === 'home' ? homeName : awayName}
-                          </div>
-                        </div>
+            {/* Column headers */}
+            <div className="mb-1.5 grid grid-cols-[140px_1fr_80px_1fr] gap-x-3 px-3 font-mono text-[9px] uppercase tracking-widest text-muted/50">
+              <span>Map</span>
+              <span className="text-accent/70">{homeName}</span>
+              <span className="text-center">Edge</span>
+              <span className="text-right text-accent2/70">{awayName}</span>
+            </div>
 
-                        <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_112px_minmax(0,1fr)] md:items-center">
-                          <div className="min-w-0 rounded border border-accent/15 bg-accent/5 p-2">
-                            <p className="mb-1 inline-flex items-center gap-1 font-mono text-[10px] text-accent">
-                              <TeamLogo name={homeName} logoUrl={home.logo_url} tone="home" size="sm" />
-                              {homeName}
-                            </p>
-                            <p className="font-mono text-[11px] text-text">{map.home_display}</p>
-                            <p className="mt-1 font-mono text-[9px] uppercase tracking-widest text-muted/65">
-                              {map.home_sample_size} sample
-                            </p>
-                          </div>
-                          <div className="rounded border border-border/30 bg-surface px-2 py-1.5 text-center">
-                            <p className={`font-mono text-[10px] uppercase tracking-widest ${
-                              read.tone === 'home'
-                                ? 'text-accent'
-                                : read.tone === 'away'
-                                  ? 'text-accent2'
-                                  : read.tone === 'even'
-                                    ? 'text-text'
-                                    : 'text-muted'
-                            }`}>
-                              Pressure read
-                            </p>
-                            <p className={`mt-1 font-display text-sm leading-none ${
-                              read.tone === 'home'
-                                ? 'text-accent'
-                                : read.tone === 'away'
-                                  ? 'text-accent2'
-                                  : read.tone === 'even'
-                                    ? 'text-text'
-                                    : 'text-muted'
-                            }`}>
-                              {read.headline}
-                            </p>
-                            <p className="mt-1 font-mono text-[9px] leading-relaxed text-muted/70">
-                              {read.detail}
-                            </p>
-                          </div>
-                          <div className="min-w-0 rounded border border-accent2/15 bg-accent2/5 p-2 md:text-right">
-                            <p className="mb-1 inline-flex items-center gap-1 font-mono text-[10px] text-accent2 md:justify-end">
-                              <TeamLogo name={awayName} logoUrl={away.logo_url} tone="away" size="sm" />
-                              {awayName}
-                            </p>
-                            <p className="font-mono text-[11px] text-text">{map.away_display}</p>
-                            <p className="mt-1 font-mono text-[9px] uppercase tracking-widest text-muted/65">
-                              {map.away_sample_size} sample
-                            </p>
-                          </div>
-                        </div>
-                      </div>
+            <div className="divide-y divide-border/20 rounded-lg border border-border/30 bg-surface2/10">
+              {sortedMaps.map((map) => {
+                const edge = (map.home_win_rate ?? 0.5) - (map.away_win_rate ?? 0.5)
+                const edgePp = edge * 100
+                const isEven = Math.abs(edgePp) < 3
+                const dotClass = mapConfidenceDot(map.confidence)
+                const pressureText = isEven ? 'Even' : `${edge > 0 ? '+' : ''}${edgePp.toFixed(0)} pp`
+                const pressureClass = isEven
+                  ? 'text-muted/70 border-border/30 bg-surface'
+                  : edge > 0
+                    ? 'text-accent border-accent/30 bg-accent/8'
+                    : 'text-accent2 border-accent2/30 bg-accent2/8'
+
+                return (
+                  <div key={map.map} className="grid grid-cols-[140px_1fr_80px_1fr] items-center gap-x-3 px-3 py-2.5">
+                    <div className="flex min-w-0 items-center gap-1.5">
+                      <span className={`shrink-0 text-[8px] leading-none ${dotClass}`}>●</span>
+                      <span className="truncate font-mono text-[11px] text-text">{formatMapName(map.map)}</span>
+                    </div>
+                    <div className="min-w-0">
+                      {map.home_win_rate != null ? (
+                        <span className="font-mono text-[11px] text-accent">
+                          {(map.home_win_rate * 100).toFixed(0)}%
+                          <span className="ml-1 font-mono text-[9px] text-muted/55">{map.home_sample_size}m</span>
+                        </span>
+                      ) : (
+                        <span className="font-mono text-[11px] text-muted/40">—</span>
+                      )}
+                    </div>
+                    <div className="flex justify-center">
+                      <span className={`rounded border px-1.5 py-0.5 font-mono text-[9px] tracking-wide ${pressureClass}`}>
+                        {pressureText}
+                      </span>
+                    </div>
+                    <div className="min-w-0 text-right">
+                      {map.away_win_rate != null ? (
+                        <span className="font-mono text-[11px] text-accent2">
+                          {(map.away_win_rate * 100).toFixed(0)}%
+                          <span className="ml-1 font-mono text-[9px] text-muted/55">{map.away_sample_size}m</span>
+                        </span>
+                      ) : (
+                        <span className="font-mono text-[11px] text-muted/40">—</span>
+                      )}
                     </div>
                   </div>
                 )
               })}
             </div>
 
+            {/* Confidence legend */}
+            <div className="mt-2 flex gap-3 font-mono text-[9px] text-muted/50">
+              <span><span className="text-success">●</span> High</span>
+              <span><span className="text-warning">●</span> Medium</span>
+              <span><span className="text-muted/40">●</span> Low</span>
+            </div>
+
             {landing.map_battlefield.veto_flow.length > 0 && (
               <div className="mt-3 rounded-lg border border-border/30 bg-surface2/20 p-2.5">
-                <p className="mb-1.5 font-mono text-[9px] uppercase tracking-widest text-muted/55">Suggested veto flow</p>
-                <div className="grid gap-2 md:grid-cols-3 xl:grid-cols-5">
-                  {landing.map_battlefield.veto_flow.map((step) => (
-                    <div
-                      key={`${step.label}-${step.team}-${step.map}`}
-                      className={`rounded border px-2 py-2 font-mono text-[9px] uppercase tracking-widest ${
+                <p className="mb-2 font-mono text-[9px] uppercase tracking-widest text-muted/55">Suggested veto</p>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {landing.map_battlefield.veto_flow.map((step, i) => (
+                    <span key={`${step.label}-${step.team}-${step.map}`} className="inline-flex items-center gap-1.5">
+                      {i > 0 && <span className="font-mono text-[9px] text-muted/35">→</span>}
+                      <span className={`rounded border px-2 py-1 font-mono text-[9px] uppercase tracking-widest ${
                         step.team === 'home'
                           ? 'border-accent/30 bg-accent/10 text-accent'
                           : step.team === 'away'
                             ? 'border-accent2/30 bg-accent2/10 text-accent2'
                             : 'border-border/40 bg-surface text-muted'
-                      }`}
-                    >
-                      <p>{step.label}</p>
-                      <p className="mt-1 text-[11px] normal-case tracking-normal">{formatMapName(step.map)}</p>
-                    </div>
+                      }`}>
+                        {step.label} {formatMapName(step.map)}
+                      </span>
+                    </span>
                   ))}
                 </div>
               </div>
@@ -711,20 +665,20 @@ export function UpcomingMatchModules({
             {landing.map_battlefield.veto_flow.length === 0 && (
               <div className="mt-3 rounded-lg border border-border/30 bg-surface2/20 p-2.5">
                 <p className="font-mono text-[10px] text-muted">
-                  Ingen robust veto-sekvens ennå. Kartbildet er nyttigst som presskart, ikke som låst veto-script.
+                  No robust veto sequence yet. The pressure map is most useful as a pressure guide, not a locked veto script.
                 </p>
               </div>
             )}
           </>
         ) : (
-          <p className="font-mono text-[11px] text-muted">For lite kartdata til å bygge et tydelig veto-bilde.</p>
+          <p className="font-mono text-[11px] text-muted">Not enough map data to build a clear veto picture.</p>
         )}
       </AnalysisSection>
 
       {landing.watchlist && (
         <AnalysisSection
           title="Players to Watch"
-          description="Vi løfter bare de tre mest nyttige historiene: initiatorer, form og volatility-risk."
+          description="Only the three most useful reads: initiators, form, and volatility risk."
           className="border-border/45 bg-surface p-3.5 md:p-4"
         >
           <div className="grid gap-3 lg:grid-cols-2">

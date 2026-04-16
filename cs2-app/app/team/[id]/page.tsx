@@ -16,8 +16,9 @@ export default async function TeamPage({ params }: TeamPageProps) {
   if (!Number.isInteger(teamId) || teamId <= 0) {
     return (
       <ErrorCard
-        title="Ugyldig lag-ID"
-        detail="Fant ikke laget. Sjekk URL-en og prøv igjen."
+        title="Invalid team ID"
+        detail="Team not found. Check the URL and try again."
+        backLabel="← Back to search"
       />
     )
   }
@@ -30,27 +31,28 @@ export default async function TeamPage({ params }: TeamPageProps) {
         <div className="atlas-topline" />
         <div className="max-w-5xl mx-auto px-6 md:px-10 py-10">
           <div className="fx-rise">
-            <NavBreadcrumb backHref="/" contextLabel="Lagprofil" />
+            <NavBreadcrumb backHref="/" backLabel="← Back to search" contextLabel="Team Profile" />
           </div>
           <TeamProfileDisplay profile={profile} />
         </div>
       </section>
     )
   } catch (err) {
-    if (err instanceof TeamProfileError) {
-      if (err.status === 404) {
-        return (
-          <ErrorCard
-            title="Lag ikke funnet"
-            detail={err.message}
-          />
-        )
-      }
+    if (err instanceof TeamProfileError && err.status === 404) {
+      return (
+        <ErrorCard
+          title="Team not found"
+          detail={err.message}
+          backLabel="← Back to search"
+        />
+      )
     }
+
     return (
       <ErrorCard
-        title="Uventet feil"
-        detail="Det oppstod en feil ved lasting av lagprofilen. Prøv igjen om litt."
+        title="Unexpected error"
+        detail="An error occurred while loading the team profile. Please try again."
+        backLabel="← Back to search"
       />
     )
   }
