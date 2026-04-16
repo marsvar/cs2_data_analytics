@@ -1,47 +1,51 @@
 @import 'tailwindcss';
 
 @theme {
-  /* Colors */
-  --color-bg: #0d0f14;
-  --color-surface: #161a23;
-  --color-surface2: #1e2330;
-  --color-border: #2a3044;
-  --color-accent: #2563EB;
-  --color-accent2: #F97316;
-  --color-success: #4fca7a;
-  --color-danger: #f75f5f;
-  --color-warning: #f7c84f;
-  --color-text: #e4e8f0;
-  --color-muted: #7a839a;
+  /* ── Core surface palette ── */
+  --color-bg:       #0a0c10;
+  --color-surface:  #111418;
+  --color-surface2: #181d24;
+  --color-surface3: #1e2530;
+  --color-border:   #2a3044;
 
-  /* shadcn/ui aliases — maps our tokens to standard shadcn CSS variables */
-  --color-background: #0d0f14;
-  --color-foreground: #e4e8f0;
-  --color-primary: #2563EB;
-  --color-primary-foreground: #ffffff;
-  --color-secondary: #1e2330;
-  --color-secondary-foreground: #e4e8f0;
-  --color-muted-foreground: #7a839a;
-  --color-destructive: #f75f5f;
-  --color-card: #161a23;
-  --color-card-foreground: #e4e8f0;
-  --color-popover: #1e2330;
-  --color-popover-foreground: #e4e8f0;
-  --color-input: #2a3044;
-  --color-ring: #2563EB;
-  --color-chart-1: #2563EB;
-  --color-chart-2: #F97316;
-  --color-chart-3: #4fca7a;
-  --color-chart-4: #f7c84f;
-  --color-chart-5: #f75f5f;
+  /* ── Semantic accent colours ── */
+  --color-accent:   #3b82f6;
+  --color-accent2:  #F97316;
+  --color-success:  #22c55e;
+  --color-danger:   #ef4444;
+  --color-warning:  #f59e0b;
+
+  /* ── Text ── */
+  --color-text:  #f1f5f9;
+  --color-muted: #6b7280;
+
+  /* ── shadcn/ui aliases ── */
+  --color-background:          #0a0c10;
+  --color-foreground:          #f1f5f9;
+  --color-primary:             #3b82f6;
+  --color-primary-foreground:  #ffffff;
+  --color-secondary:           #181d24;
+  --color-secondary-foreground:#f1f5f9;
+  --color-muted-foreground:    #6b7280;
+  --color-destructive:         #ef4444;
+  --color-card:                #111418;
+  --color-card-foreground:     #f1f5f9;
+  --color-popover:             #181d24;
+  --color-popover-foreground:  #f1f5f9;
+  --color-input:               #2a3044;
+  --color-ring:                #3b82f6;
+  --color-chart-1:             #3b82f6;
+  --color-chart-2:             #F97316;
+  --color-chart-3:             #22c55e;
+  --color-chart-4:             #f59e0b;
+  --color-chart-5:             #ef4444;
   --radius: 0.5rem;
 
-  /* Fonts */
-  --font-display: var(--font-fira-code), monospace;
-  --font-body: var(--font-fira-sans), sans-serif;
-  --font-mono: var(--font-fira-code), monospace;
-
-
+  /* ── Font stack ── */
+  --font-display: var(--font-geist),           sans-serif;
+  --font-body:    var(--font-ibm-plex-sans),   sans-serif;
+  --font-mono:    var(--font-ibm-plex-mono),   monospace;
+  --font-label:   var(--font-space-grotesk),   sans-serif;
 }
 
 @layer base {
@@ -60,14 +64,15 @@
 }
 
 @layer components {
+  /* ── Page-level shell with subtle grid + ambient glow ── */
   .atlas-shell {
     position: relative;
     isolation: isolate;
     overflow: hidden;
     background:
-      radial-gradient(1100px 520px at -10% -20%, rgba(37, 99, 235, 0.18), transparent 60%),
-      radial-gradient(900px 420px at 110% 0%, rgba(249, 115, 22, 0.16), transparent 58%),
-      linear-gradient(to bottom, rgba(42, 48, 68, 0.1), transparent 35%),
+      radial-gradient(1100px 520px at -10% -20%, rgba(59, 130, 246, 0.12), transparent 60%),
+      radial-gradient(900px 420px at 110% 0%, rgba(249, 115, 22, 0.10), transparent 58%),
+      linear-gradient(to bottom, rgba(30, 37, 48, 0.10), transparent 35%),
       var(--color-bg);
   }
 
@@ -78,68 +83,49 @@
     z-index: -1;
     pointer-events: none;
     background-image:
-      linear-gradient(to right, rgba(42, 48, 68, 0.22) 1px, transparent 1px),
-      linear-gradient(to bottom, rgba(42, 48, 68, 0.22) 1px, transparent 1px);
+      linear-gradient(to right, rgba(30, 37, 48, 0.22) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(30, 37, 48, 0.22) 1px, transparent 1px);
     background-size: 38px 38px;
     mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.55), transparent 78%);
   }
 
+  /* ── Top accent line ── */
   .atlas-topline {
     height: 1px;
-    background: linear-gradient(to right, transparent, rgba(37, 99, 235, 0.45), transparent);
+    background: linear-gradient(to right, transparent, rgba(59, 130, 246, 0.45), transparent);
   }
 
+  /* ── Entrance animations ── */
   @keyframes rise-in {
-    0% {
-      opacity: 0;
-      transform: translateY(14px);
-    }
-    100% {
-      opacity: 1;
-      transform: translateY(0);
-    }
+    0%   { opacity: 0; transform: translateY(14px); }
+    100% { opacity: 1; transform: translateY(0); }
   }
 
   @keyframes pulse-glow {
-    0%, 100% {
-      box-shadow: 0 0 0 rgba(37, 99, 235, 0);
-    }
-    50% {
-      box-shadow: 0 0 24px rgba(37, 99, 235, 0.2);
-    }
+    0%, 100% { box-shadow: 0 0 0 rgba(59, 130, 246, 0); }
+    50%       { box-shadow: 0 0 24px rgba(59, 130, 246, 0.2); }
   }
 
-  .fx-rise {
-    opacity: 0;
-    animation: rise-in 520ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
-  }
-
-  .fx-rise-d1 {
-    animation-delay: 80ms;
-  }
-
-  .fx-rise-d2 {
-    animation-delay: 160ms;
-  }
-
-  .fx-rise-d3 {
-    animation-delay: 240ms;
-  }
-
-  .fx-pulse-glow {
-    animation: pulse-glow 2.6s ease-in-out infinite;
-  }
+  .fx-rise    { opacity: 0; animation: rise-in 520ms cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+  .fx-rise-d1 { animation-delay: 80ms; }
+  .fx-rise-d2 { animation-delay: 160ms; }
+  .fx-rise-d3 { animation-delay: 240ms; }
+  .fx-pulse-glow { animation: pulse-glow 2.6s ease-in-out infinite; }
 
   /* ── Card elevation system ── */
+  /* Level 1 — primary card surface */
   .card-1 {
-    @apply bg-surface/92 border border-border/40 rounded-xl;
-    box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 1px 3px rgba(0,0,0,0.4);
+    @apply bg-surface/92 border border-border/40 rounded-lg;
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 1px 3px rgba(0, 0, 0, 0.4);
   }
+  /* Level 2 — nested section inside a card */
   .card-2 {
-    @apply bg-surface2/50 border border-border/25 rounded-lg;
+    @apply bg-surface2/60 border border-border/25 rounded-md;
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset;
   }
+  /* Level 3 — chip / input surface */
   .card-3 {
-    @apply bg-surface2/40 border border-border/15 rounded-md;
+    @apply bg-surface3/80 border border-border/15 rounded;
   }
   .card-interactive {
     @apply transition-colors hover:bg-surface2/20 hover:border-border/50;
@@ -150,7 +136,7 @@
     @apply px-5 pt-4 pb-3 border-b border-border/20;
   }
   .section-header-title {
-    @apply font-display text-[10px] uppercase tracking-[0.2em] text-accent;
+    @apply font-label text-[10px] uppercase tracking-[0.2em] text-accent;
   }
   .section-body {
     @apply px-5 py-4;
@@ -161,19 +147,19 @@
     @apply border-t border-border/20;
   }
 
-  /* ── Label scale ── */
+  /* ── Label scale — all use Space Grotesk ── */
   .label-micro {
-    @apply font-mono text-[9px] uppercase tracking-widest;
+    @apply font-label text-[9px] uppercase tracking-widest;
   }
   .label-sm {
-    @apply font-mono text-[10px] uppercase tracking-widest;
+    @apply font-label text-[10px] uppercase tracking-widest;
   }
   .label-display {
-    @apply font-display text-[10px] uppercase tracking-[0.2em];
+    @apply font-label text-[10px] uppercase tracking-[0.2em];
   }
 
   /* ── Status pill ── */
   .status-pill {
-    @apply font-mono text-[9px] uppercase tracking-widest px-2 py-0.5 rounded border;
+    @apply font-label text-[9px] uppercase tracking-widest px-2 py-0.5 rounded border;
   }
 }

@@ -59,7 +59,7 @@ function RoleBadge({ role }: { role: PlayerRole | null }) {
   if (!role) return <span className="font-mono text-[8px] text-muted/40">—</span>
   const meta = ROLE_META_PROFILE[role]
   return (
-    <span className={`font-mono text-[8px] uppercase tracking-widest border px-1.5 py-0.5 rounded ${meta.colorClass} border-current/25 bg-current/5`}>
+    <span className={`font-label text-[8px] uppercase tracking-widest border px-1.5 py-0.5 rounded ${meta.colorClass} border-current/25 bg-current/5`}>
       {meta.label}
     </span>
   )

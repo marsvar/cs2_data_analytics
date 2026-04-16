@@ -203,7 +203,7 @@ function DataBadge({ source }: { source: PlayerAnalysis['data_source'] }) {
   const config: Record<PlayerAnalysis['data_source'], { label: string; cls: string }> = {
     bl: { label: 'BL', cls: 'bg-accent/20 text-accent' },
     leetify: { label: 'L', cls: 'bg-success/20 text-success' },
-    combined: { label: 'BL+L', cls: 'bg-purple-500/20 text-purple-300' },
+    combined: { label: 'BL+L', cls: 'bg-accent/15 text-accent/80' },
   }
   const { label, cls } = config[source]
   return (
@@ -378,7 +378,7 @@ function EarlyStrengthCard({
 
       <div className="space-y-2">
         <div>
-          <p className="font-mono text-[9px] uppercase tracking-widest text-success/70 mb-1.5">Strongest in opening</p>
+          <p className="label-micro text-success/70 mb-1.5">Strongest in opening</p>
           {strengths.length > 0 ? (
             <div className="space-y-1.5">
               {strengths.map((player) => {
@@ -406,7 +406,7 @@ function EarlyStrengthCard({
         </div>
 
         <div>
-          <p className="font-mono text-[9px] uppercase tracking-widest text-danger/70 mb-1.5">Weakest in openings</p>
+          <p className="label-micro text-danger/70 mb-1.5">Weakest in openings</p>
           {weaknesses.length > 0 ? (
             <div className="space-y-1.5">
               {weaknesses.map((player) => {
@@ -530,20 +530,20 @@ function EarlyRoundAndFormPanel({
       headerRight={(
         <div className="flex items-center gap-2 shrink-0">
           {usingLiveLineup && (
-            <span className="font-mono text-[9px] uppercase tracking-widest rounded border border-accent/40 bg-accent/10 text-accent px-2 py-1">
+            <span className="status-pill border-accent/40 bg-accent/10 text-accent">
               Live lineup
             </span>
           )}
-          <span className="font-mono text-[9px] uppercase tracking-widest rounded border border-border/40 text-muted/70 px-2 py-1">
+          <span className="status-pill border-border/40 text-muted/70">
             {sourceLabel}
           </span>
         </div>
       )}
     >
 
-      <div className="rounded-lg border border-border/30 bg-surface2/15 p-3 mb-4">
+      <div className="card-2 p-3 mb-4">
         <div className="mb-2 flex items-center justify-between gap-3">
-          <p className="font-mono text-[9px] uppercase tracking-widest text-muted/50">
+          <p className="label-micro text-muted/50">
             Team-weighted opening duel rate
           </p>
           <span className={`font-mono text-[9px] ${
@@ -590,15 +590,15 @@ function EarlyRoundAndFormPanel({
       </div>
 
       <div className="mb-4 grid gap-2 md:grid-cols-2">
-        <div className="rounded-lg border border-border/30 bg-surface2/15 p-3">
-          <p className="font-mono text-[9px] uppercase tracking-widest text-muted/50 mb-1.5">Hva du ser her</p>
+        <div className="card-2 p-3">
+          <p className="label-micro text-muted/50 mb-1.5">Hva du ser her</p>
           <p className="font-mono text-[11px] text-text/90">
             The opening section is player-focused and shows who most often makes first contact. It supplements
             <span className="text-text"> Pre-match Control</span>, which already covers trade, survival and entry pressure at the team level.
           </p>
         </div>
-        <div className="rounded-lg border border-border/30 bg-surface2/15 p-3">
-          <p className="font-mono text-[9px] uppercase tracking-widest text-muted/50 mb-1.5">Formlesning</p>
+        <div className="card-2 p-3">
+          <p className="label-micro text-muted/50 mb-1.5">Formlesning</p>
           <p className="font-mono text-[11px] text-text/90">
             The form graph shows deviation from the Leetify baseline. A positive value means the player enters the match above their normal level; a negative value means the profile is colder than usual.
           </p>
@@ -608,13 +608,13 @@ function EarlyRoundAndFormPanel({
       {/* Per-player opening duel breakdown */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-4">
         <div>
-          <p className="font-mono text-[9px] uppercase tracking-widest text-muted/50 mb-2 px-0.5">
+          <p className="label-micro text-muted/50 mb-2 px-0.5">
             {home.name || 'Home'} · Opening duels per player
           </p>
             <EarlyStrengthCard title={home.name || 'Home'} accentClass="text-accent" players={homeEarly} />
         </div>
         <div>
-          <p className="font-mono text-[9px] uppercase tracking-widest text-muted/50 mb-2 px-0.5">
+          <p className="label-micro text-muted/50 mb-2 px-0.5">
             {away.name || 'Away'} · Opening duels per player
           </p>
             <EarlyStrengthCard title={away.name || 'Away'} accentClass="text-accent2" players={awayEarly} />
@@ -623,7 +623,7 @@ function EarlyRoundAndFormPanel({
 
       {/* Form vs career baseline */}
       <div>
-        <p className="font-mono text-[9px] uppercase tracking-widest text-muted/50 mb-2 px-0.5">
+        <p className="label-micro text-muted/50 mb-2 px-0.5">
           Form vs career average (Leetify) — positive means above normal level
         </p>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
@@ -879,7 +879,7 @@ function CopyReportButton({ result }: { result: AnalyzeResponse }) {
       <button
         type="button"
         onClick={copyReport}
-        className="font-mono text-[10px] uppercase tracking-widest px-3 py-1.5 rounded border border-border/50 bg-surface hover:bg-surface2/50 transition-colors"
+        className="label-sm px-3 py-1.5 rounded border border-border/50 bg-surface hover:bg-surface2/50 transition-colors"
         title="Kopier analyse som tekst"
       >
         {state === 'copied' ? 'Kopiert' : state === 'error' ? 'Feilet' : 'Kopier analyse'}
@@ -1175,7 +1175,7 @@ function SectionWinner({
 
   if (homeWins === awayWins) {
     return (
-      <Badge variant="outline" className="font-mono text-[9px] uppercase tracking-widest text-muted border-border/50 px-1.5 py-0.5 h-auto rounded">
+      <Badge variant="outline" className="label-micro text-muted border-border/50 px-1.5 py-0.5 h-auto rounded">
         Even
       </Badge>
     )
@@ -1186,7 +1186,7 @@ function SectionWinner({
   return (
     <Badge
       variant="outline"
-      className={`font-mono text-[9px] uppercase tracking-widest px-1.5 py-0.5 h-auto rounded ${
+      className={`label-micro px-1.5 py-0.5 h-auto rounded ${
         winner
           ? 'text-accent border-accent/50 bg-accent/10'
           : 'text-accent2 border-accent2/50 bg-accent2/10'
@@ -1234,25 +1234,25 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
     : 'Unknown time'
 
   return (
-    <section className="mb-6 rounded-xl border border-accent/30 bg-gradient-to-b from-surface to-surface2/15 p-4 md:p-5">
+    <section className="mb-6 card-1 p-4 md:p-5">
       <div className="flex items-center justify-between gap-3 mb-5">
-        <h3 className="font-display text-[10px] uppercase tracking-widest text-accent">Post-match Analysis</h3>
-        <span className="font-mono text-[9px] uppercase tracking-widest rounded border border-accent/40 text-accent bg-accent/10 px-2 py-1.5">
+        <h3 className="label-display text-accent">Post-match Analysis</h3>
+        <span className="status-pill border-accent/40 bg-accent/10 text-accent px-2 py-1.5">
           Played match
         </span>
       </div>
 
-      <div className="rounded-xl border border-border/40 bg-gradient-to-br from-surface2/55 via-surface to-surface p-4 mb-4">
+      <div className="card-2 p-4 mb-4">
         <div className="flex items-center justify-between gap-3 mb-3.5">
-          <p className="font-mono text-[10px] uppercase tracking-widest text-muted">Result & match context</p>
+          <p className="label-sm text-muted">Result & match context</p>
           <div className="flex items-center gap-2 flex-wrap justify-end">
-            <span className={`font-mono text-[9px] uppercase tracking-widest rounded border px-2 py-1.5 ${completenessBadgeClass(completeness)}`}>
+            <span className={`label-micro rounded border px-2 py-1.5 ${completenessBadgeClass(completeness)}`}>
               {completionLabel}
             </span>
-            <span className="font-mono text-[9px] uppercase tracking-widest rounded border border-border/40 text-muted px-2 py-1.5">
+            <span className="label-micro rounded border border-border/40 text-muted px-2 py-1.5">
               {boLabel(result)}
             </span>
-            <span className={`font-mono text-[9px] uppercase tracking-widest rounded border px-2 py-1.5 ${winnerBadgeClass(resultSummary?.winner ?? 'unknown')}`}>
+            <span className={`label-micro rounded border px-2 py-1.5 ${winnerBadgeClass(resultSummary?.winner ?? 'unknown')}`}>
               {winnerLabel(result)}
             </span>
           </div>
@@ -1287,7 +1287,7 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
       </div>
 
       <div className="rounded-xl border border-border/35 bg-surface2/20 p-3 mb-4">
-        <p className="font-mono text-[10px] uppercase tracking-widest text-muted mb-2">Map story</p>
+        <p className="label-sm text-muted mb-2">Map story</p>
         {mapsPlayed ? (
           <>
             <p className="font-mono text-[11px] text-text mb-2">
@@ -1309,16 +1309,16 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                     >
                       <div className="absolute inset-0 bg-black/10 pointer-events-none" />
                       <div className="relative z-10 flex items-start justify-between gap-2">
-                        <span className="font-mono text-[9px] uppercase tracking-widest text-muted/90 border border-border/40 bg-surface/40 rounded px-1.5 py-0.5">
+                        <span className="label-micro text-muted/90 border border-border/40 bg-surface/40 rounded px-1.5 py-0.5">
                           Map {i + 1}
                         </span>
                         {!mapPlayed && (
-                          <span className="font-mono text-[8px] uppercase tracking-widest text-muted border border-border/40 bg-surface/45 rounded px-1.5 py-0.5">
+                          <span className="font-label text-[8px] uppercase tracking-widest text-muted border border-border/40 bg-surface/45 rounded px-1.5 py-0.5">
                             Not played
                           </span>
                         )}
                         {mapPlayed && (
-                          <span className={`font-mono text-[8px] uppercase tracking-widest rounded border px-1.5 py-0.5 ${winnerBadgeClass(mapWinner)}`}>
+                          <span className={`font-label text-[8px] uppercase tracking-widest rounded border px-1.5 py-0.5 ${winnerBadgeClass(mapWinner)}`}>
                             {winnerLabel(result, mapWinner)}
                           </span>
                         )}
@@ -1329,7 +1329,7 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                           {map.name ?? `Map ${i + 1}`}
                         </div>
                         {map.source === 'derived' && (
-                          <span className="inline-block mt-1 font-mono text-[8px] uppercase tracking-widest text-muted border border-border/40 rounded px-1 py-0.5 bg-surface/40">
+                          <span className="inline-block mt-1 font-label text-[8px] uppercase tracking-widest text-muted border border-border/40 rounded px-1 py-0.5 bg-surface/40">
                             Est.
                           </span>
                         )}
@@ -1341,7 +1341,7 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                             <div className="inline-flex items-baseline gap-1 font-display text-2xl tabular-nums text-text bg-surface/45 rounded px-2 py-1 leading-none">
                               {map.home_score}-{map.away_score}
                             </div>
-                            <div className={`font-mono text-[9px] uppercase tracking-widest ${mapWinner === 'home' ? 'text-accent' : mapWinner === 'away' ? 'text-accent2' : 'text-warning'}`}>
+                            <div className={`label-micro ${mapWinner === 'home' ? 'text-accent' : mapWinner === 'away' ? 'text-accent2' : 'text-warning'}`}>
                               Winner: {winnerLabel(result, mapWinner)}
                             </div>
                           </>
@@ -1523,7 +1523,7 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
             {/* ── 1. Tactical Control ────────────────────────────────────── */}
             <div className="rounded-xl border border-border/35 bg-surface2/20 p-3.5">
               <div className="flex items-center justify-between gap-2 mb-2">
-                <p className="font-mono text-[10px] uppercase tracking-widest text-muted">Tactical Control</p>
+                <p className="label-sm text-muted">Tactical Control</p>
                 <SectionWinner
                   values={[
                     post.tactical_control.opening_duel_edge_pp,
@@ -1579,7 +1579,7 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
               </ChartContainer>
 
               {/* Metric bars under chart */}
-              <div className="space-y-2.5 rounded-lg border border-border/25 bg-surface/40 p-2.5">
+              <div className="space-y-2.5 card-2 p-2.5">
                 <MetricBar
                   label="Opening Duel"
                   tooltip="Opening duel win rate. Winning first kill usually controls 70-80% of rounds."
@@ -1632,7 +1632,7 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                             <span className={`font-mono text-[10px] font-semibold ${impact.team === 'home' ? 'text-accent' : 'text-accent2'}`}>
                               {impact.player_name}
                             </span>
-                            <Badge variant="outline" className="font-mono text-[8px] uppercase tracking-widest px-1 py-0 h-auto border-border/50 text-muted rounded">
+                            <Badge variant="outline" className="font-label text-[8px] uppercase tracking-widest px-1 py-0 h-auto border-border/50 text-muted rounded">
                               {impact.role}
                             </Badge>
                             {scoreDisplay != null && (
@@ -1707,8 +1707,8 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
               })()}
 
               {/* Primary signals */}
-              <div className="space-y-2.5 rounded-lg border border-border/25 bg-surface/40 p-2.5 mb-2">
-                <p className="font-mono text-[9px] uppercase tracking-widest text-muted/60 pb-1 border-b border-border/20">Primary Signals</p>
+              <div className="space-y-2.5 card-2 p-2.5 mb-2">
+                <p className="label-micro text-muted/60 pb-1 border-b border-border/20">Primary Signals</p>
                 <MetricBar
                   label="Opening Duel"
                   tooltip="Opening duel win% as a proxy for who sets the economy tempo early in the round."
@@ -1744,8 +1744,8 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
               {/* Support signals */}
               {(post.economy_proxies.indicators.trade_structure_pp != null ||
                 post.economy_proxies.indicators.survival_edge_pp != null) && (
-                <div className="space-y-2 rounded-lg border border-border/20 bg-surface/25 p-2.5 mb-3">
-                  <p className="font-mono text-[9px] uppercase tracking-widest text-muted/50 pb-1 border-b border-border/15">Support Signals</p>
+                <div className="space-y-2 card-2 p-2.5 mb-3">
+                  <p className="label-micro text-muted/50 pb-1 border-b border-border/15">Support Signals</p>
                   {post.economy_proxies.indicators.trade_structure_pp != null && (
                     <MetricBar
                       label="Trade Kills"
@@ -1800,7 +1800,7 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                 >
                   <p className="font-mono text-[11px] text-text mb-3">{post.teamplay_control!.summary}</p>
 
-                  <div className="space-y-2.5 rounded-lg border border-border/25 bg-surface/40 p-2.5">
+                  <div className="space-y-2.5 card-2 p-2.5">
                     <MetricBar
                       label="Trade Kills"
                       tooltip="Trade kills per 100 rounds. A trade is a kill within 5 seconds after a teammate dies."
@@ -1889,7 +1889,7 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                   </ChartContainer>
                 )}
 
-                <div className="space-y-2.5 rounded-lg border border-border/25 bg-surface/40 p-2.5">
+                <div className="space-y-2.5 card-2 p-2.5">
                   {post.round_stability.indicators.survival_edge_pp != null && (
                     <MetricBar
                       label="Survival"
@@ -1950,7 +1950,7 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                 <p className="font-mono text-[11px] text-text mb-3">{post.late_round_conversion.summary}</p>
 
                 {lateRoundHasData ? (
-                  <div className="space-y-2.5 rounded-lg border border-border/25 bg-surface/40 p-2.5">
+                  <div className="space-y-2.5 card-2 p-2.5">
                     {lateRoundMetrics?.clutch_wins_per_map && (
                       <MetricBar
                         label="Clutch Wins"
@@ -2013,7 +2013,7 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
               titleClassName="text-muted"
               headerClassName="mb-2"
               headerRight={isRelativeDev ? (
-                <Badge variant="outline" className="font-mono text-[8px] uppercase tracking-widest px-1.5 py-0.5 h-auto rounded border-warning/40 text-warning/80 bg-warning/5">
+                <Badge variant="outline" className="font-label text-[8px] uppercase tracking-widest px-1.5 py-0.5 h-auto rounded border-warning/40 text-warning/80 bg-warning/5">
                   In-match
                 </Badge>
               ) : undefined}
@@ -2040,11 +2040,11 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                     const baselineValue = focus.baseline_value ?? 0
                     const deltaValue = focus.delta_value ?? 0
                     return (
-                      <div key={`${focus.player_name}-${idx}`} className="rounded-lg border border-border/25 px-2.5 py-2.5 bg-surface/30">
+                      <div key={`${focus.player_name}-${idx}`} className="card-2 px-2.5 py-2.5">
                         <div className="flex flex-wrap items-center gap-2 mb-1.5">
                           <Badge
                             variant="outline"
-                            className={`font-mono text-[8px] uppercase tracking-widest px-1.5 py-0.5 h-auto rounded ${
+                            className={`font-label text-[8px] uppercase tracking-widest px-1.5 py-0.5 h-auto rounded ${
                               focus.team === 'home'
                                 ? 'border-accent/40 text-accent bg-accent/10'
                                 : 'border-accent2/40 text-accent2 bg-accent2/10'
@@ -2063,7 +2063,7 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                           </span>
                           <Badge
                             variant="outline"
-                            className={`font-mono text-[8px] uppercase tracking-widest px-1.5 py-0.5 h-auto rounded ml-auto ${trendBadgeClass(focus.trend)}`}
+                            className={`font-label text-[8px] uppercase tracking-widest px-1.5 py-0.5 h-auto rounded ml-auto ${trendBadgeClass(focus.trend)}`}
                           >
                             {focus.trend === 'overperforming'
                               ? '▲ Over'
@@ -2076,7 +2076,7 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                         {showsValueComparison && (
                           <div className="mb-2 grid grid-cols-3 gap-2">
                             <div className="rounded border border-border/20 bg-surface/40 px-2 py-1.5">
-                              <p className="font-mono text-[8px] uppercase tracking-widest text-muted/70 mb-0.5">
+                              <p className="font-label text-[8px] uppercase tracking-widest text-muted/70 mb-0.5">
                                 {focus.metric === 'bl_rating' ? 'R-rating' : 'Score /10'}
                               </p>
                               <p className="font-mono text-[11px] tabular-nums text-text">
@@ -2084,7 +2084,7 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                               </p>
                             </div>
                             <div className="rounded border border-border/20 bg-surface/40 px-2 py-1.5">
-                              <p className="font-mono text-[8px] uppercase tracking-widest text-muted/70 mb-0.5">
+                              <p className="font-label text-[8px] uppercase tracking-widest text-muted/70 mb-0.5">
                                 {focus.metric === 'bl_rating' ? 'Baseline' : 'Match Avg /10'}
                               </p>
                               <p className="font-mono text-[11px] tabular-nums text-text">
@@ -2092,7 +2092,7 @@ function PostMatchReport({ result }: { result: AnalyzeResponse }) {
                               </p>
                             </div>
                             <div className="rounded border border-border/20 bg-surface/40 px-2 py-1.5">
-                              <p className="font-mono text-[8px] uppercase tracking-widest text-muted/70 mb-0.5">
+                              <p className="font-label text-[8px] uppercase tracking-widest text-muted/70 mb-0.5">
                                 {focus.metric === 'bl_rating' ? 'Delta' : 'Delta /10'}
                               </p>
                               <p className={`font-mono text-[11px] tabular-nums ${
@@ -2401,7 +2401,7 @@ export function AnalysisDisplay({
           )}
 
           <details className="mb-6 rounded-xl border border-border/45 bg-surface px-4 py-3">
-            <summary className="cursor-pointer select-none font-display text-[10px] uppercase tracking-[0.2em] text-accent">
+            <summary className="cursor-pointer select-none label-display text-accent">
               Lineup simulator
             </summary>
             <div className="mt-4">
