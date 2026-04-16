@@ -18,21 +18,21 @@ type DivisionOption = { id: number; name: string }
 function StatusBadge({ status }: { status: DivisionMatchSummary['status'] }) {
   if (status === 'upcoming') {
     return (
-      <span className="font-mono text-[8px] uppercase tracking-widest px-1.5 py-0.5 rounded border border-accent/40 text-accent bg-accent/10">
+      <span className="status-pill border-accent/40 text-accent bg-accent/10">
         Kommende
       </span>
     )
   }
   if (status === 'live') {
     return (
-      <span className="font-mono text-[8px] uppercase tracking-widest px-1.5 py-0.5 rounded border border-success/40 text-success bg-success/10 animate-pulse">
+      <span className="status-pill border-success/40 text-success bg-success/10 animate-pulse">
         Live
       </span>
     )
   }
   if (status === 'completed') {
     return (
-      <span className="font-mono text-[8px] uppercase tracking-widest px-1.5 py-0.5 rounded border border-border/40 text-muted">
+      <span className="status-pill border-border/40 text-muted">
         Spilt
       </span>
     )
@@ -180,10 +180,10 @@ function RecentMatchesPanel({
   const previousRoundMatches = previousRound.matches
 
   return (
-    <div className="rounded-xl border border-border/45 bg-surface/65 backdrop-blur-sm p-5 md:p-6">
+    <div className="card-1 p-5 md:p-6">
       <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
         <div>
-          <h2 className="font-display text-xs tracking-widest uppercase text-accent">Kommende kamper</h2>
+          <h2 className="label-sm text-accent">Kommende kamper</h2>
           <p className="font-mono text-[11px] text-muted mt-1">Velg kamp fra listen eller søk direkte under.</p>
         </div>
 
@@ -223,7 +223,7 @@ function RecentMatchesPanel({
       {!loadingMatches && allMatches.length > 0 && (
         <div className="space-y-4">
           <div>
-            <p className="font-mono text-[10px] uppercase tracking-widest text-accent mb-2">Ikke spilt ennå</p>
+            <p className="label-sm text-accent mb-2">Ikke spilt ennå</p>
             {notPlayedYet.length === 0 ? (
               <p className="font-mono text-[11px] text-muted">Ingen kommende eller live-kamper i utvalget.</p>
             ) : (
@@ -257,7 +257,7 @@ function RecentMatchesPanel({
 
           <div>
             <div className="mb-2 flex items-center justify-between gap-3">
-              <p className="font-mono text-[10px] uppercase tracking-widest text-success">Forrige runde</p>
+              <p className="label-sm text-success">Forrige runde</p>
               {previousRound.roundNumber != null && (
                 <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-muted/70">
                   Runde {previousRound.roundNumber}
@@ -455,7 +455,7 @@ export default function Home() {
       >
         <div className="max-w-3xl mx-auto w-full">
           <div className="flex items-center justify-between mb-10">
-            <span className="font-display text-[11px] tracking-widest uppercase text-accent">
+            <span className="label-sm text-accent">
               CS2 Analyse
             </span>
             <span className="font-mono text-[10px] text-muted uppercase tracking-widest hidden sm:block">
@@ -470,7 +470,7 @@ export default function Home() {
                 className="block text-5xl md:text-7xl"
                 style={{
                   color: 'var(--color-accent)',
-                  textShadow: '0 0 48px rgba(37,99,235,0.3), 0 0 12px rgba(37,99,235,0.15)',
+                  textShadow: '0 0 48px rgba(59,130,246,0.3), 0 0 12px rgba(59,130,246,0.15)',
                 }}
               >
                 KAMPANALYSE.
@@ -492,9 +492,9 @@ export default function Home() {
 
       {/* Direct match search */}
       <section className="px-6 md:px-10 pb-16 max-w-5xl mx-auto w-full">
-        <div className="rounded-xl border border-border/45 bg-surface/65 backdrop-blur-sm p-5 md:p-6">
+        <div className="card-1 p-5 md:p-6">
           <div className="mb-3">
-            <h2 className="font-display text-xs tracking-widest uppercase text-accent">Søk direkte på kamp</h2>
+            <h2 className="label-sm text-accent">Søk direkte på kamp</h2>
             <p className="font-mono text-[11px] text-muted mt-1">
               Finn kamp på lagnavn, eller lim inn matchup-ID.
             </p>
@@ -505,7 +505,7 @@ export default function Home() {
             <div
               className="flex items-center border border-border rounded-lg bg-surface overflow-hidden"
               style={{
-                boxShadow: '0 0 0 1px rgba(37,99,235,0.05), 0 4px 24px rgba(0,0,0,0.3)',
+                boxShadow: '0 0 0 1px rgba(59,130,246,0.05), 0 4px 24px rgba(0,0,0,0.3)',
                 transition: 'border-color 200ms ease, box-shadow 200ms ease',
               }}
             >
@@ -534,7 +534,7 @@ export default function Home() {
                 disabled={loading || input.trim() === ''}
                 aria-label="Gå til kamp"
                 className="px-5 py-3.5 font-mono text-sm border-l border-border shrink-0 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                style={{ background: 'rgba(37,99,235,0.08)', color: 'var(--color-accent)' }}
+                style={{ background: 'rgba(59,130,246,0.08)', color: 'var(--color-accent)' }}
               >
                 {loading ? <span className="animate-pulse">…</span> : '→'}
               </button>

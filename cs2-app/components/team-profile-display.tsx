@@ -44,7 +44,7 @@ function RoleBadge({ role }: { role: PlayerRole | null }) {
   if (!role) return <span className="font-mono text-[8px] text-muted/40">—</span>
   const meta = ROLE_META_PROFILE[role]
   return (
-    <span className={`font-mono text-[8px] uppercase tracking-widest border px-1.5 py-0.5 rounded ${meta.colorClass} border-current/25 bg-current/5`}>
+    <span className={`font-label text-[8px] uppercase tracking-widest border px-1.5 py-0.5 rounded ${meta.colorClass} border-current/25 bg-current/5`}>
       {meta.label}
     </span>
   )
@@ -268,7 +268,7 @@ export function TeamProfileDisplay({ profile }: { profile: TeamProfileResponse }
             <SectionLabel>Kamphistorikk</SectionLabel>
           </div>
           {/* Header */}
-          <div className="grid grid-cols-[3rem_1fr_4rem_2.5rem_5rem] gap-2 px-5 py-2 border-b border-border/20 font-mono text-[9px] uppercase tracking-widest text-muted/50">
+          <div className="grid grid-cols-[3rem_1fr_4rem_2.5rem_5rem] gap-2 px-5 py-2 border-b border-border/20 label-micro text-muted/50">
             <span>Dato</span>
             <span>Motstander</span>
             <span className="text-center">Score</span>
@@ -323,7 +323,7 @@ export function TeamProfileDisplay({ profile }: { profile: TeamProfileResponse }
                 <div className="text-right">
                   <Link
                     href={`/match/${m.matchup_id}`}
-                    className="font-mono text-[9px] uppercase tracking-widest text-accent/60 hover:text-accent border border-accent/15 hover:border-accent/40 px-2 py-1 rounded transition-colors"
+                    className="status-pill text-accent/60 hover:text-accent border-accent/15 hover:border-accent/40 px-2 py-1 transition-colors"
                   >
                     Analyse
                   </Link>

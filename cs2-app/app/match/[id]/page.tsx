@@ -83,7 +83,7 @@ function MatchHeadlineCard({ result }: { result: AnalyzeResponse }) {
               {formatDate(isPlayed ? result.meta.match_finished_time : result.meta.match_start_time)}
             </span>
           )}
-          <span className={`font-mono text-[9px] uppercase tracking-widest px-2 py-0.5 rounded border ${
+          <span className={`status-pill ${
             isPlayed
               ? 'border-border/40 text-muted bg-surface2/40'
               : 'border-accent/40 text-accent bg-accent/10'
@@ -133,7 +133,7 @@ function MatchHeadlineCard({ result }: { result: AnalyzeResponse }) {
 
       {!isPlayed && gamePlan.length > 0 && (
         <div className="mb-4 card-2 px-3 py-2.5">
-          <p className="font-mono text-[9px] uppercase tracking-widest text-muted/55 mb-1.5">Matchup read</p>
+          <p className="label-micro text-muted/55 mb-1.5">Matchup read</p>
           <p className="font-mono text-[11px] text-text/90">{gamePlan[0]}</p>
         </div>
       )}
@@ -143,7 +143,7 @@ function MatchHeadlineCard({ result }: { result: AnalyzeResponse }) {
         <div className="flex items-center gap-4">
           {homeTop && (
             <div className="flex items-center gap-1.5">
-              <span className="font-mono text-[9px] uppercase tracking-widest text-muted/60">Nøkkel:</span>
+              <span className="label-micro text-muted/60">Nøkkel:</span>
               <PlayerInlineAvatar player={homeTop} tone="home" />
               <span className="font-mono text-[10px] text-accent">{homeTop.name}</span>
               <span className="font-mono text-[9px] text-muted/50 tabular-nums">{(homeTop.score * 10).toFixed(1)}</span>
@@ -151,7 +151,7 @@ function MatchHeadlineCard({ result }: { result: AnalyzeResponse }) {
           )}
           {awayTop && (
             <div className="flex items-center gap-1.5">
-              <span className="font-mono text-[9px] uppercase tracking-widest text-muted/60">Nøkkel:</span>
+              <span className="label-micro text-muted/60">Nøkkel:</span>
               <PlayerInlineAvatar player={awayTop} tone="away" />
               <span className="font-mono text-[10px] text-accent2">{awayTop.name}</span>
               <span className="font-mono text-[9px] text-muted/50 tabular-nums">{(awayTop.score * 10).toFixed(1)}</span>

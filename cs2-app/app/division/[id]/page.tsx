@@ -81,7 +81,7 @@ function StandingsTable({ result }: { result: DivisionResponse }) {
       </div>
       <div className="card-1 overflow-hidden">
         {/* Header */}
-        <div className="grid grid-cols-[1.5rem_1fr_2.5rem_2.5rem_2.5rem] gap-3 px-4 py-2 border-b border-border/20 font-mono text-[9px] uppercase tracking-widest text-muted/60">
+        <div className="grid grid-cols-[1.5rem_1fr_2.5rem_2.5rem_2.5rem] gap-3 px-4 py-2 border-b border-border/20 label-micro text-muted/60">
           <span>#</span>
           <span>Lag</span>
           <span className="text-center">K</span>
@@ -233,7 +233,7 @@ function MatchCard({
               ? `/match/${match.matchup_id}?division=${divisionId}`
               : `/match/${match.matchup_id}`
           }
-          className="shrink-0 font-mono text-[10px] uppercase tracking-widest text-accent/80 hover:text-accent border border-accent/20 hover:border-accent/50 bg-accent/5 hover:bg-accent/10 px-2.5 py-1.5 rounded transition-colors"
+          className="status-pill text-accent/80 hover:text-accent border-accent/20 hover:border-accent/50 bg-accent/5 hover:bg-accent/10 px-2.5 py-1.5 transition-colors"
         >
           {section === 'played' ? 'Analyse' : 'Forhåndsvis'} →
         </Link>

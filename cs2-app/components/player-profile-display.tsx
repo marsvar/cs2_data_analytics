@@ -43,7 +43,7 @@ function mapColor(winRate: number) {
 function ConfBadge({ conf }: { conf: 'low' | 'medium' | 'high' }) {
   const cls = conf === 'high' ? 'text-success/70 border-success/20' : conf === 'medium' ? 'text-warning/70 border-warning/20' : 'text-muted/60 border-border/30'
   return (
-    <span className={`font-mono text-[8px] uppercase tracking-widest border px-1 py-0.5 rounded ${cls}`}>
+    <span className={`font-label text-[8px] uppercase tracking-widest border px-1 py-0.5 rounded ${cls}`}>
       {conf === 'high' ? 'god data' : conf === 'medium' ? 'ok data' : 'lite data'}
     </span>
   )
@@ -101,7 +101,7 @@ function TrendSection({ trend }: { trend: PlayerProfileResponse['trend'] }) {
             <button
               key={w}
               onClick={() => setWindow(w)}
-              className={`font-mono text-[9px] uppercase tracking-widest px-2 py-1 rounded border transition-colors ${
+              className={`status-pill px-2 py-1 transition-colors ${
                 window === w
                   ? 'border-accent/50 text-accent bg-accent/10'
                   : 'border-border/30 text-muted/60 hover:text-text'
@@ -219,7 +219,7 @@ export function PlayerProfileDisplay({ profile }: { profile: PlayerProfileRespon
                 <h1 className="font-display text-xl md:text-2xl leading-none tracking-tight text-text">
                   {profile.name || `Spiller #${profile.paradise_user_id}`}
                 </h1>
-                <span className={`font-mono text-[9px] uppercase tracking-widest border px-2 py-0.5 rounded ${roleMeta.colorClass} border-current/30 bg-current/5`}>
+                <span className={`status-pill ${roleMeta.colorClass} border-current/30 bg-current/5`}>
                   {roleMeta.label}
                 </span>
                 {profile.role_confidence !== 'high' && (
@@ -253,7 +253,7 @@ export function PlayerProfileDisplay({ profile }: { profile: PlayerProfileRespon
             <div className="shrink-0 text-right">
               <div className="font-display text-3xl tabular-nums leading-none text-text">{scoreDisplay}</div>
               <div className="font-mono text-[9px] text-muted/60 mt-0.5">±{profile.ci} (90% CI)</div>
-              <div className="font-mono text-[8px] uppercase tracking-widest text-muted/40 mt-0.5">
+              <div className="font-label text-[8px] uppercase tracking-widest text-muted/40 mt-0.5">
                 {profile.data_source === 'combined' ? 'BL + Leetify' : profile.data_source === 'leetify' ? 'Leetify' : 'BL'}
               </div>
             </div>
