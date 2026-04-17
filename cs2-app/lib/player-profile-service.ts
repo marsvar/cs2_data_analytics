@@ -16,6 +16,8 @@ import { fetchProfiles } from '@/lib/leetify-api'
 import { compositeScore, blWeight, ci90 } from '@/lib/aggregation'
 import { inferProfileRole } from '@/lib/detect-role'
 import { normalizeActiveDutyMap } from '@/lib/map-pool'
+import { deriveFirstDeathRate, resolveProfileSteam64 } from '@/lib/player-profile-support'
+import { STEAM_BY_USER_ID } from '@/lib/players'
 import type {
   PlayerProfileResponse,
   PerformanceTrendPoint,
@@ -47,10 +49,11 @@ export async function buildPlayerProfile(
   const cached = profileCache.get(userId)
   if (cached && cached.expiresAt > Date.now()) return cached.value
 
-  const [steam64, avatarUrl] = await Promise.all([
+  const [fetchedSteam64, avatarUrl] = await Promise.all([
     getUserSteamId(userId, BL_TOKEN),
     getUserImageUrl(userId, BL_TOKEN),
   ])
+  const steam64 = resolveProfileSteam64(fetchedSteam64, STEAM_BY_USER_ID[userId])
 
   const allMatchups = await getUserMatchups(userId, BL_TOKEN)
   const finishedMatchups = allMatchups.filter(
@@ -165,6 +168,7 @@ export async function buildPlayerProfile(
   let totalRounds = 0
   let totalOdWon = 0
   let totalOdAttempts = 0
+  let totalOpeningLosses = 0
   let weightedKast = 0
   let weightedHs = 0
   let totalClutchWon = 0
@@ -181,6 +185,7 @@ export async function buildPlayerProfile(
     totalDamage += player.damage ?? 0
     totalOdWon += player.opening_kills ?? 0
     totalOdAttempts += player.opening_attempts ?? 0
+    totalOpeningLosses += player.opening_losses ?? Math.max((player.opening_attempts ?? 0) - (player.opening_kills ?? 0), 0)
     weightedKast += (player.kast ?? 0) * (player.rounds ?? 0)
     weightedHs += (player.hs ?? 0) * (player.rounds ?? 0)
     totalRounds += player.rounds ?? 0
@@ -204,7 +209,7 @@ export async function buildPlayerProfile(
   const flashAssistsPerRound = null
   const utilityDmgPerRound = null
   const clutchWinPct = totalOneVX > 0 ? totalClutchWon / totalOneVX : null
-  const firstDeathRate = null
+  const firstDeathRate = deriveFirstDeathRate(totalOpeningLosses, totalRounds)
 
   const mapsPlayed = matchEntries.length
   const multiKills = mapsPlayed > 0

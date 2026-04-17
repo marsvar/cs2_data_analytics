@@ -26,6 +26,7 @@ import {
   buildPostAnalysis,
   buildResultSummary,
 } from '@/lib/post-analysis'
+import { resolveLineupMembers } from '@/lib/lineup-resolution'
 import { STEAM_BY_USER_ID } from '@/lib/players'
 import type {
   AnalyzeResponse,
@@ -844,28 +845,16 @@ export async function analyzeMatchup(
     rosterByUserId: Map<number, { userId: number; userName: string; steam64?: string; avatarUrl?: string }>,
     teamRoster: Array<{ userId: number; userName: string; steam64?: string; avatarUrl?: string }>,
   ): PlayerCandidate[] => {
-    if (teamRoster.length > 0) {
-      return teamRoster.map((p) => ({
-        userId: p.userId,
-        name: p.userName,
-        steam64: p.steam64,
-        avatarUrl: getAvatarUrl(p.userId),
-      }))
-    }
-    if (lineupIds.length > 0) {
-      return Array.from(new Set(lineupIds))
-        .filter((id) => id > 0)
-        .map((userId) => {
-          const roster = rosterByUserId.get(userId)
-          return {
-            userId,
-            name: roster?.userName,
-            steam64: roster?.steam64,
-            avatarUrl: getAvatarUrl(userId),
-          } satisfies PlayerCandidate
-        })
-    }
-    return []
+    return resolveLineupMembers({
+      lineupIds,
+      rosterByUserId,
+      teamRoster,
+    }).map((player) => ({
+      userId: player.userId,
+      name: player.userName,
+      steam64: player.steam64,
+      avatarUrl: getAvatarUrl(player.userId),
+    }))
   }
 
   const homeCandidates: PlayerCandidate[] = hasMatchPlayers

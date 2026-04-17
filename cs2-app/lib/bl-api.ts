@@ -16,6 +16,7 @@
 
 import type { BLMatchupStats, BLPlayerStats } from './types'
 import { normalizeBlImageUrl } from './bl-image-url'
+import { fetchUserMatchupsWithFallback } from './user-matchup-resolution'
 
 const BL_BASE = 'https://app.bedriftsligaen.no/api/paradise/v2'
 const MATCHUP_STATS_TTL_MS = 5 * 60 * 1000
@@ -175,6 +176,7 @@ function mapPlayer(p: RawPlayer): BLPlayerStats {
     kast: p.kast_ratio ?? 0,
     opening_kills: p.opening_duels_won ?? p.firstkills ?? 0,
     opening_attempts: (p.opening_duels_won ?? 0) + (p.opening_duels_lost ?? 0),
+    opening_losses: p.opening_duels_lost ?? 0,
     bl_extended: {
       survival_ratio: p.survival_ratio ?? undefined,
       trade_kills: p.trade_kills ?? undefined,
@@ -729,20 +731,24 @@ export async function getUserMatchups(
   signups?: unknown[]
 }>> {
   type Raw = { data?: unknown[] } | unknown[]
-  const params = new URLSearchParams({
-    user_id: String(userId),
-    limit: '100',
+
+  return fetchUserMatchupsWithFallback(userId, async (baseParam) => {
+    const params = new URLSearchParams({
+      ...Object.fromEntries(new URLSearchParams(baseParam)),
+      limit: '100',
+    })
+    if (options?.divisionId != null && options.divisionId > 0) {
+      params.set('division_id', String(options.divisionId))
+    }
+
+    const data = await blGet<Raw>(
+      `/matchup?${params.toString()}`,
+      token,
+    )
+    const arr = Array.isArray(data) ? data : ((data as { data?: unknown[] }).data ?? [])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return arr as any[]
   })
-  if (options?.divisionId != null && options.divisionId > 0) {
-    params.set('division_id', String(options.divisionId))
-  }
-  const data = await blGet<Raw>(
-    `/matchup?${params.toString()}`,
-    token,
-  )
-  const arr = Array.isArray(data) ? data : ((data as { data?: unknown[] }).data ?? [])
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return arr as any[]
 }
 
 export type CompetitionDivision = {

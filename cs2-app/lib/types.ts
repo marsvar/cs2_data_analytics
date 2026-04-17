@@ -596,6 +596,7 @@ export type BLPlayerStats = {
   kast: number
   opening_kills: number
   opening_attempts: number
+  opening_losses?: number
   bl_extended?: BLAdvancedStats
   maps_played?: number
 }
